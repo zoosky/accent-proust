@@ -76,9 +76,36 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: ./scripts/check-standalone.sh
 
-  # The conformance ratchet joins this workflow with the harness, as a job that
-  # fails when the green or annotated counts drop below the committed baseline.
-  # It is deliberately not an absolute 105/105 gate: that would leave every pull
-  # request failing a required check from the day the harness merges until the
-  # formatter lands, which destroys the red/green signal precisely while it
-  # matters most.
+  # The conformance ratchet. Deliberately not an absolute 105/105 gate: that
+  # would leave every pull request failing a required check from the day the
+  # harness merged until the formatter lands, which destroys the red/green
+  # signal precisely while it matters most. Instead the harness compares the run
+  # against `conformance-baseline.txt` and fails on any drift -- a drop is a
+  # regression, a rise is a baseline that was not updated in the same commit.
+  conformance:
+    name: Conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # --nocapture because a passing test's output is swallowed, and the count
+      # is the point of the run. `shell: bash` for pipefail, so a failing test
+      # is not hidden by the successful `tee` after it.
+      - name: Run the corpus
+        shell: bash
+        run: cargo test --test conformance -- --nocapture | tee conformance.log
+      # The counter is the epic's shared progress signal, so it goes where it
+      # can be read without opening a log: the run summary, on success and on
+      # failure alike.
+      - name: Publish the count
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '```text'
+            # --nocapture prints the report inline with libtest's own line, so
+            # the count is matched anywhere on a line, not anchored to its start.
+            sed -n '/conformance: [0-9]/,$p' conformance.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

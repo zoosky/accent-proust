@@ -11,6 +11,12 @@ keywords = ["markdoc", "markdown", "commonmark", "parser", "formatter"]
 categories = ["parser-implementations", "text-processing"]
 # Not published until the three trademark clearance items are answered.
 publish = false
+# `reference/` is upstream's TypeScript, vendored unmodified so that a porting
+# pull request shows its source and the yearly upstream refresh is a diff. It is
+# 392 KB of another language: useful in the repository, dead weight in a
+# `.crate`. `spec/` is not excluded -- the corpus is the test suite, and a
+# package that cannot run its own tests is a worse trade than 60 KB.
+exclude = ["reference/"]
 
 [features]
 default = ["pulldown-cmark-tokenizer"]
@@ -30,6 +36,16 @@ pulldown-cmark = { version = "0.13", optional = true, default-features = false }
 
 [dev-dependencies]
 proptest = "1"
+# Reads the vendored conformance corpus. Pure Rust, no serde, and confined to
+# one module of the harness (`tests/conformance/corpus.rs`) so that replacing it
+# is a change to one file. Default features off: `encoding` pulls in encoding_rs
+# to sniff non-UTF-8 documents, and the corpus is UTF-8.
+#
+# Note for anyone running the tests on an old toolchain: this dependency needs a
+# newer rustc than the crate's own MSRV. That is a floor for `cargo test` in this
+# repository only -- dev-dependencies are never built by a consumer, so the
+# `rust-version` above remains the promise it says it is.
+saphyr = { version = "0.0.12", default-features = false }
 
 [lints.rust]
 missing_docs = "warn"
