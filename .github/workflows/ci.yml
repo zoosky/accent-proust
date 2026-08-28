@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The shipped configuration.
+          - name: default
+            flags: ""
+          # The real hygiene floor. Code inside `#[cfg(feature = ...)]` is only
+          # linted when that feature is on, and a `#[cfg(not(feature = ...))]`
+          # block is only compiled when it is off -- so a single default-feature
+          # pass leaves half the crate unlinted. The consuming CMS learned this
+          # the expensive way; the lesson is imported rather than repeated.
+          - name: no-default-features
+            flags: "--no-default-features"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # --all-targets, always: a bare `cargo clippy` lints only the lib and
+      # skips tests/ and benches/ entirely.
+      - run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  standalone:
+    name: Standalone (Invariant 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/check-standalone.sh
+
+  # The conformance ratchet joins this workflow with the harness, as a job that
+  # fails when the green or annotated counts drop below the committed baseline.
+  # It is deliberately not an absolute 105/105 gate: that would leave every pull
+  # request failing a required check from the day the harness merges until the
+  # formatter lands, which destroys the red/green signal precisely while it
+  # matters most.

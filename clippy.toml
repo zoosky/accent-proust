@@ -1,0 +1,11 @@
+# `clippy::doc_markdown` assumes a CamelCase word in prose is a code item and
+# wants backticks around it. These are proper nouns -- a markup language, a
+# parser, a template engine -- and backticking them in prose reads as though
+# they were types. `..` keeps clippy's own default list rather than replacing it.
+doc-valid-idents = [
+    "CommonMark",
+    "Markdoc",
+    "MiniJinja",
+    "AccentX",
+    "..",
+]
