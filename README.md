@@ -62,8 +62,14 @@ lines of TypeScript across `src/`, excluding tests.
   disagree, the difference is declared in
   [`DIVERGENCES.md`](DIVERGENCES.md), never emulated silently.
 
-Every deliberate difference lives in that file, which starts at seven entries
+Every deliberate difference lives in that file, which starts at eight entries
 rather than empty.
+
+One of the eight is worth knowing before reading the conformance number:
+upstream's corpus is graded under a **non-default tokenizer configuration**
+(`allowIndentation: true, allowComments: true`), and `allowIndentation` works
+only because upstream patches markdown-it itself. That option is unreachable
+here and six of the 105 cases exercise it.
 
 ## Conformance
 

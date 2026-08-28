@@ -16,9 +16,11 @@
 
 /// The day-one budget: four from the porting strategy (fences default to
 /// `process=false`, pulldown-cmark rather than markdown-it, synchronous
-/// transform hooks, no React renderers) plus three CommonMark precedence rules
-/// the conformance corpus cannot arbitrate.
-const DECLARED_DIVERGENCES: usize = 7;
+/// transform hooks, no React renderers), three CommonMark precedence rules the
+/// conformance corpus cannot arbitrate, and the `allowIndentation` option,
+/// which upstream reaches by patching markdown-it and which the host forbids
+/// reaching at all.
+const DECLARED_DIVERGENCES: usize = 8;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

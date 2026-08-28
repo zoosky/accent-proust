@@ -21,7 +21,7 @@ annotated with the divergence they exercise and counted separately from
 failures, so `N green, M annotated, P failing` distinguishes "we chose this"
 from "we have not done this yet".
 
-The file starts at **seven entries**, on purpose. An empty divergence file
+The file starts at **eight entries**, on purpose. An empty divergence file
 invites the belief that there are none.
 
 ---
@@ -121,3 +121,44 @@ Markdoc has a frontmatter tokenizer plugin.
 **Why:** frontmatter is document metadata, not document content, and the host
 already parses it before rendering. Handing it to the tag layer as well would
 give one construct two owners.
+
+---
+
+## 8. The `allowIndentation` tokenizer option is not implemented
+
+**Upstream:** `Tokenizer` accepts `allowIndentation: true`, which disables
+CommonMark's four-space rule across nine block rules -- blockquote, code,
+fence, heading, hr, html_block, lheading, list -- so that content nested inside
+a tag may be indented without becoming a code block. The formatter has a
+matching branch: with the option on, it indents nested tag children
+(`formatter.ts:300`).
+
+It works because upstream **patches markdown-it itself**
+(`patches/markdown-it+12.3.2.patch`), adding the option to nine rule files.
+
+**Here:** the option does not exist. `proust` always behaves as upstream does
+with the option off, which is stock CommonMark, and the formatter never indents
+nested tag children.
+
+**Why:** the option is not reachable without patching the CommonMark parser,
+and the host forbids that outright -- pulldown-cmark is tracked at zero
+divergence from upstream, with fixes contributed upstream and the revision
+bumped, never carried locally. Emulating the option would mean reimplementing
+nine block rules above a parser that will not cooperate, in order to reproduce
+a mode that stock Markdoc also does not enable by default.
+
+**What it costs, exactly.** Upstream's *library* default is `allowIndentation:
+false`, so this matches default Markdoc. But upstream's **conformance corpus
+runs with the option on** (`spec/marktest/index.ts:21-24`, which constructs its
+tokenizer with `allowIndentation: true, allowComments: true`). Six of the 105
+cases exercise it, and they name themselves: "Indented paragraph in a tag"
+(three of them), "Oddly indented paragraph in a tag", "Indented fence in a
+tag", and "Advanced table with inner content". Those six are annotated against
+this entry rather than counted as failures.
+
+The formatter is unaffected in a way worth stating, because the opposite is
+easy to assume: its indenting branch is gated on the same option, so with the
+option absent it never emits indented nested children, and
+`parse(format(ast))` round-trips under ordinary CommonMark rules. The option
+being missing is what keeps the formatter self-consistent, not what threatens
+it.
