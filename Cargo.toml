@@ -1,0 +1,48 @@
+[package]
+name = "proust"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+description = "A Rust implementation of the Markdoc language: parse, validate, transform, render, and format."
+readme = "README.md"
+repository = "https://github.com/zoosky/proust"
+keywords = ["markdoc", "markdown", "commonmark", "parser", "formatter"]
+categories = ["parser-implementations", "text-processing"]
+# Not published until the three trademark clearance items are answered.
+publish = false
+
+[features]
+default = ["pulldown-cmark-tokenizer"]
+# The bundled `Tokenizer` implementation over pulldown-cmark. Turning it off
+# leaves the trait and every layer above it, so a host that already owns a
+# CommonMark parser can supply its own segmentation without compiling a second
+# one. That is the whole point of the seam.
+pulldown-cmark-tokenizer = ["dep:pulldown-cmark"]
+
+[dependencies]
+# Attribute order is authored order, never hash order: rendered output must be
+# byte-reproducible across runs.
+indexmap = "2"
+thiserror = "2"
+# Optional so the CommonMark engine stays a detail of one feature.
+pulldown-cmark = { version = "0.13", optional = true, default-features = false }
+
+[dev-dependencies]
+proptest = "1"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Panic-freedom is a published promise, not a review habit: this is an open
+# parser fed arbitrary text, so its attack surface is part of its API. These
+# four are the static form of that promise. Where a bound is genuinely proven,
+# `#[allow]` it with a comment saying why -- an allow with a reason is the
+# intended escape hatch, an allow without one is the thing being prevented.
+panic = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+indexing_slicing = "warn"
