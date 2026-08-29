@@ -12,3 +12,7 @@
 //!   that for no gain.
 //! - **Attribute order is authored order.** Not hash order. Rendered output has
 //!   to be reproducible byte-for-byte across runs.
+
+mod value;
+
+pub use value::{Function, PathSegment, Value, Variable};
