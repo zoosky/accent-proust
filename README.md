@@ -3,10 +3,11 @@
 A Rust implementation of the [Markdoc](https://markdoc.dev) language: parse,
 validate, transform, render, and format.
 
-> **Status: scaffold, measured.** The layout, the licence, the divergence
-> budget, CI and the conformance harness are in place. No language surface is
-> implemented yet, and nothing is published. See
-> [Conformance](#conformance) for the live number.
+> **Status: in port.** The layout, the licence, the divergence budget, CI and
+> the conformance harness are in place, and the tag-internals grammar -- what
+> appears between `{%` and `%}` -- is ported. The document layers above it are
+> not, and nothing is published. See [Conformance](#conformance) for the live
+> number.
 
 ## What this is
 
