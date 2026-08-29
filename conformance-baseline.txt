@@ -1,0 +1,14 @@
+# The conformance ratchet. Written by `cargo test --test conformance`,
+# which fails when the run does not match it exactly.
+#
+# green     cases matching upstream's expectation
+# annotated cases exercising a declared divergence (see DIVERGENCES.md)
+# total     cases in the vendored corpus
+#
+# Raising green is the point. Lowering it is a regression and is not
+# mergeable: a case that should stop being green is a divergence, which
+# means an entry in DIVERGENCES.md and a move to annotated, not a
+# smaller number here.
+green 0
+annotated 6
+total 105

@@ -9,3 +9,14 @@ doc-valid-idents = [
     "AccentX",
     "..",
 ]
+
+# The four panic-freedom lints in `Cargo.toml` are a promise about the library.
+# A test's failure mechanism *is* a panic: the conformance harness reports its
+# result by panicking with the report, and forbidding that would only mean
+# writing the same panic through an `#[allow]`. These options relax the lints
+# inside `#[test]` functions and nowhere else, which is exactly the boundary
+# meant -- helper code in the harness stays under the same rules as the library.
+allow-panic-in-tests = true
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true

@@ -3,9 +3,10 @@
 A Rust implementation of the [Markdoc](https://markdoc.dev) language: parse,
 validate, transform, render, and format.
 
-> **Status: scaffold.** The layout, the licence, the divergence budget and CI
-> are in place. No language surface is implemented yet, and nothing is
-> published. See [Conformance](#conformance) for the live number.
+> **Status: scaffold, measured.** The layout, the licence, the divergence
+> budget, CI and the conformance harness are in place. No language surface is
+> implemented yet, and nothing is published. See
+> [Conformance](#conformance) for the live number.
 
 ## What this is
 
@@ -75,17 +76,32 @@ here and six of the 105 cases exercise it.
 
 Upstream's `spec/marktest/tests.yaml` -- 105 cases of source in, expected
 AST / validation errors / HTML out -- is the progress measure and the merge
-gate. Every change reports:
+gate. It is vendored under [`spec/`](spec/UPSTREAM.md) at the ported revision
+and never edited.
+
+```sh
+cargo test --test conformance -- --nocapture
+```
 
 ```text
-N green, M annotated, P failing   (of 105)
+conformance: 0 green, 6 annotated, 99 failing (of 105)
 ```
 
 "Annotated" is a case that fails because it exercises a declared divergence;
 it is counted apart from a failure so that giving something up stays visible
-instead of being absorbed. The number is a ratchet: it may not go down.
+instead of being absorbed. All six are
+[divergence 8](DIVERGENCES.md), the `allowIndentation` option upstream's corpus
+runner switches on and this crate cannot reach.
 
-Current: harness not yet landed.
+`conformance-baseline.txt` is the ratchet. The harness fails on any drift from
+it: a drop is a regression and is not mergeable, and a rise is a baseline that
+was not updated in the same commit. It is not an absolute `105/105` gate, which
+would leave every pull request failing a required check until the port
+finished, and a check that is always red is a check nobody reads.
+
+The harness exists before the parser on purpose. A conformance counter written
+after the implementation grades what was built; one written before it grades
+what was meant.
 
 ## Layout
 
@@ -105,6 +121,17 @@ Rust counterpart:
 | `src/functions/` | `src/functions/` |
 | `src/tags/` | `src/tags/` |
 
+Two upstream trees are vendored at the ported revision, and neither is ever
+edited:
+
+| Path | What | Why |
+|---|---|---|
+| [`spec/`](spec/UPSTREAM.md) | the conformance corpus and its runner | it is the test suite, so a fresh clone runs it with `cargo test` and nothing else |
+| [`reference/`](reference/UPSTREAM.md) | upstream's TypeScript, its unit tests, and its markdown-it patch | a porting pull request shows its source in the same diff, and the yearly upstream refresh is `git diff` rather than a second checkout |
+
+`reference/` is `exclude`d from the packaged crate. No Rust tooling reads
+either.
+
 ## Building
 
 ```sh
@@ -114,7 +141,10 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-Minimum supported Rust version: 1.82.
+Minimum supported Rust version: 1.82. That is a promise about the library, and
+a consumer never builds a dev-dependency -- but running the tests in this
+repository needs a newer toolchain than that, because the conformance harness
+reads YAML with a crate that does. Contributors should be on stable.
 
 ## Licence and attribution
 
