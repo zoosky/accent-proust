@@ -285,6 +285,7 @@ impl<'a> Node<'a> {
     /// `ast/node.test.ts` asserts the sequence for a document with slots, and a
     /// validator that reported errors in a different order would produce a
     /// different diff for the same file.
+    #[must_use]
     pub fn walk(&self) -> Walk<'_, 'a> {
         Walk {
             stack: self.descendants_in_order(),

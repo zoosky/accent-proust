@@ -19,7 +19,7 @@
 
 use std::borrow::Cow;
 
-use proust::ast::NodeType;
+use proust::ast::{Node, NodeType};
 use proust::parse::{
     parse_with, Container, ContainerKind, Event, ParseOptions, Spanned, Tokenizer,
 };
@@ -50,7 +50,7 @@ impl Tokenizer for Paragraphs {
     }
 }
 
-fn parse(source: &str) -> proust::ast::Node<'_> {
+fn parse(source: &str) -> Node<'_> {
     parse_with(source, &Paragraphs, &ParseOptions::new())
 }
 
@@ -70,7 +70,7 @@ fn inline_tags_split_a_text_run_from_any_tokenizer() {
     let source = "Example {% foo %}bar{% /foo %} baz";
     let document = parse(source);
     let inline = &document.children[0].children[0];
-    let kinds: Vec<&str> = inline.children.iter().map(|child| child.name()).collect();
+    let kinds: Vec<&str> = inline.children.iter().map(Node::name).collect();
     assert_eq!(kinds, ["text", "foo", "text"]);
 }
 

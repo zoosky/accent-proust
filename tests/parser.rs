@@ -86,8 +86,7 @@ fn attributes_for_emphasis() {
     let markers = |example: &str, index: usize| {
         let source = dedent(example);
         let document = parse(&source);
-        let marker = attribute(at(&document, &[0, 0, index]), "marker");
-        marker
+        attribute(at(&document, &[0, 0, index]), "marker")
     };
     assert_eq!(markers("a*b*c", 1), "\"*\"");
     assert_eq!(markers("a**b**c", 1), "\"**\"");
@@ -119,8 +118,7 @@ fn attributes_for_ordered_list_start() {
     let start = |example: &str| {
         let source = dedent(example);
         let document = parse(&source);
-        let start = attribute(at(&document, &[0]), "start");
-        start
+        attribute(at(&document, &[0]), "start")
     };
     assert_eq!(start("\n* Example 1\n* Example 2\n"), "<unset>");
     assert_eq!(start("\n3. Example 1\n4. Example 2\n"), "3");
@@ -168,12 +166,11 @@ fn attributes_for_code_fence() {
     let fence = |source: &str| {
         let document = parse(source);
         let node = at(&document, &[0]);
-        let described = (
+        (
             attribute(node, "language"),
             attribute(node, "content"),
             node.node_type,
-        );
-        described
+        )
     };
     assert_eq!(
         fence(&simple),
@@ -557,10 +554,7 @@ fn displays_error_for_annotations_in_a_fence() {
     let document = parse(&source);
     let fence = at(&document, &[0]);
     assert_eq!(fence.node_type, NodeType::Fence);
-    assert!(
-        fence.annotations.iter().count() == 1,
-        "only `process` is annotated"
-    );
+    assert!(fence.annotations.len() == 1, "only `process` is annotated");
     assert_eq!(error_ids(fence), ["no-inline-annotations"]);
 }
 

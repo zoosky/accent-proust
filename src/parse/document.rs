@@ -608,6 +608,22 @@ impl<'s, 'o> Builder<'s, 'o> {
                 }
                 self.open(node);
             }
+            Container::Table { .. }
+            | Container::TableHead
+            | Container::TableRow
+            | Container::TableCell => self.start_table(container, span),
+        }
+    }
+
+    /// The table containers, which need two wrappers markdown-it has and
+    /// pulldown-cmark does not.
+    ///
+    /// markdown-it puts a `tr` inside the `thead` and a `tbody` around the body
+    /// rows. pulldown-cmark's `TableHead` *is* the header row, and its body rows
+    /// are direct children of the table. Both wrappers are synthesised here, so
+    /// a table schema sees the shape upstream documents.
+    fn start_table(&mut self, container: &Container<'_>, span: Range<usize>) {
+        match container {
             Container::Table { alignments } => {
                 self.alignments.clone_from(alignments);
                 let node = self.node(NodeType::Table, span);
@@ -617,18 +633,11 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.in_head = true;
                 let node = self.node(NodeType::Thead, span);
                 self.open(node);
-                // markdown-it wraps the header row in a `tr` inside the `thead`;
-                // pulldown-cmark's TableHead *is* the row. Synthesising the `tr`
-                // here keeps the two-deep shape every table schema expects.
                 let row = self.node(NodeType::Tr, self.span_of_top());
                 self.open(row);
                 self.column = 0;
             }
             Container::TableRow => {
-                // markdown-it wraps body rows in a `tbody`; pulldown-cmark emits
-                // them as direct children of the table. Both wrappers are
-                // synthesised here so a table schema sees the shape upstream
-                // documents.
                 if !self.in_body {
                     let body = self.node(NodeType::Tbody, span.clone());
                     self.open(body);
@@ -638,7 +647,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
                 self.column = 0;
             }
-            Container::TableCell => {
+            _ => {
                 let node_type = if self.in_head {
                     NodeType::Th
                 } else {
@@ -817,8 +826,11 @@ impl<'s, 'o> Builder<'s, 'o> {
             if let Some(end) = find_tag_end(&info, start) {
                 let body = info.get(start + OPEN.len()..end).unwrap_or("").trim();
                 match parse_tag(body) {
-                    Ok(TagItem::Annotation { attributes })
-                    | Ok(TagItem::TagOpen { attributes, .. }) => annotate(&mut node, &attributes),
+                    Ok(
+                        TagItem::Annotation { attributes } | TagItem::TagOpen { attributes, .. },
+                    ) => {
+                        annotate(&mut node, &attributes);
+                    }
                     Ok(_) => {}
                     Err(error) => node.errors.push(ValidationError::new(
                         "fence-tag-error",
@@ -974,8 +986,7 @@ fn list_marker(span: &str, ordered: bool) -> String {
     trimmed
         .chars()
         .find(|character| *character == '.' || *character == ')')
-        .map(String::from)
-        .unwrap_or_else(|| ".".to_string())
+        .map_or_else(|| ".".to_string(), String::from)
 }
 
 /// The range of the last line of `span`.

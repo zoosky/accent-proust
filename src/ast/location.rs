@@ -75,7 +75,7 @@ pub struct Location<'a> {
     pub text: &'a str,
 }
 
-impl<'a> Location<'a> {
+impl Location<'_> {
     /// The byte range this location covers.
     #[must_use]
     pub const fn span(&self) -> Range<usize> {
@@ -231,7 +231,11 @@ mod tests {
     fn out_of_range_spans_are_clamped_rather_than_panicking() {
         let lines = Lines::new("abc");
         assert_eq!(lines.locate(1..99, None).text, "bc");
-        assert_eq!(lines.locate(9..1, None).text, "");
+        // Deliberately reversed, which is why it is built rather than written
+        // as a literal: `9..1` as a literal is a lint, and the point is that the
+        // parser cannot be made to panic by one.
+        let reversed = std::ops::Range { start: 9, end: 1 };
+        assert_eq!(lines.locate(reversed, None).text, "");
         assert_eq!(lines.position(99).line, 0);
     }
 

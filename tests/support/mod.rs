@@ -144,6 +144,13 @@ pub fn show(value: &Value) -> String {
 /// wants: "there is no `children[0].children[1]`" says more than an index
 /// panic.
 #[must_use]
+#[allow(
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "the panic is this helper's whole purpose -- it reports a missing \
+              node better than an index panic would -- and the slice is bounded \
+              by the enumerate it came from"
+)]
 pub fn at<'n, 'a>(node: &'n Node<'a>, path: &[usize]) -> &'n Node<'a> {
     let mut current = node;
     for (depth, index) in path.iter().enumerate() {

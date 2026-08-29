@@ -85,7 +85,9 @@ fn convert(event: pulldown_cmark::Event<'_>) -> Option<Event<'_>> {
     Some(match event {
         P::Start(tag) => Event::Start(container(tag)?),
         P::End(tag) => Event::End(kind(tag)?),
-        P::Text(text) => Event::Text(cow(text)),
+        // Math has no Markdoc node, and its extension is off; if it were ever
+        // switched on, literal text is the honest reading of `$x$`.
+        P::Text(text) | P::InlineMath(text) | P::DisplayMath(text) => Event::Text(cow(text)),
         P::Code(text) => Event::Code(cow(text)),
         P::Html(html) => Event::Html(cow(html)),
         P::InlineHtml(html) => Event::InlineHtml(cow(html)),
@@ -93,7 +95,6 @@ fn convert(event: pulldown_cmark::Event<'_>) -> Option<Event<'_>> {
         P::HardBreak => Event::HardBreak,
         P::Rule => Event::Rule,
         P::FootnoteReference(_) | P::TaskListMarker(_) => return None,
-        P::InlineMath(text) | P::DisplayMath(text) => Event::Text(cow(text)),
     })
 }
 
@@ -108,12 +109,6 @@ fn container(tag: Tag<'_>) -> Option<Container<'_>> {
             info: Some(cow(info)),
         },
         Tag::CodeBlock(CodeBlockKind::Indented) => Container::CodeBlock { info: None },
-        // An HTML block's content arrives as `Event::Html`, so the container
-        // itself carries nothing. Mapping it to a paragraph would wrap literal
-        // markup in a node upstream does not produce; dropping it would
-        // unbalance the stream. It becomes an inline-less container the parser
-        // above flattens.
-        Tag::HtmlBlock => return None,
         Tag::List(start) => Container::List {
             ordered: start.is_some(),
             start,
@@ -140,7 +135,12 @@ fn container(tag: Tag<'_>) -> Option<Container<'_>> {
             destination: cow(dest_url),
             title: cow(title),
         },
-        Tag::FootnoteDefinition(_)
+        // `HtmlBlock` is dropped for a different reason from the rest: its
+        // content still arrives, as `Event::Html`, so the wrapper carries
+        // nothing. Mapping it to a paragraph would wrap literal markup in a node
+        // upstream does not produce. The others are extensions that are off.
+        Tag::HtmlBlock
+        | Tag::FootnoteDefinition(_)
         | Tag::DefinitionList
         | Tag::DefinitionListTitle
         | Tag::DefinitionListDefinition
@@ -156,7 +156,6 @@ fn kind(tag: TagEnd) -> Option<ContainerKind> {
         TagEnd::Heading(_) => ContainerKind::Heading,
         TagEnd::BlockQuote(_) => ContainerKind::Blockquote,
         TagEnd::CodeBlock => ContainerKind::CodeBlock,
-        TagEnd::HtmlBlock => return None,
         TagEnd::List(_) => ContainerKind::List,
         TagEnd::Item => ContainerKind::Item,
         TagEnd::Table => ContainerKind::Table,
@@ -168,7 +167,8 @@ fn kind(tag: TagEnd) -> Option<ContainerKind> {
         TagEnd::Strikethrough => ContainerKind::Strikethrough,
         TagEnd::Link => ContainerKind::Link,
         TagEnd::Image => ContainerKind::Image,
-        TagEnd::FootnoteDefinition
+        TagEnd::HtmlBlock
+        | TagEnd::FootnoteDefinition
         | TagEnd::DefinitionList
         | TagEnd::DefinitionListTitle
         | TagEnd::DefinitionListDefinition

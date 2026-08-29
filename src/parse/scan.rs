@@ -96,11 +96,7 @@ pub fn contains_markdoc_tag_in_url(content: &str, protocols: &[&str]) -> bool {
             continue;
         }
         let mut start = pos;
-        while start > 0
-            && !bytes
-                .get(start - 1)
-                .is_some_and(|byte| byte.is_ascii_whitespace())
-        {
+        while start > 0 && !bytes.get(start - 1).is_some_and(u8::is_ascii_whitespace) {
             start -= 1;
         }
         let prefix = content.get(start..pos).unwrap_or("");
