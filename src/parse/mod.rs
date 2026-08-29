@@ -17,6 +17,7 @@
 //! can implement the trait instead and avoid compiling a second parser.
 
 mod scan;
+mod segment;
 mod tokenizer;
 
 #[cfg(feature = "pulldown-cmark-tokenizer")]
