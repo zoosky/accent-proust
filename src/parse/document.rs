@@ -72,6 +72,11 @@ pub(crate) struct Builder<'s, 'o> {
     /// The underline of the open setext heading, when the open block is one.
     setext: Option<Range<usize>>,
     fence: Option<Fence>,
+    /// Consecutive block-level HTML events, waiting to be read as one thing.
+    ///
+    /// pulldown-cmark reports an HTML block a line at a time. A comment is only
+    /// a comment as a whole, so the lines are gathered and decided together.
+    html_block: Option<Range<usize>>,
     /// Column alignments of the innermost open table.
     alignments: Vec<Alignment>,
     /// Which column the next cell is.
@@ -93,6 +98,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             inline_span: None,
             setext: None,
             fence: None,
+            html_block: None,
             alignments: Vec::new(),
             column: 0,
             in_head: false,
@@ -126,6 +132,7 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     /// Close every node still open, marking each as missing its closing tag.
     fn finish(mut self) -> Node<'s> {
+        self.flush_html_block();
         self.close_inline();
         while self.stack.len() > 1 {
             let mut node = self.pop();
@@ -178,6 +185,9 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// regions. Upstream decides this when the node is created; here nodes are
     /// attached when they close, so the decision moves with them.
     fn attach(&mut self, node: Node<'s>) {
+        if self.merge_text(&node) {
+            return;
+        }
         if self.options.slots && node.tag.as_deref() == Some("slot") {
             if let Some(Value::String(name)) = node.get("primary") {
                 let name = name.clone();
@@ -186,6 +196,52 @@ impl<'s, 'o> Builder<'s, 'o> {
             }
         }
         self.top().push(node);
+    }
+
+    /// Fold a text node into the text node before it, if there is one.
+    ///
+    /// markdown-it does this in a core rule called `text_collapse`, and the
+    /// result is observable: the corpus compares renderable trees, so two text
+    /// children where upstream has one is a failed case even though the rendered
+    /// HTML is identical. pulldown-cmark splits a run at every backslash escape,
+    /// entity and unrecognised `<`, so without this a document with `\*` in it
+    /// has a different tree shape from upstream's.
+    ///
+    /// Only plain strings merge. A text node whose `content` is a variable came
+    /// from a tag, not from a text run, and upstream does not merge those either
+    /// -- its token is a `variable` until the parser renames it, and
+    /// `text_collapse` has already run by then.
+    fn merge_text(&mut self, node: &Node<'s>) -> bool {
+        if node.node_type != NodeType::Text
+            || !node.errors.is_empty()
+            || !matches!(node.get("content"), Some(Value::String(_)))
+        {
+            return false;
+        }
+        let Some(Value::String(addition)) = node.get("content") else {
+            return false;
+        };
+        let addition = addition.clone();
+        let end = node.location.map(|location| location.end);
+        let text_end = node.location.map(|location| location.span().end);
+        let source = self.source;
+        let previous = self.top().children.last_mut();
+        let Some(previous) = previous else {
+            return false;
+        };
+        if previous.node_type != NodeType::Text || previous.inline != node.inline {
+            return false;
+        }
+        let Some(Value::String(existing)) = previous.attributes.get_mut("content") else {
+            return false;
+        };
+        existing.push_str(&addition);
+        if let (Some(location), Some(end), Some(text_end)) = (&mut previous.location, end, text_end)
+        {
+            location.end = end;
+            location.text = source.get(location.start.offset..text_end).unwrap_or("");
+        }
+        true
     }
 
     // ---- inline runs -----------------------------------------------------
@@ -390,6 +446,9 @@ impl<'s, 'o> Builder<'s, 'o> {
     // ---- events ----------------------------------------------------------
 
     fn event(&mut self, event: &Event<'_>, span: Range<usize>, inline_tags: &[TagSpan]) {
+        if !matches!(event, Event::Html(_)) {
+            self.flush_html_block();
+        }
         // A code block swallows its own text: the content is one attribute, and
         // whether it also has children is decided at the close.
         if let Some(fence) = &mut self.fence {
@@ -422,8 +481,10 @@ impl<'s, 'o> Builder<'s, 'o> {
             }
             Event::Html(_) => {
                 self.close_inline();
-                let node = self.html_node(span);
-                self.attach(node);
+                self.html_block = Some(match self.html_block.take() {
+                    Some(open) => open.start..span.end,
+                    None => span,
+                });
             }
             Event::InlineHtml(_) => {
                 self.open_inline(&span);
@@ -446,6 +507,15 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.attach(node);
             }
         }
+    }
+
+    /// Turn the gathered HTML block into one node.
+    fn flush_html_block(&mut self) {
+        let Some(span) = self.html_block.take() else {
+            return;
+        };
+        let node = self.html_node(span);
+        self.attach(node);
     }
 
     /// A comment, or the literal text of something that is not one.
