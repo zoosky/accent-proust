@@ -26,7 +26,11 @@
 /// overflow in Rust aborts and cannot be caught; and function parameters keep
 /// authored order rather than JavaScript's object order, which hoists
 /// integer-like keys.
-const DECLARED_DIVERGENCES: usize = 10;
+///
+/// The segmenter added one: upstream disables two markdown-it block rules that
+/// pulldown-cmark has no switch for, and only one of the two can be undone
+/// after the fact.
+const DECLARED_DIVERGENCES: usize = 11;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

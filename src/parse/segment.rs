@@ -156,9 +156,7 @@ impl Scan<'_> {
             // preceding Markdown run would leave a stray whitespace segment
             // that CommonMark could read as an indented block.
             self.flush_markdown(line.start);
-            self.markdown_start = lines
-                .get(next)
-                .map_or(self.source.len(), |line| line.start);
+            self.markdown_start = lines.get(next).map_or(self.source.len(), |line| line.start);
             self.blocks.push(Block::Tag(span));
             return next.max(index + 1);
         }
@@ -189,7 +187,12 @@ impl Scan<'_> {
         }
         let tag_end = find_tag_end(self.source, content_start)?;
         let inner = content_start + OPEN.len()..tag_end;
-        if self.source.get(inner.clone())?.trim_start().starts_with('$') {
+        if self
+            .source
+            .get(inner.clone())?
+            .trim_start()
+            .starts_with('$')
+        {
             return None;
         }
 
@@ -218,7 +221,11 @@ impl Scan<'_> {
         let mut pos = line.start;
         let mut last = index;
         while pos < line.end {
-            if self.source.get(pos..).is_none_or(|rest| !rest.starts_with(OPEN)) {
+            if self
+                .source
+                .get(pos..)
+                .is_none_or(|rest| !rest.starts_with(OPEN))
+            {
                 pos += 1;
                 continue;
             }
@@ -260,8 +267,9 @@ impl Scan<'_> {
 
     fn flush_markdown(&mut self, end: usize) {
         if end > self.markdown_start {
-            self.blocks
-                .push(Block::Markdown(self.markdown_start..end.min(self.source.len())));
+            self.blocks.push(Block::Markdown(
+                self.markdown_start..end.min(self.source.len()),
+            ));
         }
     }
 }
@@ -331,7 +339,10 @@ fn closes_fence(line: &str, fence: &Fence) -> bool {
         .bytes()
         .take_while(|&byte| byte == fence.marker)
         .count();
-    length >= fence.length && trimmed.get(length..).is_some_and(|rest| rest.trim().is_empty())
+    length >= fence.length
+        && trimmed
+            .get(length..)
+            .is_some_and(|rest| rest.trim().is_empty())
 }
 
 #[cfg(test)]

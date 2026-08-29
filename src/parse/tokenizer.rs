@@ -207,13 +207,20 @@ pub enum Event<'s> {
     Text(Cow<'s, str>),
     /// Inline code, `` `x` ``.
     Code(Cow<'s, str>),
-    /// Raw HTML, block or inline.
+    /// Raw HTML at block level.
     ///
     /// Markdoc runs markdown-it with `html: false`, so upstream never produces
     /// an HTML node -- raw HTML is literal text there. This port keeps the
-    /// event because a comment arrives through it, and treats everything else
-    /// that comes this way as text, which is the same outcome.
+    /// event because an HTML comment arrives through it, and treats everything
+    /// else that comes this way as text, which is the same outcome.
+    ///
+    /// Block and inline are separate variants rather than one, because the
+    /// parser above has to place the node and cannot tell them apart after the
+    /// fact: a comment that opens a paragraph looks exactly like one that is
+    /// the whole block.
     Html(Cow<'s, str>),
+    /// Raw HTML inside a text run.
+    InlineHtml(Cow<'s, str>),
     /// A newline inside a block.
     SoftBreak,
     /// A line break written as two trailing spaces or a backslash.

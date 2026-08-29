@@ -30,7 +30,10 @@
 //! Rust representation touches the conversion in this file rather than the
 //! grading in every other one.
 
-use crate::corpus::Case;
+use proust::ast::Node;
+use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+
+use crate::corpus::{Case, Renderer};
 use crate::value::Value;
 
 /// What running a case produced.
@@ -83,18 +86,72 @@ impl std::fmt::Display for Unimplemented {
 
 /// Run one case through `proust`.
 ///
-/// Today every case returns [`Unimplemented`]: the crate is a scaffold, and the
-/// harness exists before the parser on purpose -- a conformance counter written
-/// after the fact grades what was built, and one written before it grades what
-/// was meant.
+/// Parse is implemented; validate, transform and render are not. So this
+/// dispatches on how the corpus grades the case and answers with the first
+/// stage that is missing, by name. A blanket "parse is not implemented" told
+/// every case the same untrue thing; naming the stage makes the failing column
+/// readable as a work list rather than a wall.
 ///
-/// The order the stages arrive in is the order of the phases: the tag-internals
-/// grammar and the tokenizer (A and B) make `parse` answerable, at which point
-/// this function starts returning [`Outcome::Tree`] for cases that need nothing
-/// further, and the counter starts moving.
-pub fn run(_case: &Case) -> Result<Outcome, Unimplemented> {
-    Err(Unimplemented {
-        stage: "parse",
-        phase: "A/B",
-    })
+/// # What a parsed document can already grade
+///
+/// Exactly one thing: a case whose `expectedError` is a **grammar** error.
+/// Upstream's runner joins the messages `validate` returns, and `validate`
+/// returns each node's own errors before it consults any schema -- so for a
+/// document whose only problem is a tag that does not parse, the parser's
+/// output *is* the validator's. Cases whose expectation includes a schema error
+/// need Goal C and say so.
+///
+/// Everything graded on a tree or on HTML needs the transform stage, because
+/// `expected` in the corpus is the **renderable** tree, not the AST. That is
+/// Goal D, and no amount of parsing reaches it.
+pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
+    // The corpus is graded under a non-default configuration, and this is where
+    // that is honoured: `spec/marktest/index.ts:21-24` builds its tokenizer with
+    // `allowComments: true`. The other option it sets, `allowIndentation`, is
+    // divergence 8 and has nowhere to be set.
+    let options = ParseOptions::new().allow_comments(true).slots(case.slots);
+    let document = parse_with(&case.code, &PulldownTokenizer::new(), &options);
+
+    if case.expected_error.is_some() {
+        let messages = parse_errors(&document);
+        if messages.is_empty() {
+            // Nothing the parser found explains the expectation, so whatever
+            // upstream is reporting comes from the schema layer.
+            return Err(Unimplemented {
+                stage: "validate",
+                phase: "C",
+            });
+        }
+        return Ok(Outcome::ValidationErrors(messages.join("\n")));
+    }
+
+    match case.renderer {
+        Renderer::Tree => Err(Unimplemented {
+            stage: "transform",
+            phase: "D",
+        }),
+        Renderer::Html => Err(Unimplemented {
+            stage: "transform and the html renderer",
+            phase: "D/E",
+        }),
+    }
+}
+
+/// Every error the parser itself attached, in document order.
+///
+/// This is the part of upstream's `validate` that needs no schema: it walks the
+/// tree and collects `node.errors` before adding any of its own. Reporting that
+/// subset is honest rather than partial -- a case whose expectation also names a
+/// schema error will not match it, and will be listed as failing with the
+/// difference shown.
+fn parse_errors(document: &Node<'_>) -> Vec<String> {
+    let mut out: Vec<String> = document
+        .errors
+        .iter()
+        .map(|error| error.message.clone())
+        .collect();
+    for node in document.walk() {
+        out.extend(node.errors.iter().map(|error| error.message.clone()));
+    }
+    out
 }

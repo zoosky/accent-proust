@@ -41,6 +41,16 @@ example is parsed as markup rather than shown as text, which makes the common
 case the one requiring an annotation. Flipping the default costs an annotation
 on a rare case instead of on almost every one.
 
+**What it costs, exactly.** Most of the corpus's fence cases are unaffected,
+because upstream's fence schema renders `attributes.content` when the node has
+no children (`schema.ts:59-64`), which is what a literal fence produces. Three
+cases do rely on the default and are annotated against this entry: "Conditional
+and variable in code example with indentation", "Tag after a comment in a code
+example", and "Multiple sequential tags in a code example". Each has a fence
+carrying no `process` annotation and expects its content split into text and tag
+children. Every other fence case in the corpus states `process` explicitly and
+is reached either way.
+
 ## 2. The CommonMark engine is pulldown-cmark, not markdown-it
 
 **Upstream:** markdown-it, whose block ruler, inline ruler and a core pass
@@ -122,6 +132,15 @@ Markdoc has a frontmatter tokenizer plugin.
 **Why:** frontmatter is document metadata, not document content, and the host
 already parses it before rendering. Handing it to the tag layer as well would
 give one construct two owners.
+
+**What it costs, exactly.** One corpus case, named "Frontmatter", feeds a
+document that still has its metadata block and expects the block to contribute
+nothing to the output. Upstream's tokenizer plugin removes it; here the host
+would have, and the corpus runner is not the host. The three `---`-delimited
+lines therefore reach the parser as content and become a thematic break and a
+paragraph. The case is annotated against this entry. The alternative -- having
+the harness strip frontmatter so the case passes -- was rejected: it would make
+the runner do something the crate does not, which is measurement shaped to fit.
 
 ---
 
@@ -210,3 +229,36 @@ entirely positional (keys `0, 1, 2`, already ascending) and every call that is
 entirely named (no integer keys, insertion order). They differ only when a
 named parameter precedes a positional one in the same call, which reprints as
 `f(1, 2)` here and `f(2, 1)` upstream. No corpus case does this.
+
+## 11. Upstream's two disabled markdown-it rules are only half reachable
+
+**Upstream:** its tokenizer disables two markdown-it block rules outright
+(`src/tokenizer/index.ts`): `lheading`, so `Testing\n-------` is a paragraph
+followed by a thematic break rather than a level-2 heading; and `code`, so four
+spaces of indentation never produce a code block. This is separate from
+`allowIndentation` (entry 8): these two are off in stock Markdoc, with no
+option, while `allowIndentation` is an option upstream reaches by patching
+markdown-it.
+
+**Here:** the `lheading` disable **is** reproduced. The `code` disable is not:
+an indented block becomes a CommonMark indented code block, where upstream
+produces a paragraph.
+
+**Why:** the two are not equally reachable. A setext heading is recoverable after
+the fact from the node pulldown-cmark produces -- it is the only heading whose
+span does not begin with `#`, and its underline is the last line of that span --
+so undoing it is a local rewrite of one node, with the source right there to
+read. An indented code block is not recoverable, because the difference is not
+in the node: with `code` disabled, markdown-it's other block rules still refuse
+indented input, so every one of them falls through to `paragraph`. Reproducing
+that means knowing which rules declined and why, which means reimplementing
+markdown-it's indent guards above a parser that does not expose them -- the
+exact trade entry 2 exists to refuse. Emulating half of it and calling it done
+would be worse than declaring it.
+
+**What it costs, exactly.** Nothing the corpus currently charges to this entry:
+the six cases that indent content inside a tag are already annotated against
+entry 8, which subsumes them, and "Disabled setext heading" is reachable
+because the `lheading` half *is* reproduced. A document that relies on four-space
+indentation to write a paragraph -- rather than to nest one inside a tag --
+renders as code here and as prose upstream.
