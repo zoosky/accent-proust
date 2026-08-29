@@ -140,16 +140,12 @@ impl Cursor<'_> {
                     Some('t') => Some('\t'),
                     _ => None,
                 };
-                match unescaped {
-                    Some(ch) => {
-                        self.advance();
-                        Some(ch)
-                    }
-                    None => {
-                        self.reset(start);
-                        None
-                    }
+                if let Some(ch) = unescaped {
+                    self.advance();
+                    return Some(ch);
                 }
+                self.reset(start);
+                None
             }
             '"' => None,
             ch if (ch as u32) <= 0x1f => None,
@@ -177,13 +173,11 @@ impl Cursor<'_> {
         // same shape with the same rounding, and overflows to infinity the way
         // `parseFloat` does.
         let text = self.slice(start, self.pos());
-        match text.parse::<f64>() {
-            Ok(number) => Some(Value::Number(number)),
-            Err(_) => {
-                self.reset(start);
-                None
-            }
+        if let Ok(number) = text.parse::<f64>() {
+            return Some(Value::Number(number));
         }
+        self.reset(start);
+        None
     }
 
     fn value_number_body(&mut self) -> bool {
@@ -307,15 +301,13 @@ impl Cursor<'_> {
     )]
     fn value_hash_item(&mut self) -> Option<Option<(String, Value)>> {
         let start = self.pos();
-        let key = match self.identifier() {
-            Some(identifier) => identifier.to_string(),
-            None => match self.string_literal() {
-                Some(key) => key,
-                None => {
-                    self.reset(start);
-                    return None;
-                }
-            },
+        let key = if let Some(identifier) = self.identifier() {
+            identifier.to_string()
+        } else if let Some(key) = self.string_literal() {
+            key
+        } else {
+            self.reset(start);
+            return None;
         };
         if !self.literal(":") {
             self.reset(start);
@@ -438,9 +430,8 @@ impl Cursor<'_> {
     }
 
     fn variable_body(&mut self) -> Option<Value> {
-        let prefix = match self.peek() {
-            Some(prefix @ ('$' | '@')) => prefix,
-            _ => return None,
+        let Some(prefix @ ('$' | '@')) = self.peek() else {
+            return None;
         };
         self.advance();
 
@@ -473,13 +464,11 @@ impl Cursor<'_> {
         let start = self.pos();
 
         if self.literal(".") {
-            match self.identifier() {
-                Some(name) => return Some(PathSegment::Key(name.to_string())),
-                None => {
-                    self.reset(start);
-                    return None;
-                }
+            if let Some(name) = self.identifier() {
+                return Some(PathSegment::Key(name.to_string()));
             }
+            self.reset(start);
+            return None;
         }
 
         if !self.literal("[") {

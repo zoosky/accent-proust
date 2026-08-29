@@ -76,15 +76,12 @@ impl Cursor<'_> {
         // syntax error upstream, and is one here.
         let primary = {
             let mark = self.pos();
-            match self.value() {
-                Some(value) => {
-                    self.whitespace();
-                    Some(value)
-                }
-                None => {
-                    self.reset(mark);
-                    None
-                }
+            if let Some(value) = self.value() {
+                self.whitespace();
+                Some(value)
+            } else {
+                self.reset(mark);
+                None
             }
         };
 
@@ -190,16 +187,14 @@ impl Cursor<'_> {
         };
         self.leave_named();
 
-        match name {
-            Some(name) => Some(Attribute::Attribute {
+        if let Some(name) = name {
+            return Some(Attribute::Attribute {
                 name: "id".to_string(),
                 value: Value::String(name.to_string()),
-            }),
-            None => {
-                self.reset(start);
-                None
-            }
+            });
         }
+        self.reset(start);
+        None
     }
 
     /// `TagShortcutClass 'class' = '.' Identifier`
@@ -213,15 +208,13 @@ impl Cursor<'_> {
         };
         self.leave_named();
 
-        match name {
-            Some(name) => Some(Attribute::Class {
+        if let Some(name) = name {
+            return Some(Attribute::Class {
                 name: name.to_string(),
-            }),
-            None => {
-                self.reset(start);
-                None
-            }
+            });
         }
+        self.reset(start);
+        None
     }
 
     /// `TagAttribute = Identifier '=' Value`
