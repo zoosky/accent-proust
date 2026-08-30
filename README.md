@@ -88,7 +88,7 @@ cargo test --test conformance -- --nocapture
 ```
 
 ```text
-conformance: 3 green, 10 annotated, 92 failing (of 105)
+conformance: 5 green, 11 annotated, 89 failing (of 105)
 ```
 
 "Annotated" is a case that fails because it exercises a declared divergence;

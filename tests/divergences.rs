@@ -35,7 +35,12 @@
 /// pattern rather than a regular expression, because the alternative is a
 /// regular expression dependency in a leaf library for one optional field, and
 /// a JavaScript literal pasted into Rust would not mean the same thing anyway.
-const DECLARED_DIVERGENCES: usize = 12;
+///
+/// The table transform added the thirteenth, by being the first stage to look
+/// at what the segmenter does to a block tag indented inside a list item:
+/// upstream nests it in the item, and a segmenter that runs before the
+/// container parser cannot.
+const DECLARED_DIVERGENCES: usize = 13;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

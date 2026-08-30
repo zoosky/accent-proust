@@ -32,6 +32,7 @@ pub use tokenizer::{Alignment, Container, ContainerKind, Event, Spanned, Tokeniz
 pub use pulldown::PulldownTokenizer;
 
 use crate::ast::Node;
+use crate::transform;
 
 /// How to parse a document.
 ///
@@ -72,6 +73,15 @@ pub struct ParseOptions<'s> {
     /// says the same thing without letting the two disagree. Upstream's default
     /// list, once switched on, is `["http", "https"]`.
     pub validated_protocols: Option<Vec<String>>,
+    /// Tags allowed to wrap rows inside a `{% table %}`, or [`None`] for
+    /// upstream's default of `["if"]`.
+    ///
+    /// The table rewrite runs at the end of the parse (see
+    /// [`transform::table`](crate::transform::table)), so this is a parse option
+    /// even though the pass it configures is a transform. A tag not named here
+    /// that appears between rows is reported as `table-syntax` rather than kept,
+    /// because a component wrapping `<tr>` elements produces invalid HTML.
+    pub conditional_tags: Option<Vec<String>>,
 }
 
 impl<'s> ParseOptions<'s> {
@@ -84,6 +94,7 @@ impl<'s> ParseOptions<'s> {
             location: true,
             allow_comments: false,
             validated_protocols: None,
+            conditional_tags: None,
         }
     }
 
@@ -121,6 +132,13 @@ impl<'s> ParseOptions<'s> {
         self.validated_protocols = Some(protocols);
         self
     }
+
+    /// Name the tags allowed to wrap rows inside a `{% table %}`.
+    #[must_use]
+    pub fn conditional_tags(mut self, tags: Vec<String>) -> ParseOptions<'s> {
+        self.conditional_tags = Some(tags);
+        self
+    }
 }
 
 /// Parse a document with the bundled tokenizer and default options.
@@ -156,5 +174,17 @@ pub fn parse_with<'s>(
     options: &ParseOptions<'s>,
 ) -> Node<'s> {
     let segmentation = segment::segment(source);
-    document::Builder::new(source, options).run(&segmentation, tokenizer)
+    let mut document = document::Builder::new(source, options).run(&segmentation, tokenizer);
+
+    // Upstream runs its transform list here, at the end of `parser()`, and the
+    // list has exactly one member. Running it inside the parse rather than
+    // leaving it to the caller is what makes `{% table %}` a table for every
+    // stage above -- the validator reports `table-syntax` on the rewritten tree,
+    // and the formatter reprints one.
+    let conditional: Vec<&str> = match &options.conditional_tags {
+        Some(tags) => tags.iter().map(String::as_str).collect(),
+        None => transform::table::DEFAULT_CONDITIONAL_TAGS.to_vec(),
+    };
+    transform::table::apply(&mut document, &conditional);
+    document
 }

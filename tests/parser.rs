@@ -7,16 +7,12 @@
 //!
 //! # What is ported, and what is not
 //!
-//! Three of upstream's blocks are deliberately absent, each for a reason that
+//! Two of upstream's blocks are deliberately absent, each for a reason that
 //! is already written down:
 //!
 //! - **`handling frontmatter`.** `DIVERGENCES.md` entry 7: frontmatter is the
 //!   host's, removed before this crate sees a document. There is no
 //!   `document.attributes.frontmatter` to assert.
-//! - **`table parsing`.** Those four tests assert what the `table` transform
-//!   does to a parsed tree, which lands with the transformer. Upstream runs its
-//!   transforms at the end of `parser()`; here `parse` returns the tree it
-//!   built, and the transform stage runs over it.
 //! - **The `location` option's line numbers.** Upstream's location is a line
 //!   map, so its heading ends on line 1. This crate's is a byte range with the
 //!   text borrowed, so the same heading ends where its last byte is. The
@@ -646,5 +642,65 @@ fn an_unclosed_tag_is_ordinary_text() {
     assert_eq!(
         attribute(at(&document, &[0, 0, 0]), "content"),
         "\"hello {% world\""
+    );
+}
+
+// Upstream's `table parsing` block. It asserts which tags survive the table
+// rewrite that runs at the end of the parse, so it belongs here rather than
+// with the rewrite's own suite: what it is really testing is that
+// `conditionalTags` reaches the pass from the parser's arguments.
+
+/// Upstream's `setupTableDoc`.
+fn table_document(rows: &[&str]) -> String {
+    dedent(&format!(
+        "{{% table %}}\n- column 1\n- column 2\n---\n{}\n{{% /table %}}\n",
+        rows.join("\n")
+    ))
+}
+
+/// Every tag name in a document, in walk order.
+fn tag_names(document: &proust::ast::Node<'_>) -> Vec<String> {
+    document
+        .walk()
+        .filter(|node| node.node_type == NodeType::Tag)
+        .filter_map(|node| node.tag.clone())
+        .collect()
+}
+
+#[test]
+fn should_preserve_default_if_tag_during_table_parsing_without_extra_parser_args() {
+    let source = table_document(&[
+        "{% if $fakeCondition.condition1 %}\n- cell 1\n- cell 2\n{% else /%}\n- cell 3\n- cell 4\n{% /if %}",
+    ]);
+    let names = tag_names(&parse(&source));
+    assert!(names.contains(&"if".to_string()), "{names:?}");
+}
+
+#[test]
+fn should_not_preserve_unregistered_tags_during_table_parsing_without_extra_parser_args() {
+    let source = table_document(&[
+        "{% if-pref conditions=[{platform: \"web\"}] %}\n- cell 1\n- cell 2\n{% /if-pref %}\n\
+         {% if-pref conditions=[{platform: \"ios\"}] %}\n- cell 1\n- cell 2\n{% /if-pref %}",
+    ]);
+    let names = tag_names(&parse(&source));
+    assert!(!names.contains(&"if-pref".to_string()), "{names:?}");
+}
+
+#[test]
+fn should_preserve_registered_tags_and_ignore_unregistered_ones_with_extra_parser_args() {
+    let source = table_document(&[
+        "{% if-pref conditions=[{platform: \"web\"}] %}\n- cell 1\n- cell 2\n{% /if-pref %}\n\
+         {% if-pref conditions=[{platform: \"ios\"}] %}\n- cell 1\n- cell 2\n{% /if-pref %}",
+        "{% if $fakeCondition.condition1 %}\n- cell 1\n- cell 2\n{% else /%}\n- cell 3\n- cell 4\n{% /if %}",
+        "{% unregistered-if-tag $fakeCondition.condition2 %}\n- cell 1\n- cell 2\n{% /unregistered-if-tag %}",
+    ]);
+    let options =
+        ParseOptions::new().conditional_tags(vec!["if".to_string(), "if-pref".to_string()]);
+    let names = tag_names(&convert(&source, &options));
+    assert!(names.contains(&"if".to_string()), "{names:?}");
+    assert!(names.contains(&"if-pref".to_string()), "{names:?}");
+    assert!(
+        !names.contains(&"unregistered-if-tag".to_string()),
+        "{names:?}"
     );
 }

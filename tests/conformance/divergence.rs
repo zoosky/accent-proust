@@ -29,7 +29,7 @@ pub struct Annotation {
 /// Asserted, not counted: if a corpus refresh renames a case, its annotation
 /// silently stops matching and the case reappears as a failure with no
 /// explanation. Pinning the number turns that into an error that names itself.
-pub const EXPECTED_COUNT: usize = 10;
+pub const EXPECTED_COUNT: usize = 11;
 
 const ALLOW_INDENTATION: &str = "DIVERGENCES.md #8 (allowIndentation)";
 const LITERAL_FENCES: &str = "DIVERGENCES.md #1 (fences do not process tags by default)";
@@ -41,6 +41,11 @@ const NO_FRONTMATTER: &str = "DIVERGENCES.md #7 (metadata blocks are the host's)
 const NO_FRONTMATTER_REASON: &str =
     "feeds a document that still carries its metadata block; the host removes \
      frontmatter before this crate sees it, and the corpus runner is not the host";
+const INDENTED_BLOCK_TAG: &str = "DIVERGENCES.md #12 (an indented block tag leaves its list item)";
+const INDENTED_BLOCK_TAG_REASON: &str =
+    "writes a block `{% if %}` two spaces in under a list item and expects it to \
+     be the item's content; the segmenter runs before the container parser, so \
+     the tag splits the document instead";
 const ALLOW_INDENTATION_REASON: &str =
     "graded under `allowIndentation: true`, which upstream reaches by patching \
      markdown-it; unreachable above an unpatched CommonMark parser";
@@ -59,6 +64,10 @@ const ALLOW_INDENTATION_REASON: &str =
 ///
 /// One is frontmatter, which divergence 7 makes the host's rather than this
 /// crate's.
+///
+/// One writes a block tag indented inside a list item, which divergence 12 puts
+/// out of reach: the segmenter resolves tag syntax before the container parser
+/// runs, so it has no list item to put the tag inside.
 pub const ANNOTATED: &[Annotation] = &[
     Annotation {
         case: "Indented paragraph in a tag",
@@ -99,6 +108,11 @@ pub const ANNOTATED: &[Annotation] = &[
         case: "Frontmatter",
         entry: NO_FRONTMATTER,
         reason: NO_FRONTMATTER_REASON,
+    },
+    Annotation {
+        case: "Advanced table with conditional inside cell",
+        entry: INDENTED_BLOCK_TAG,
+        reason: INDENTED_BLOCK_TAG_REASON,
     },
 ];
 

@@ -315,3 +315,50 @@ unchanged, so tooling reading `attribute-value-invalid` sees what it saw
 before. What is given up is the ability to paste a Markdoc schema's regular
 expression literal into a Rust schema and have it work without a matcher around
 it.
+## 13. A block tag indented inside a list item is not part of the item
+
+**Upstream:** the Markdoc block-tag rule is a markdown-it *block rule*,
+registered after `list`, `heading` and `blockquote`. By the time it runs, the
+container parser has already stripped a list item's indentation, so a tag
+written two spaces in under `* Some content` opens inside that item:
+
+```markdown
+{% table %}
+* Cell 1
+* Some content
+
+  {% if $foo %}
+  Conditional block
+  {% /if %}
+{% /table %}
+```
+
+Upstream reads the `{% if %}` as content of the second cell. The conditional's
+paragraphs render inside the `<td>`.
+
+**Here:** the segmenter resolves tag syntax *before* the CommonMark parse (the
+one redesign, `src/parse/segment.rs`), so it has no containers to consult. A
+line whose only content is a block tag splits the document wherever it appears,
+indented or not, and the list ends there. The tag becomes a sibling of the list
+rather than a child of its last item.
+
+**Why:** knowing that a line sits inside a list item means having parsed the
+list, and the segmenter runs first by construction -- that ordering is what
+reproduces markdown-it's "the tag rule consumed the tag before the emphasis rule
+saw it" without a ruler to hook (entry 2). Recovering the container structure
+means implementing CommonMark's container phase in the segmenter, ahead of the
+CommonMark parser it feeds, and then keeping the two in agreement forever. That
+is a second Markdown implementation to maintain, and the failure mode when they
+drift is silent: a document that segments one way and parses another. Guessing
+from indentation alone is worse than either -- four spaces inside a list item is
+item content, four spaces outside one is a code block, and the segmenter cannot
+tell which it is looking at.
+
+**What it costs, exactly.** One corpus case, "Advanced table with conditional
+inside cell", which is annotated against this entry. Its inline conditional
+(`* {% if $foo %}...{% /if %}`) is unaffected -- inline tags are masked, not
+split -- and only the indented block form diverges. Upstream's
+`transforms/table.test.ts` has the same shape in "does not produce errors for
+valid conditionals within a cell"; the ported test asserts what this crate
+produces and names this entry, so fixing the segmenter turns that test red
+rather than leaving it silently wrong.
