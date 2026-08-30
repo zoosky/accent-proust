@@ -272,7 +272,7 @@ impl Default for Tag {
 /// a renderer does on every node.
 ///
 /// [`Scalar`] is deliberately not guarded, for the same reason
-/// [`Value`](crate::ast::Value) is not: scalar nesting comes from the value
+/// [`Value`] is not: scalar nesting comes from the value
 /// grammar, which is bounded at `grammar::MAX_VALUE_DEPTH` (`DIVERGENCES.md`
 /// entry 9). Tag nesting has no such bound.
 ///
