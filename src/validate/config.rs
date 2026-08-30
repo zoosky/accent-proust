@@ -48,7 +48,6 @@ pub type Variables = IndexMap<String, Value>;
 /// only validate documents of its own lifetime would have to be rebuilt per
 /// page.
 #[derive(Clone, Default)]
-#[non_exhaustive]
 pub struct Config<'a> {
     /// Schemas for built-in node types, keyed by type.
     pub nodes: IndexMap<NodeType, Schema>,
@@ -105,7 +104,6 @@ impl<'a> Config<'a> {
 /// [`parents`](ValidationOptions::parents), which is how a schema says "a
 /// heading is not allowed inside a `callout`" without walking the tree itself.
 #[derive(Clone, Debug, Default)]
-#[non_exhaustive]
 pub struct ValidationOptions<'a> {
     /// The ancestors of the node being validated, outermost first.
     ///
@@ -131,7 +129,6 @@ pub struct ValidationOptions<'a> {
 /// Mirrors upstream's `ConfigFunction`. Both hooks are synchronous; see
 /// `DIVERGENCES.md` entry 3.
 #[derive(Clone, Default)]
-#[non_exhaustive]
 pub struct ConfigFunction {
     /// What the call returns, used to type-check the attribute it feeds.
     ///

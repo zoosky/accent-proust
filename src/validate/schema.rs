@@ -180,7 +180,6 @@ pub trait MatchPattern {
 /// and [`required`](SchemaAttribute::required), where absent and `false` mean
 /// the same thing.
 #[derive(Clone, Default)]
-#[non_exhaustive]
 pub struct SchemaAttribute {
     /// The type the value must have.
     ///
@@ -216,7 +215,6 @@ pub struct SchemaAttribute {
 /// Mirrors upstream's `SchemaSlot`. A slot is content, not a value, so it has
 /// no type and no matches -- only whether it is required and whether it renders.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct SchemaSlot {
     /// Whether and how the rendered slot reaches the output.
     ///
@@ -237,7 +235,6 @@ pub struct SchemaSlot {
 /// them in one sequence, and a tool diffing that sequence would see a reordering
 /// as a change.
 #[derive(Clone, Default)]
-#[non_exhaustive]
 pub struct Schema {
     /// The element name the transformer emits.
     ///
