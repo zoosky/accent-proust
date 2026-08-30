@@ -27,7 +27,8 @@
 //! stage from an attacker-controlled document, and this crate promises
 //! panic-freedom; a recursive `join` over a nested array would trade that
 //! promise for four fewer lines. This is the same reasoning that gave
-//! `crate::ast::Node` a manual iterative `Drop`.
+//! `crate::ast::Node` and [`Tag`](crate::renderable::Tag) their manual
+//! iterative `Drop`.
 
 use crate::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar};
 
@@ -382,12 +383,15 @@ mod tests {
         dismantle(value);
     }
 
-    /// Take a nested value apart iteratively.
+    /// Take a nested value apart iteratively, so the fixture's own cleanup is
+    /// not what fails.
     ///
-    /// The renderable tree's `Drop` is Goal C's to decide, and a derived one is
-    /// recursive: without this, the test above passes and then aborts while
-    /// cleaning up, which reads as a failure in the code under test rather than
-    /// in the fixture.
+    /// [`Tag`](crate::renderable::Tag) carries a manual iterative `Drop`, so a
+    /// deep *tree* cleans itself up. [`Scalar`] deliberately does not -- it is
+    /// the leaf type, and scalars drop where they stand -- so this fixture, and
+    /// only this one, has to unwind itself. Without it the test passes and then
+    /// aborts with SIGABRT while dropping, which reads as a failure in the code
+    /// under test rather than in the fixture. Verified by deleting it.
     fn dismantle(value: Scalar) {
         let mut current = value;
         loop {

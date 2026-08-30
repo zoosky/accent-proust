@@ -433,26 +433,9 @@ mod beyond_upstream {
         assert!(html.starts_with(&"<b>".repeat(DEPTH)));
         assert!(html.ends_with(&format!("<i>x</i>{}", "</b>".repeat(DEPTH))));
 
-        dismantle(tree);
-    }
-
-    /// Take a deep tree apart iteratively.
-    ///
-    /// The renderable tree's `Drop` is Goal C's to decide, and a derived one is
-    /// recursive: without this the test above passes and then aborts while
-    /// cleaning up, which reads as a failure in the code under test rather than
-    /// in the fixture.
-    fn dismantle(tree: RenderableTreeNode) {
-        let mut current = tree;
-        loop {
-            let RenderableTreeNode::Tag(mut tag) = current else {
-                break;
-            };
-            match tag.children.pop() {
-                Some(child) => current = child,
-                None => break,
-            }
-        }
+        // The tree drops itself here. `Tag` carries a manual iterative `Drop`
+        // for the same reason this walk is iterative, so the fixture needs no
+        // help unwinding.
     }
 
     // --- attributes that hold a subtree -----------------------------------

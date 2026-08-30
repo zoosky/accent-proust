@@ -137,7 +137,8 @@ enum Step<'a> {
 /// attacker-controlled, and a stack overflow in Rust aborts the process rather
 /// than raising something a caller could catch. That makes recursion here
 /// incompatible with the crate's panic-freedom promise, for the same reason
-/// `crate::ast::Node` carries a manual iterative `Drop`.
+/// `crate::ast::Node` and [`Tag`](crate::renderable::Tag) both carry a manual
+/// iterative `Drop`.
 ///
 /// The stack holds children in reverse so they pop in document order, with the
 /// closing tag pushed underneath them.
