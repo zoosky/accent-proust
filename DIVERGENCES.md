@@ -48,8 +48,19 @@ cases do rely on the default and are annotated against this entry: "Conditional
 and variable in code example with indentation", "Tag after a comment in a code
 example", and "Multiple sequential tags in a code example". Each has a fence
 carrying no `process` annotation and expects its content split into text and tag
-children. Every other fence case in the corpus states `process` explicitly and
-is reached either way.
+children.
+
+A fourth, "Using a backtick in a fenced code block string attribute", is charged
+here for a subtler reason worth spelling out. It replaces the `fence` schema
+with one of its own, which has no `transform` hook -- and a replacement is total
+upstream, hook included. Its fence therefore takes the generic path and renders
+its *children*, which upstream has because it processed the fence and this crate
+does not: here the text is the unrendered `content` attribute that the built-in
+hook exists to put back. So the case fails on the `process` default even though
+nothing in it mentions `process`.
+
+Every other fence case in the corpus states `process` explicitly and is reached
+either way.
 
 ## 2. The CommonMark engine is pulldown-cmark, not markdown-it
 
@@ -362,3 +373,40 @@ split -- and only the indented block form diverges. Upstream's
 valid conditionals within a cell"; the ported test asserts what this crate
 produces and names this entry, so fixing the segmenter turns that test red
 rather than leaving it silently wrong.
+
+## 14. Transform recursion is depth-limited
+
+**Upstream:** `transformer.node` recurses into `transformer.children`, which
+recurses back into `transformer.node`, with no bound. A document nested deeply
+enough exhausts V8's stack and throws a `RangeError` a caller can catch.
+
+**Here:** the same recursion stops at `MAX_TRANSFORM_DEPTH` -- 512 levels. A node
+below that depth transforms to nothing, and its ancestors render normally.
+
+**Why:** the same reason as entry 9, one stage further up. Nesting depth is
+attacker-controlled -- `{% a %}` repeated is one level per line -- and the Rust
+equivalent of V8's `RangeError` is a stack overflow, which aborts the process
+and cannot be caught. A crate that promises panic-freedom over arbitrary input
+needs a bound rather than a hope.
+
+The recursion cannot simply be made iterative, which would have been the better
+answer. A schema `transform` hook receives a node and calls back into
+`transform::children` for its content, so unrolling the walk onto an explicit
+stack would mean giving every hook a continuation -- changing the signature a
+host writes against, and changing it for a case no real document reaches. The
+bound is counted in a thread-local rather than passed as an argument for the
+same reason: a hook that forgot to thread it would silently disable the guard.
+
+**What it costs, exactly.** Nothing the corpus contains, and nothing a person
+writes: 512 levels of nesting is far past where HTML stops meaning anything.
+It is reachable by a generated or hostile document, and such a document renders
+truncated rather than taking the process down.
+
+**And what still holds because of it.** `Scalar` has no iterative `Drop`, on the
+grounds that scalar nesting comes from the value grammar, which entry 9 bounds
+at 64. The transform stage keeps that true: it builds a `Scalar` only through
+`Scalar::from_value` over a value that resolution has already bounded, and never
+synthesises one from document structure. Slot content, which *does* track
+document depth, goes into the attribute map as `RenderableTreeNodes` -- whose
+`Tag` carries the iterative `Drop`. A later stage that builds scalars from
+document structure breaks that assumption and needs to say so.

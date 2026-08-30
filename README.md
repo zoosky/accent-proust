@@ -88,16 +88,17 @@ cargo test --test conformance -- --nocapture
 ```
 
 ```text
-conformance: 5 green, 11 annotated, 89 failing (of 105)
+conformance: 89 green, 12 annotated, 4 failing (of 105)
 ```
 
 "Annotated" is a case that fails because it exercises a declared divergence;
 it is counted apart from a failure so that giving something up stays visible
 instead of being absorbed. Six are
 [divergence 8](DIVERGENCES.md), the `allowIndentation` option upstream's corpus
-runner switches on and this crate cannot reach; three are fences relying on the
+runner switches on and this crate cannot reach; four are fences relying on the
 `process` default that divergence 1 inverts; one is frontmatter, which
-divergence 7 makes the host's.
+divergence 7 makes the host's; and one writes a block tag indented inside a list
+item, which divergence 13 puts out of reach.
 
 The green three are the cases graded on a grammar error message. The harness
 names, per case, the stage each of the others is waiting for. Two answers cover

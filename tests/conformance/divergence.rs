@@ -29,7 +29,7 @@ pub struct Annotation {
 /// Asserted, not counted: if a corpus refresh renames a case, its annotation
 /// silently stops matching and the case reappears as a failure with no
 /// explanation. Pinning the number turns that into an error that names itself.
-pub const EXPECTED_COUNT: usize = 11;
+pub const EXPECTED_COUNT: usize = 12;
 
 const ALLOW_INDENTATION: &str = "DIVERGENCES.md #8 (allowIndentation)";
 const LITERAL_FENCES: &str = "DIVERGENCES.md #1 (fences do not process tags by default)";
@@ -37,6 +37,10 @@ const LITERAL_FENCES_REASON: &str =
     "expects a fence with no `process` annotation to have its content split into \
      text and tag children, which is upstream's default and the inverse of this \
      crate's";
+const LITERAL_FENCES_UNHOOKED_REASON: &str =
+    "replaces the `fence` schema with one carrying no transform hook, so the \
+     fence renders its children -- which upstream has, because its fences \
+     process tags by default, and this crate's do not";
 const NO_FRONTMATTER: &str = "DIVERGENCES.md #7 (metadata blocks are the host's)";
 const NO_FRONTMATTER_REASON: &str =
     "feeds a document that still carries its metadata block; the host removes \
@@ -58,8 +62,11 @@ const ALLOW_INDENTATION_REASON: &str =
 /// these cases indent content inside a tag and still expect paragraphs, fences
 /// and tables rather than indented code blocks.
 ///
-/// Three more are fences that rely on upstream's `process` default, which
-/// divergence 1 inverts. Every other fence case in the corpus states `process`
+/// Four more are fences that rely on upstream's `process` default, which
+/// divergence 1 inverts. Three expect a fence's content split into text and tag
+/// children; the fourth replaces the `fence` schema with one that has no
+/// transform hook, which leaves the generic path rendering children a literal
+/// fence does not have. Every other fence case in the corpus states `process`
 /// explicitly and is reached either way.
 ///
 /// One is frontmatter, which divergence 7 makes the host's rather than this
@@ -103,6 +110,11 @@ pub const ANNOTATED: &[Annotation] = &[
         case: "Multiple sequential tags in a code example",
         entry: LITERAL_FENCES,
         reason: LITERAL_FENCES_REASON,
+    },
+    Annotation {
+        case: "Using a backtick in a fenced code block string attribute",
+        entry: LITERAL_FENCES,
+        reason: LITERAL_FENCES_UNHOOKED_REASON,
     },
     Annotation {
         case: "Frontmatter",

@@ -32,6 +32,7 @@
 
 use proust::ast::Node;
 use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar};
 use proust::validate::validate_tree;
 
 use crate::config;
@@ -39,11 +40,6 @@ use crate::corpus::{Case, Renderer};
 use crate::value::Value;
 
 /// What running a case produced.
-///
-/// No variant is constructed by [`run`] yet -- the stages that produce them are
-/// the port. They are constructed by the harness's own tests, which grade every
-/// corpus case against its own expectation, so the grading path is exercised on
-/// real data before any of it is reachable from the engine.
 #[derive(Debug)]
 pub enum Outcome {
     /// The renderable tree's children, for a case graded on its tree.
@@ -88,27 +84,23 @@ impl std::fmt::Display for Unimplemented {
 
 /// Run one case through `proust`.
 ///
-/// Parse, validate and the HTML renderer are implemented; transform is not. So
-/// this dispatches on how the corpus grades the case and answers with the first
-/// stage that is missing, by name. A blanket "parse is not implemented" told
-/// every case the same untrue thing; naming the stage makes the failing column
-/// readable as a work list rather than a wall.
+/// Every stage but the formatter is implemented, and the formatter grades no
+/// case. So this dispatches on how the corpus grades the case, and the one
+/// answer it still has to give by name is the schema a case declares that the
+/// built-ins do not cover.
 ///
-/// # Why a schema error can still be reported as unimplemented
+/// # Why an undefined schema is still reported as a missing stage
 ///
 /// Upstream's `Markdoc.validate` merges its built-in node, tag and function
 /// schemas into the caller's config before validating (`index.ts`,
-/// `mergeConfig`). Those are schema *content* and belong to the transform
-/// stage, so the config assembled here from the corpus is the case's own
-/// declarations and nothing else -- and a document whose `document` node or
-/// `table` tag has no schema reports `node-undefined` or `tag-undefined` for
-/// every node upstream had a built-in for.
+/// `mergeConfig`), and so does the config this harness assembles -- it starts
+/// from `builtins::config()`. A `node-undefined` or `tag-undefined` that
+/// survives that is a schema the *corpus case* relies on and neither the
+/// built-ins nor its own `config:` block declares.
 ///
-/// Reporting that as a mismatch would bury the six validation cases under a
-/// diff about missing built-ins. So an undefined built-in is reported as the
-/// missing stage it is, which keeps the failing column a work list: each of
-/// those cases turns green when the built-in schemas land, with no further
-/// change here.
+/// Reporting it as a mismatch would bury the case under a diff about a missing
+/// schema rather than about the error it is testing, so it is reported as the
+/// missing stage it is.
 ///
 /// # What a parsed document can already grade
 ///
@@ -120,8 +112,8 @@ impl std::fmt::Display for Unimplemented {
 /// have no schemas either, so validating them would replace an exact match with
 /// an `Undefined node` report.
 ///
-/// Everything graded on a tree or on HTML needs the transform stage, because
-/// `expected` in the corpus is the **renderable** tree, not the AST.
+/// Everything else is graded on the transformed tree -- `expected` in the corpus
+/// is the *renderable* tree, not the AST -- or on the HTML rendered from it.
 pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
     // The corpus is graded under a non-default configuration, and this is where
     // that is honoured: `spec/marktest/index.ts:21-24` builds its tokenizer with
@@ -159,22 +151,171 @@ pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
         ));
     }
 
-    // Both graded shapes wait on the same stage, whichever renderer the case
-    // names: `expected` in the corpus is the *renderable* tree, not the AST.
-    // The four `renderer: html` cases were tagged "transform and the html
-    // renderer" / "D/E" until Goal E landed; the renderer exists now, so they
-    // wait on one stage and this says which. When transform lands the arms
-    // separate again, into
-    //
-    //     Renderer::Tree => Ok(Outcome::Tree { .. }),
-    //     Renderer::Html => Ok(Outcome::Html(proust::render::render_all(..))),
-    //
-    // and nothing else in this file changes.
+    let config = match config::build(case) {
+        Ok(config) => config,
+        Err(e) => panic!(
+            "{}: its config block could not be translated: {e}",
+            case.name
+        ),
+    };
+    let transformed = proust::transform::transform(&document, &config);
+
     match case.renderer {
-        Renderer::Tree | Renderer::Html => Err(Unimplemented {
-            stage: "transform",
-            phase: "D",
+        // `render_all` takes the list form, and `into_vec` is the flattening
+        // upstream's renderer does when it is handed the union's array arm.
+        Renderer::Html => Ok(Outcome::Html(proust::render::render_all(
+            &transformed.into_vec(),
+        ))),
+        Renderer::Tree => Ok(Outcome::Tree {
+            children: article_children(transformed),
+            // Schema validation is Goal C's. What the parser found is reported
+            // meanwhile, which is honest rather than partial: these are exactly
+            // the errors upstream's `validate` collects before it consults a
+            // schema.
+            validation: parse_errors(&document),
         }),
+    }
+}
+
+/// The children of the `<article>` a transformed document renders as.
+///
+/// Upstream's runner compares `output.children`, where `output` is the whole
+/// document put through its React renderer. Everything the corpus grades lives
+/// one level inside the root element, so the root is unwrapped -- and its
+/// absence is an empty tree rather than an error, which is upstream's
+/// `output.children || []`.
+fn article_children(nodes: RenderableTreeNodes) -> Vec<Value> {
+    match react(nodes).get("children") {
+        Some(Value::Seq(children)) => children.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// The renderable tree as upstream's React shim renders it.
+///
+/// This is the part of the grading that the corpus does not show, and it is
+/// three rules from `renderers/react/react.ts` plus the shim in
+/// `spec/marktest/react-shim.ts`:
+///
+/// 1. **`class` is renamed `className`** and moved to the end of the attribute
+///    list, and a falsy `class` is dropped entirely.
+/// 2. **An empty attribute map is omitted**, not rendered as `{}`. React is
+///    handed `null` for it, and the shim only sets the key for a truthy value.
+/// 3. **An empty child list is omitted**, for the same reason.
+///
+/// Ignoring any of the three turns most of the corpus red for a difference that
+/// is in the shim rather than in the tree.
+///
+/// A fourth rule is the one easiest to miss, because it is a *difference*
+/// between two paths that look alike. A list of nodes reached as a **child**
+/// goes through `render`, which wraps it in a `Fragment` element; the same list
+/// reached as an **attribute value** goes through `deepRender`, which leaves it
+/// a plain JSON array. Slots arrive by the second path, so
+/// [`react_attribute`] is not [`react`] with a different name.
+fn react(nodes: RenderableTreeNodes) -> Value {
+    match nodes {
+        RenderableTreeNodes::One(node) => react_node(node),
+        // A list reaches `React.createElement(Fragment, null, ...)`, which the
+        // shim renders as a `Fragment` element.
+        RenderableTreeNodes::Many(nodes) => {
+            let children: Vec<Value> = nodes.into_iter().map(react_node).collect();
+            let mut out = vec![("tag".to_string(), Value::Str("Fragment".to_string()))];
+            if !children.is_empty() {
+                out.push(("children".to_string(), Value::Seq(children)));
+            }
+            Value::Map(out)
+        }
+        // The enums are `#[non_exhaustive]`, which has no effect inside the
+        // crate and does here. A variant this harness has not been taught is a
+        // change to the renderable tree, and rendering it as nothing would
+        // report that as a conformance failure.
+        other => panic!("the renderable tree grew a shape this harness cannot grade: {other:?}"),
+    }
+}
+
+/// One attribute value, as `deepRender` renders it.
+///
+/// The corpus expects a rendered slot to be a JSON array of elements -- "Basic
+/// slot" wants `attributes: {bar: [{tag: p, ...}]}` -- because `deepRender`
+/// maps over an array rather than handing it to `React.createElement`.
+fn react_attribute(nodes: RenderableTreeNodes) -> Value {
+    match nodes {
+        RenderableTreeNodes::One(node) => react_node(node),
+        RenderableTreeNodes::Many(nodes) => Value::Seq(nodes.into_iter().map(react_node).collect()),
+        other => panic!("the renderable tree grew a shape this harness cannot grade: {other:?}"),
+    }
+}
+
+fn react_node(node: RenderableTreeNode) -> Value {
+    // `Tag` carries a manual iterative `Drop`, so its fields are taken rather
+    // than moved out -- the same tax `ast::Node` charges, and for the same
+    // reason: a renderable tree is as deep as the document that produced it.
+    let mut tag = match node {
+        RenderableTreeNode::Scalar(value) => return scalar(&value),
+        RenderableTreeNode::Tag(tag) => *tag,
+        other => {
+            panic!("the renderable tree grew a shape this harness cannot grade: {other:?}")
+        }
+    };
+
+    let mut attributes: Vec<(String, Value)> = Vec::new();
+    let mut class_name: Option<Value> = None;
+    for (key, value) in std::mem::take(&mut tag.attributes) {
+        if key == "class" {
+            let rendered = react_attribute(value);
+            if truthy(&rendered) {
+                class_name = Some(rendered);
+            }
+            continue;
+        }
+        attributes.push((key, react_attribute(value)));
+    }
+    if let Some(class_name) = class_name {
+        attributes.push(("className".to_string(), class_name));
+    }
+
+    let children: Vec<Value> = std::mem::take(&mut tag.children)
+        .into_iter()
+        .map(react_node)
+        .collect();
+
+    let mut out = vec![("tag".to_string(), Value::Str(std::mem::take(&mut tag.name)))];
+    if !attributes.is_empty() {
+        out.push(("attributes".to_string(), Value::Map(attributes)));
+    }
+    if !children.is_empty() {
+        out.push(("children".to_string(), Value::Seq(children)));
+    }
+    Value::Map(out)
+}
+
+/// JavaScript's `Boolean()`, which is what `if (className)` applies.
+fn truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(boolean) => *boolean,
+        Value::Int(number) => *number != 0,
+        Value::Float(number) => *number != 0.0 && !number.is_nan(),
+        Value::Str(text) => !text.is_empty(),
+        Value::Seq(_) | Value::Map(_) => true,
+    }
+}
+
+/// A rendered scalar as the harness's comparison value.
+fn scalar(value: &Scalar) -> Value {
+    match value {
+        Scalar::Null => Value::Null,
+        Scalar::Boolean(boolean) => Value::Bool(*boolean),
+        Scalar::Number(number) => Value::Float(*number),
+        Scalar::String(text) => Value::Str(text.clone()),
+        Scalar::Array(items) => Value::Seq(items.iter().map(scalar).collect()),
+        Scalar::Object(entries) => Value::Map(
+            entries
+                .iter()
+                .map(|(key, value)| (key.clone(), scalar(value)))
+                .collect(),
+        ),
+        other => panic!("`Scalar` grew a variant this harness cannot grade: {other:?}"),
     }
 }
 

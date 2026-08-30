@@ -17,6 +17,7 @@
 
 mod attribute_type;
 mod config;
+pub mod nodes;
 mod schema;
 pub mod schema_types;
 mod validator;
