@@ -22,8 +22,9 @@ failures, so `N green, M annotated, P failing` distinguishes "we chose this"
 from "we have not done this yet".
 
 The file started at **eight entries**, on purpose. An empty divergence file
-invites the belief that there are none. Entries 9 and 10 were added by the
-tag-internals parser, declared in the pull request that ported it.
+invites the belief that there are none. Each entry since was declared in the
+pull request that ported the stage which found it: 9 and 10 by the tag-internals
+parser, 11 by the segmenter, 12 by the validator, 13 and 14 by the transformer.
 
 ---
 
@@ -190,10 +191,19 @@ a mode that stock Markdoc also does not enable by default.
 false`, so this matches default Markdoc. But upstream's **conformance corpus
 runs with the option on** (`spec/marktest/index.ts:21-24`, which constructs its
 tokenizer with `allowIndentation: true, allowComments: true`). Six of the 105
-cases exercise it, and they name themselves: "Indented paragraph in a tag"
-(three of them), "Oddly indented paragraph in a tag", "Indented fence in a
-tag", and "Advanced table with inner content". Those six are annotated against
-this entry rather than counted as failures.
+cases were annotated against this entry when it was written, before there was a
+transform stage to grade them through. Four still are: "Indented paragraph in a
+tag", which the corpus uses three times, and "Indented fence in a tag".
+
+The other two -- "Oddly indented paragraph in a tag" and "Advanced table with
+inner content" -- turned out to be reachable, and the annotations were removed
+when the transformer made that visible. Neither actually needs the option:
+their indentation is inside a list item or a tag body, where stock CommonMark
+already reads it as content rather than as a code block. They were annotated on
+the reasonable prediction that anything indented inside a tag would need
+`allowIndentation`, and the prediction was too wide. The harness is what caught
+it -- an annotated case is still run, and a passing one is reported as a
+divergence that has stopped being true.
 
 The formatter is unaffected in a way worth stating, because the opposite is
 easy to assume: its indenting branch is gated on the same option, so with the
@@ -285,7 +295,7 @@ exact trade entry 2 exists to refuse. Emulating half of it and calling it done
 would be worse than declaring it.
 
 **What it costs, exactly.** Nothing the corpus currently charges to this entry:
-the six cases that indent content inside a tag are already annotated against
+the cases that indent content inside a tag are already annotated against
 entry 8, which subsumes them, and "Disabled setext heading" is reachable
 because the `lheading` half *is* reproduced. A document that relies on four-space
 indentation to write a paragraph -- rather than to nest one inside a tag --
@@ -293,8 +303,10 @@ renders as code here and as prose upstream.
 
 ---
 
-The last one comes from the validator: one field of the schema shape is a
-JavaScript type this crate has no equivalent of and declines to acquire.
+The last three come from the stages above the parser. One is a field of the
+schema shape whose JavaScript type this crate has no equivalent of and declines
+to acquire; the other two the transformer found, which is the first stage
+positioned to see either.
 
 ## 12. `matches` takes a host-supplied pattern, not a regular expression
 

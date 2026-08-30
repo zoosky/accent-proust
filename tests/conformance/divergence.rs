@@ -29,7 +29,7 @@ pub struct Annotation {
 /// Asserted, not counted: if a corpus refresh renames a case, its annotation
 /// silently stops matching and the case reappears as a failure with no
 /// explanation. Pinning the number turns that into an error that names itself.
-pub const EXPECTED_COUNT: usize = 12;
+pub const EXPECTED_COUNT: usize = 10;
 
 const ALLOW_INDENTATION: &str = "DIVERGENCES.md #8 (allowIndentation)";
 const LITERAL_FENCES: &str = "DIVERGENCES.md #1 (fences do not process tags by default)";
@@ -56,11 +56,17 @@ const ALLOW_INDENTATION_REASON: &str =
 
 /// The annotated cases.
 ///
-/// Six are the `allowIndentation` set. Upstream's corpus runner constructs its
+/// Four are the `allowIndentation` set. Upstream's corpus runner constructs its
 /// tokenizer with `allowIndentation: true` (`spec/marktest/index.ts:21-24`),
 /// which switches off CommonMark's four-space rule across nine block rules, so
 /// these cases indent content inside a tag and still expect paragraphs, fences
 /// and tables rather than indented code blocks.
+///
+/// It was six until the transformer landed and two of them started passing.
+/// Their indentation sits inside a list item or a tag body, where stock
+/// CommonMark reads it as content already, so the option was never what they
+/// needed. Removing an annotation that has stopped being true is the point of
+/// running annotated cases rather than skipping them.
 ///
 /// Four more are fences that rely on upstream's `process` default, which
 /// divergence 1 inverts. Three expect a fence's content split into text and tag
@@ -82,17 +88,7 @@ pub const ANNOTATED: &[Annotation] = &[
         reason: ALLOW_INDENTATION_REASON,
     },
     Annotation {
-        case: "Oddly indented paragraph in a tag",
-        entry: ALLOW_INDENTATION,
-        reason: ALLOW_INDENTATION_REASON,
-    },
-    Annotation {
         case: "Indented fence in a tag",
-        entry: ALLOW_INDENTATION,
-        reason: ALLOW_INDENTATION_REASON,
-    },
-    Annotation {
-        case: "Advanced table with inner content",
         entry: ALLOW_INDENTATION,
         reason: ALLOW_INDENTATION_REASON,
     },
