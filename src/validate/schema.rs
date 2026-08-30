@@ -78,8 +78,31 @@ pub type MatchesHook =
 ///
 /// Upstream `ConfigFunction['transform']`. The parameters arrive resolved and
 /// keyed exactly as the call site keyed them.
+///
+/// # Why both sides are `Option`
+///
+/// [`None`] is JavaScript's `undefined`, and Markdoc's own functions depend on
+/// telling it from `null` on both sides. Do not simplify it away.
+///
+/// On the **parameter** side, a key is present with an undefined value rather
+/// than absent: upstream's grammar always writes `parameters[name || index] =
+/// value`, and `ast/base.ts::resolve` maps over `Object.entries`, so an
+/// argument that did not resolve keeps its key. The arity is load-bearing.
+/// `default` is literally `parameters[0] === undefined ? parameters[1] :
+/// parameters[0]`, so telling the two apart is its whole job; `equals` and `or`
+/// fold over `Object.values`, and dropping an unresolved key would change what
+/// they fold over. The conformance corpus pins it: "Conditional with equals and
+/// an undefined variable" requires `equals($foo.bar, "test")` with no variables
+/// to be false, which it is only if the unresolved argument still counts.
+///
+/// On the **return** side, `debug()` and `default($unset)` with no fallback
+/// return `undefined`, which makes the attribute disappear from the output.
+/// [`Value::Null`] would render it instead.
 pub type FunctionTransformHook = Arc<
-    dyn for<'a, 'c> Fn(&IndexMap<String, Value>, &'c Config<'a>) -> Value + Send + Sync + 'static,
+    dyn for<'a, 'c> Fn(&IndexMap<String, Option<Value>>, &'c Config<'a>) -> Option<Value>
+        + Send
+        + Sync
+        + 'static,
 >;
 
 /// Reports problems with a call that its parameter declarations cannot express.
