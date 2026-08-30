@@ -63,6 +63,7 @@ pub mod functions;
 pub mod grammar;
 pub mod parse;
 pub mod render;
+pub mod renderable;
 pub mod tags;
 pub mod transform;
 pub mod validate;

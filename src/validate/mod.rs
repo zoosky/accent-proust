@@ -14,3 +14,15 @@
 //!
 //! This crate owns the schema *shape*. It does not own schema *content*: where
 //! a schema comes from is the host's decision, reached through `SchemaSource`.
+
+mod attribute_type;
+mod config;
+mod schema;
+pub mod schema_types;
+
+pub use attribute_type::{type_to_string, AttributeType, ValidationType};
+pub use config::{Config, ConfigFunction, ValidationOptions, Variables};
+pub use schema::{
+    AttributeValidateHook, FunctionTransformHook, FunctionValidateHook, MatchPattern, MatchesHook,
+    RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot, TransformHook, ValidateHook,
+};
