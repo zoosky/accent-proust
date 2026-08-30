@@ -77,7 +77,7 @@ pub struct ParseOptions<'s> {
     /// upstream's default of `["if"]`.
     ///
     /// The table rewrite runs at the end of the parse (see
-    /// [`transform::table`](crate::transform::table)), so this is a parse option
+    /// [`crate::transform::table`]), so this is a parse option
     /// even though the pass it configures is a transform. A tag not named here
     /// that appears between rows is reported as `table-syntax` rather than kept,
     /// because a component wrapping `<tr>` elements produces invalid HTML.

@@ -34,10 +34,7 @@ use crate::validate::{Config, RenderPolicy, Schema, SchemaAttribute, ValidationT
 /// both say what they are for.
 #[must_use]
 pub fn truthy(value: Option<&Value>) -> bool {
-    !matches!(
-        value,
-        None | Some(Value::Null) | Some(Value::Boolean(false))
-    )
+    !matches!(value, None | Some(Value::Null | Value::Boolean(false)))
 }
 
 /// One branch of a conditional: what has to hold, and what it renders.

@@ -41,6 +41,25 @@ use crate::validate::{Config, Schema, SchemaAttribute, ValidationType};
 /// The number is far above any document a person writes and far below the
 /// frames a small thread stack holds: HTML stops nesting meaningfully long
 /// before this.
+///
+/// # What this stage owes the renderable tree
+///
+/// [`Tag`] carries a manual iterative [`Drop`] because its nesting tracks the
+/// document's. [`Scalar`] deliberately does **not**, on the grounds that scalar
+/// nesting comes from the value grammar, which
+/// [`MAX_RESOLVE_DEPTH`](crate::transform::MAX_RESOLVE_DEPTH) bounds at 64.
+/// This stage is the one positioned to break that assumption, and it holds it:
+///
+/// - Every `Scalar` it produces comes from `Scalar::from_value` over a value
+///   resolution has already bounded. Nothing here synthesises a nested array or
+///   object out of document structure.
+/// - Slot content, which *does* track document depth, goes into the attribute
+///   map as [`RenderableTreeNodes`] rather than as a scalar -- so it is `Tag`
+///   underneath, and guarded.
+///
+/// A later stage that builds a scalar whose depth follows the document rather
+/// than the grammar invalidates that, and needs to say so rather than assume
+/// the bound still holds.
 pub const MAX_TRANSFORM_DEPTH: usize = 512;
 
 thread_local! {

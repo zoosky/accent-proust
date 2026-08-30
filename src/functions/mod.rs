@@ -23,7 +23,7 @@
 //!
 //! # Truthiness here is Markdoc's, not JavaScript's
 //!
-//! `and`, `or` and `not` all call [`truthy`](crate::tags::truthy), which is
+//! `and`, `or` and `not` all call [`crate::tags::truthy`], which is
 //! `value !== false && value !== undefined && value !== null`. `and(0, "")` is
 //! **true**. The corpus fixes this in "Truthy things are not false", and using
 //! JavaScript's `Boolean()` instead would invert five of its assertions.
@@ -51,6 +51,7 @@ pub fn builtin() -> IndexMap<String, ConfigFunction> {
 
 /// A built-in: a transform, and no declared parameters or return type.
 ///
+///
 /// `parameters: None` rather than `Some(empty)` on purpose -- see
 /// [`ConfigFunction::parameters`]. `Some` of an empty map would reject every
 /// argument, and these take any number.
@@ -77,6 +78,12 @@ fn positional(parameters: &Parameters, index: usize) -> Option<&Value> {
 ///
 /// An empty call is `true`, which is what `Array.every` returns for an empty
 /// array.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the `Option` is the hook's signature, not this function's choice: \
+              a built-in that cannot fail still has to say so in the type every \
+              function shares"
+)]
 fn and(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
     Some(Value::Boolean(
         parameters.values().all(|value| truthy(value.as_ref())),
@@ -84,6 +91,10 @@ fn and(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
 }
 
 /// `or(...)`: some argument is truthy.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the `Option` is the hook's signature; see `and`"
+)]
 fn or(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
     Some(Value::Boolean(
         parameters.values().any(|value| truthy(value.as_ref())),
@@ -91,6 +102,10 @@ fn or(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
 }
 
 /// `not(x)`: the first argument is not truthy.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the `Option` is the hook's signature; see `and`"
+)]
 fn not(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
     Some(Value::Boolean(!truthy(positional(parameters, 0))))
 }
@@ -101,6 +116,10 @@ fn not(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
 /// the same object; this compares them structurally. See `DIVERGENCES.md` --
 /// object identity does not survive resolution into owned values, and
 /// structural equality is what an author writing `equals($a, [1])` means.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the `Option` is the hook's signature; see `and`"
+)]
 fn equals(parameters: &Parameters, _config: &Config<'_>) -> Option<Value> {
     let mut values = parameters.values();
     let Some(first) = values.next() else {
@@ -145,7 +164,11 @@ fn write_json(value: &Value, indent: usize, out: &mut String) {
         }
     };
     match value {
-        Value::Null => out.push_str("null"),
+        // A reference reaching `debug` was never resolved, which is a caller's
+        // mistake rather than data. `JSON.stringify` prints an object's own
+        // fields; `null` says "there is nothing here" instead of inventing a
+        // spelling for a bug, and it is what `null` itself prints as.
+        Value::Null | Value::Variable(_) | Value::Function(_) => out.push_str("null"),
         Value::Boolean(boolean) => out.push_str(if *boolean { "true" } else { "false" }),
         Value::Number(number) => {
             // `JSON.stringify` writes a non-finite number as `null`, and prints
@@ -188,12 +211,6 @@ fn write_json(value: &Value, indent: usize, out: &mut String) {
             pad(out, indent);
             out.push('}');
         }
-        // A reference reaching `debug` has not been resolved, which means the
-        // caller skipped resolution rather than that the value is a reference.
-        // `JSON.stringify` of an object with no `toJSON` prints its own fields;
-        // printing `null` says "there is nothing here" instead of inventing a
-        // spelling for a bug.
-        Value::Variable(_) | Value::Function(_) => out.push_str("null"),
     }
 }
 
@@ -237,10 +254,21 @@ mod tests {
         transform(&parameters, &config)
     }
 
+    /// An argument that resolved. Spelled out because the alternative -- writing
+    /// `Some(..)` at forty call sites -- makes the `None`s harder to see, and the
+    /// `None`s are what these tests are about.
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "the wrapping is the point: it names the argument as defined"
+    )]
     fn some(value: Value) -> Option<Value> {
         Some(value)
     }
 
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "the wrapping is the point; see `some`"
+    )]
     fn string(text: &str) -> Option<Value> {
         Some(Value::String(text.to_string()))
     }

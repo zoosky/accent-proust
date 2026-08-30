@@ -22,8 +22,9 @@
 //!
 //! Upstream resolves the whole tree into a second tree and then transforms it.
 //! Here each attribute is resolved at the moment the transform stage reads it,
-//! which reaches the same answer -- see [`resolve`] for why the one case where
-//! the configuration changes mid-tree, `{% partial %}`, agrees too.
+//! which reaches the same answer -- see the [`resolve`](mod@resolve) module for
+//! why the one case where the configuration changes mid-tree, `{% partial %}`,
+//! agrees too.
 
 mod node;
 pub mod resolve;
@@ -46,6 +47,7 @@ use crate::validate::Config;
 /// [`Config::new`].
 ///
 /// ```
+/// # #[cfg(feature = "pulldown-cmark-tokenizer")] {
 /// use proust::renderable::{RenderableTreeNode, RenderableTreeNodes};
 ///
 /// let document = proust::parse::parse("# Title\n");
@@ -56,6 +58,7 @@ use crate::validate::Config;
 ///     panic!("a document renders one element");
 /// };
 /// assert_eq!(article.name, "article");
+/// # }
 /// ```
 #[must_use]
 pub fn transform<'a>(document: &'a Node<'a>, config: &Config<'a>) -> RenderableTreeNodes {

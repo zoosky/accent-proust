@@ -30,6 +30,16 @@
 //! Rust representation touches the conversion in this file rather than the
 //! grading in every other one.
 
+// A defect this file finds is a defect in the *harness* -- a config it cannot
+// map, a renderable variant it has not been taught -- and the honest response is
+// to stop the run and say so. Reporting it as a conformance failure instead
+// would put a harness bug in the failing column, where it reads as work
+// outstanding on the crate.
+#![allow(
+    clippy::panic,
+    reason = "a harness that cannot grade a case must say so, not grade it wrongly"
+)]
+
 use proust::ast::Node;
 use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
 use proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar};
