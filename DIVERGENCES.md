@@ -422,3 +422,117 @@ synthesises one from document structure. Slot content, which *does* track
 document depth, goes into the attribute map as `RenderableTreeNodes` -- whose
 `Tag` carries the iterative `Drop`. A later stage that builds scalars from
 document structure breaks that assumption and needs to say so.
+
+## 15. Formatting is depth-limited
+
+**Upstream:** `formatNode` recurses into `formatChildren`, which recurses back
+into `formatNode`, with no bound; `formatScalar` recurses into nested arrays and
+hashes the same way. A tree nested deeply enough exhausts V8's stack and throws
+a `RangeError` a caller can catch.
+
+**Here:** both walks stop at `format::MAX_FORMAT_DEPTH` -- 128 levels. A node
+below that depth prints as nothing, and its ancestors print normally; a value
+below it prints as nothing inside brackets that still close.
+
+**Why:** the same reason as entries 9 and 14, one stage further along. Nesting
+depth is attacker-controlled, the Rust equivalent of V8's `RangeError` is a
+stack overflow, and a stack overflow aborts the process rather than raising
+anything a caller can catch. `src/lib.rs` states panic-freedom over arbitrary
+input as an API-level promise, and that promise is only true with a bound at
+every layer that recurses over document structure.
+
+An iterative rewrite was considered and rejected, for a different reason from
+entry 14's. The obstacle here is not a hook signature: it is that two arms --
+`blockquote` and `list` -- do not stream their children's output into their own.
+They call the formatter *at the top* on each child, take the finished string,
+and paste it behind a prefix, because each child has to be trimmed
+independently of its siblings. Unrolling the walk onto an explicit stack means
+unrolling those two re-entries as well, which is a continuation per list item
+in order to remove a bound that no document reaches.
+
+**Why 128 and not the transform stage's 512.** Because the number was measured
+rather than chosen, and the first choice was wrong. This walk carries a fatter
+frame than the transform's: printing a tag builds several strings before it
+recurses. Written as upstream writes it -- one function holding every arm --
+each frame carried every arm's locals, cost about 6 KB per level, and overflowed
+a 2 MiB thread stack at around 350 levels, which is *under* the 512 that was
+supposed to prevent exactly that. Splitting each arm into its own function put
+only the live arm on the stack and moved the ceiling a little past 700. 512
+would then sit inside the ceiling by less than half, which is not a margin for a
+published promise. 128 sits inside it by a factor of five, in the least
+favourable configuration this crate is built in: a debug build on the 2 MiB
+stack that `cargo test` gives every test.
+
+**Also bounded, for the same reason at the allocator rather than the stack:** a
+heading prints at most 1,024 `#` characters. `level` is an ordinary attribute,
+so a host can set it to any `f64`, and `"#".repeat(n)` for a large `n` is an
+allocation failure, which also aborts. The bound is far above CommonMark's six
+levels.
+
+**What it costs, exactly.** Nothing the corpus contains, nothing upstream's
+formatter test contains, and nothing a person writes. 128 levels is around forty
+levels of *authored* nesting, because a paragraph of text is already four --
+document, paragraph, inline, text -- and a list adds two per level. A generated
+or hostile document prints truncated rather than taking the process down.
+
+## 16. Four round-trip defects in upstream's formatter are fixed, not reproduced
+
+**Upstream:** the formatter emits output that does not parse back to the tree it
+came from, in four shapes. Each is reachable from an ordinary document, and all
+four are silent -- the output looks plausible.
+
+1. **A blockquote marks only its first line.** `formatter.ts:236-241` writes
+   `NL + indent + prefix + d`, one `> ` per *child*. A child that prints on more
+   than one line -- a paragraph with a soft break, a list, a fence -- comes back
+   with its later lines outside the quote. `> a\n> b` reprints as `> a\nb`.
+2. **An inline comment ends a line.** The `comment` arm appends a newline to
+   every comment. Upstream's tokenizer has an inline comment rule, so a comment
+   inside a sentence is a real node, and printing it splits the paragraph.
+3. **An indented fence closes at column zero.** The `fence` arm yields the
+   closing boundary with no indent. It looks correct in upstream's own tests
+   because content that *ends* with a newline leaves a trailing empty segment
+   that the indent-join above it indents. Content without one -- an empty fence,
+   or a last line with no terminator -- closes unindented, and the reprint is a
+   fence that never closes.
+4. **A tag with children that print nothing is written open-and-closed.** The
+   `tag` arm asks whether the child list is empty. A tag holding a child that
+   prints only whitespace -- an empty `table` node, an `error` node -- is
+   therefore written as `{% x %}` ... `{% /x %}` with nothing between, which
+   re-parses as a tag with *no* children. Upstream's own `tags` case fixes
+   `{% a %}{% /a %}` as `{% a /%}`, so its output does not settle until a second
+   pass.
+
+**Here:** the prefix goes on every line, an inline comment ends no line, the
+closing boundary carries the indent, and a tag whose children come to nothing
+self-closes.
+
+**Why:** because the round trip is the specification, not a nice property. r111
+§9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
+first consumer is a rewriting tool: the host's `migrate` command uses this
+formatter as its writer over a whole content tree. Reproducing defect 1 means
+silently moving the second line of every two-line blockquote out of its quote,
+in every migrated file, with nothing in the output that looks wrong. That is not
+a compatibility win worth having, and "upstream does it too" is not a defence a
+corrupted document accepts.
+
+All four were found by the property test rather than by reading, which is the
+argument for having written it: the shapes are individually obvious and
+collectively invisible.
+
+**What it costs, exactly.** Output differs from upstream only where upstream's
+own output does not re-parse. The first three fire in no other case -- upstream's
+`multi-paragraph blockquotes`, `"loose" lists` and `fences with no ending
+newline` cases all reprint byte-identically here, because their content already
+takes the branch that was correct. The fourth changes `{% x %}{% /x %}` into
+`{% x /%}` for a tag whose children print nothing, which is the same
+normalisation upstream already applies to a tag with no children at all.
+
+**And what is deliberately *not* fixed.** Upstream escapes exactly three things
+at the start of a run of text: a `*`, a `>`, and a run of `#`. There are more
+than three ways for text to look like a block -- a leading fence marker, a
+trailing backslash, a `|`, a `1.` -- and a reprint can therefore still change
+what a line means, for a tree that a document could not have produced in the
+first place. The escape set is upstream's contract and widening it changes the
+bytes of every document that contains a backtick; it stays as it is, and
+`tests/formatter.rs` carries a case naming the limitation so it is recorded
+rather than rediscovered.

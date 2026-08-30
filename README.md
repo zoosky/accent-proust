@@ -3,12 +3,13 @@
 A Rust implementation of the [Markdoc](https://markdoc.dev) language: parse,
 validate, transform, render, and format.
 
-> **Status: in port.** The layout, the licence, the divergence budget, CI and
-> the conformance harness are in place. Source text parses to an AST -- the
-> tag-internals grammar, the segmenter that finds tags in raw text, and the
-> `Tokenizer` seam over CommonMark -- an AST validates against a schema, and a
-> validated AST transforms into a renderable tree and renders to HTML. The
-> formatter is not ported, and nothing is published. See
+> **Status: the engine is complete; nothing is published.** The layout, the
+> licence, the divergence budget, CI and the conformance harness are in place.
+> Source text parses to an AST -- the tag-internals grammar, the segmenter that
+> finds tags in raw text, and the `Tokenizer` seam over CommonMark -- an AST
+> validates against a schema, a validated AST transforms into a renderable tree
+> and renders to HTML, and a tree prints back to canonical Markdoc source. What
+> remains before a release is the trademark clearance, not code. See
 > [Conformance](#conformance) for the live number.
 
 ## What this is
@@ -67,7 +68,7 @@ lines of TypeScript across `src/`, excluding tests.
   [`DIVERGENCES.md`](DIVERGENCES.md), never emulated silently.
 
 Every deliberate difference lives in that file, which started at eight entries
-rather than empty and stands at fourteen.
+rather than empty and stands at sixteen.
 
 One of the eight is worth knowing before reading the conformance number:
 upstream's corpus is graded under a **non-default tokenizer configuration**
@@ -100,8 +101,15 @@ a block tag indented inside a list item, which divergence 13 puts out of reach.
 
 Nothing fails. Every case either matches upstream or exercises a divergence
 declared in [`DIVERGENCES.md`](DIVERGENCES.md), which is the exit condition for
-the engine phases. The corpus grades no formatter output at all, so the
-formatter is gated on the unit tests ported with it rather than on this number.
+the engine phases.
+
+**The corpus grades no formatter output at all** -- not one of the 105 cases --
+so the formatter is gated on something else: upstream's own 858-line
+`formatter.test.ts`, ported case for case in `tests/formatter.rs`, plus two
+properties a case list cannot state. `format(parse(s))` is idempotent, so a tool
+can rewrite a file in place; and `parse(format(ast))` produces the same tree, so
+formatting is not a lossy pass. A gate named after a corpus slice that does not
+exist would read as a measurement while measuring nothing.
 
 `conformance-baseline.txt` is the ratchet. The harness fails on any drift from
 it: a drop is a regression and is not mergeable, and a rise is a baseline that

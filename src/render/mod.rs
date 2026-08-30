@@ -27,7 +27,10 @@
 
 mod escape;
 mod html;
-mod js;
+// `pub(crate)` for the formatter, which needs the same ECMAScript number
+// rendering this module wrote for the HTML renderer. Two copies of that
+// algorithm would be two places for it to drift.
+pub(crate) mod js;
 
 pub use escape::escape_html;
 pub use html::{is_void_element, render, render_all, VOID_ELEMENTS};

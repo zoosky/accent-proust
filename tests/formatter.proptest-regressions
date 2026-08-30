@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 131d427698b42a774043f61674e25a73d6ba7ebbfdce26104a7a1d5c9662b443 # shrinks to source = "*<!-- c -->__"
+cc 24946e0eab229888345bf9c03ba7c0ac989c2b144e8672568831a3f3384d72fc # shrinks to source = "> ```"
+cc 184a295afce512c12cd11b3f06ecef493b16199889d76e6366664c1a75455876 # shrinks to source = "{% #id .cls %}{% #id .cls %}"
+cc 9bf308f589b149ed0fa88f6d71f00515a001503b3f0ac62d179add438b9fb93e # shrinks to source = "{% #id .cls %}```[a](b)"
+cc c68c5b5f3d210088b8f1ac6b30428cc30a43c473314a8b0e8eb58ee616a193bf # shrinks to source = "para {% #id .cls %}\n*"
+cc 23b304fb177050be30d658c996a2f4f892b7e6dea4ac768de3a5b512053ebc77 # shrinks to source = "para {% #id .cls %}\n\\"
