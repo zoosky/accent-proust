@@ -19,10 +19,15 @@ mod attribute_type;
 mod config;
 mod schema;
 pub mod schema_types;
+mod validator;
 
 pub use attribute_type::{type_to_string, AttributeType, ValidationType};
 pub use config::{Config, ConfigFunction, ValidationOptions, Variables};
 pub use schema::{
     AttributeValidateHook, FunctionTransformHook, FunctionValidateHook, MatchPattern, MatchesHook,
     RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot, TransformHook, ValidateHook,
+};
+pub use validator::{
+    global_attributes, validate_tree, validate_type, validator, walk_with_parents, TypeCheck,
+    ValidateError,
 };

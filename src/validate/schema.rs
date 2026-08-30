@@ -24,7 +24,7 @@
 //!
 //! Only the node's lifetime is tied to the result, which is what lets an error
 //! quote the span it found. The config reference is free, which is what lets
-//! `validate_tree` hand a hook a config it
+//! [`validate_tree`](crate::validate::validate_tree) hand a hook a config it
 //! owns for the duration of the walk. An ordinary closure satisfies this
 //! without annotation.
 
@@ -232,7 +232,7 @@ pub struct SchemaSlot {
 /// What a tag or a node type is allowed to be, and what it becomes.
 ///
 /// Mirrors upstream's `Schema`. The declarative fields are checked by
-/// `validator` in the order upstream checks them,
+/// [`validator`](crate::validate::validator) in the order upstream checks them,
 /// because the order is observable: a document with several problems reports
 /// them in one sequence, and a tool diffing that sequence would see a reordering
 /// as a change.

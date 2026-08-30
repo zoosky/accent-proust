@@ -109,7 +109,7 @@ impl<'a> Config<'a> {
 pub struct ValidationOptions<'a> {
     /// The ancestors of the node being validated, outermost first.
     ///
-    /// Set by `validate_tree` as it walks, and
+    /// Set by [`validate_tree`](crate::validate::validate_tree) as it walks, and
     /// empty for the document node. A hook reading this is reading the path it
     /// was reached by, not the whole tree.
     pub parents: Vec<&'a Node<'a>>,
