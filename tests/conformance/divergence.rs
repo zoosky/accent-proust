@@ -29,20 +29,36 @@ pub struct Annotation {
 /// Asserted, not counted: if a corpus refresh renames a case, its annotation
 /// silently stops matching and the case reappears as a failure with no
 /// explanation. Pinning the number turns that into an error that names itself.
-pub const EXPECTED_COUNT: usize = 6;
+pub const EXPECTED_COUNT: usize = 10;
 
 const ALLOW_INDENTATION: &str = "DIVERGENCES.md #8 (allowIndentation)";
+const LITERAL_FENCES: &str = "DIVERGENCES.md #1 (fences do not process tags by default)";
+const LITERAL_FENCES_REASON: &str =
+    "expects a fence with no `process` annotation to have its content split into \
+     text and tag children, which is upstream's default and the inverse of this \
+     crate's";
+const NO_FRONTMATTER: &str = "DIVERGENCES.md #7 (metadata blocks are the host's)";
+const NO_FRONTMATTER_REASON: &str =
+    "feeds a document that still carries its metadata block; the host removes \
+     frontmatter before this crate sees it, and the corpus runner is not the host";
 const ALLOW_INDENTATION_REASON: &str =
     "graded under `allowIndentation: true`, which upstream reaches by patching \
      markdown-it; unreachable above an unpatched CommonMark parser";
 
 /// The annotated cases.
 ///
-/// All six are the same divergence. Upstream's corpus runner constructs its
+/// Six are the `allowIndentation` set. Upstream's corpus runner constructs its
 /// tokenizer with `allowIndentation: true` (`spec/marktest/index.ts:21-24`),
 /// which switches off CommonMark's four-space rule across nine block rules, so
 /// these cases indent content inside a tag and still expect paragraphs, fences
 /// and tables rather than indented code blocks.
+///
+/// Three more are fences that rely on upstream's `process` default, which
+/// divergence 1 inverts. Every other fence case in the corpus states `process`
+/// explicitly and is reached either way.
+///
+/// One is frontmatter, which divergence 7 makes the host's rather than this
+/// crate's.
 pub const ANNOTATED: &[Annotation] = &[
     Annotation {
         case: "Indented paragraph in a tag",
@@ -63,6 +79,26 @@ pub const ANNOTATED: &[Annotation] = &[
         case: "Advanced table with inner content",
         entry: ALLOW_INDENTATION,
         reason: ALLOW_INDENTATION_REASON,
+    },
+    Annotation {
+        case: "Conditional and variable in code example with indentation",
+        entry: LITERAL_FENCES,
+        reason: LITERAL_FENCES_REASON,
+    },
+    Annotation {
+        case: "Tag after a comment in a code example",
+        entry: LITERAL_FENCES,
+        reason: LITERAL_FENCES_REASON,
+    },
+    Annotation {
+        case: "Multiple sequential tags in a code example",
+        entry: LITERAL_FENCES,
+        reason: LITERAL_FENCES_REASON,
+    },
+    Annotation {
+        case: "Frontmatter",
+        entry: NO_FRONTMATTER,
+        reason: NO_FRONTMATTER_REASON,
     },
 ];
 

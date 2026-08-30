@@ -62,3 +62,37 @@ panic = "warn"
 unwrap_used = "warn"
 expect_used = "warn"
 indexing_slicing = "warn"
+
+# The suites that exercise the bundled tokenizer, named so that
+# `cargo test --no-default-features` skips them instead of failing to compile.
+# That lane is Invariant 1 -- the crate builds and tests with nothing else
+# present -- and it stays meaningful because `tokenizer_seam` is *not* listed
+# here: it implements `Tokenizer` by hand and runs in both lanes, which is the
+# configuration a host supplying its own CommonMark parser uses.
+[[test]]
+name = "conformance"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "parser"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "annotations"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "comments"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "links"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "node"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "parse_proptests"
+required-features = ["pulldown-cmark-tokenizer"]

@@ -4,10 +4,11 @@ A Rust implementation of the [Markdoc](https://markdoc.dev) language: parse,
 validate, transform, render, and format.
 
 > **Status: in port.** The layout, the licence, the divergence budget, CI and
-> the conformance harness are in place, and the tag-internals grammar -- what
-> appears between `{%` and `%}` -- is ported. The document layers above it are
-> not, and nothing is published. See [Conformance](#conformance) for the live
-> number.
+> the conformance harness are in place. Source text now parses to an AST: the
+> tag-internals grammar -- what appears between `{%` and `%}` -- the segmenter
+> that finds tags in raw text, and the `Tokenizer` seam over CommonMark. What
+> the AST feeds -- validate, transform, render and format -- is not ported, and
+> nothing is published. See [Conformance](#conformance) for the live number.
 
 ## What this is
 
@@ -85,14 +86,21 @@ cargo test --test conformance -- --nocapture
 ```
 
 ```text
-conformance: 0 green, 6 annotated, 99 failing (of 105)
+conformance: 3 green, 10 annotated, 92 failing (of 105)
 ```
 
 "Annotated" is a case that fails because it exercises a declared divergence;
 it is counted apart from a failure so that giving something up stays visible
-instead of being absorbed. All six are
+instead of being absorbed. Six are
 [divergence 8](DIVERGENCES.md), the `allowIndentation` option upstream's corpus
-runner switches on and this crate cannot reach.
+runner switches on and this crate cannot reach; three are fences relying on the
+`process` default that divergence 1 inverts; one is frontmatter, which
+divergence 7 makes the host's.
+
+The green three are the cases graded on a grammar error message. Everything
+else in the corpus is graded on a *renderable* tree or on HTML, which the
+transform stage produces, so parsing alone cannot reach it -- the harness says
+so per case, naming the stage each one is waiting for.
 
 `conformance-baseline.txt` is the ratchet. The harness fails on any drift from
 it: a drop is a regression and is not mergeable, and a rise is a baseline that
