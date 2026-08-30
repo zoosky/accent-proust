@@ -32,7 +32,9 @@
 
 use proust::ast::Node;
 use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use proust::validate::validate_tree;
 
+use crate::config;
 use crate::corpus::{Case, Renderer};
 use crate::value::Value;
 
@@ -86,24 +88,40 @@ impl std::fmt::Display for Unimplemented {
 
 /// Run one case through `proust`.
 ///
-/// Parse is implemented; validate, transform and render are not. So this
+/// Parse and validate are implemented; transform and render are not. So this
 /// dispatches on how the corpus grades the case and answers with the first
 /// stage that is missing, by name. A blanket "parse is not implemented" told
 /// every case the same untrue thing; naming the stage makes the failing column
 /// readable as a work list rather than a wall.
 ///
+/// # Why a schema error can still be reported as unimplemented
+///
+/// Upstream's `Markdoc.validate` merges its built-in node, tag and function
+/// schemas into the caller's config before validating (`index.ts`,
+/// `mergeConfig`). Those are schema *content* and belong to the transform
+/// stage, so the config assembled here from the corpus is the case's own
+/// declarations and nothing else -- and a document whose `document` node or
+/// `table` tag has no schema reports `node-undefined` or `tag-undefined` for
+/// every node upstream had a built-in for.
+///
+/// Reporting that as a mismatch would bury the six validation cases under a
+/// diff about missing built-ins. So an undefined built-in is reported as the
+/// missing stage it is, which keeps the failing column a work list: each of
+/// those cases turns green when the built-in schemas land, with no further
+/// change here.
+///
 /// # What a parsed document can already grade
 ///
-/// Exactly one thing: a case whose `expectedError` is a **grammar** error.
-/// Upstream's runner joins the messages `validate` returns, and `validate`
-/// returns each node's own errors before it consults any schema -- so for a
-/// document whose only problem is a tag that does not parse, the parser's
-/// output *is* the validator's. Cases whose expectation includes a schema error
-/// need Goal C and say so.
+/// A case whose `expectedError` is a **grammar** error. Upstream's runner joins
+/// the messages `validate` returns, and `validate` returns each node's own
+/// errors before it consults any schema -- so for a document whose only problem
+/// is a tag that does not parse, the parser's output *is* the validator's.
+/// Short-circuiting there rather than validating is deliberate: those documents
+/// have no schemas either, so validating them would replace an exact match with
+/// an `Undefined node` report.
 ///
 /// Everything graded on a tree or on HTML needs the transform stage, because
-/// `expected` in the corpus is the **renderable** tree, not the AST. That is
-/// Goal D, and no amount of parsing reaches it.
+/// `expected` in the corpus is the **renderable** tree, not the AST.
 pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
     // The corpus is graded under a non-default configuration, and this is where
     // that is honoured: `spec/marktest/index.ts:21-24` builds its tokenizer with
@@ -114,15 +132,31 @@ pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
 
     if case.expected_error.is_some() {
         let messages = parse_errors(&document);
-        if messages.is_empty() {
-            // Nothing the parser found explains the expectation, so whatever
-            // upstream is reporting comes from the schema layer.
+        if !messages.is_empty() {
+            return Ok(Outcome::ValidationErrors(messages.join("\n")));
+        }
+
+        // A config that fails to map is a defect in this harness, and
+        // `check_configs` fails the run with the reason. Falling back to an
+        // empty one here keeps that the single place it is reported.
+        let config = config::build(case).unwrap_or_default();
+        let found = validate_tree(&document, &config);
+        if found
+            .iter()
+            .any(|found| matches!(found.error.id, "node-undefined" | "tag-undefined"))
+        {
             return Err(Unimplemented {
-                stage: "validate",
-                phase: "C",
+                stage: "the built-in node and tag schemas",
+                phase: "D",
             });
         }
-        return Ok(Outcome::ValidationErrors(messages.join("\n")));
+        return Ok(Outcome::ValidationErrors(
+            found
+                .iter()
+                .map(|found| found.error.message.clone())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
     }
 
     match case.renderer {

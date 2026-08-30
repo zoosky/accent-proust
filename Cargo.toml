@@ -96,3 +96,7 @@ required-features = ["pulldown-cmark-tokenizer"]
 [[test]]
 name = "parse_proptests"
 required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "validator"
+required-features = ["pulldown-cmark-tokenizer"]

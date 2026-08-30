@@ -143,6 +143,51 @@ impl NodeType {
             NodeType::Tr => "tr",
         }
     }
+
+    /// The node type upstream spells `name`, or [`None`].
+    ///
+    /// The inverse of [`NodeType::as_str`]. A host keys its `nodes` schema map
+    /// by these strings -- upstream's config is a JavaScript object literal, and
+    /// anything read from a file or a manifest arrives as text -- so the mapping
+    /// has to run in both directions. Returning [`Option`] rather than defaulting
+    /// to [`NodeType::Node`] is the point: a misspelled key is a schema that
+    /// silently never applies, which is the hardest kind of schema bug to see.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<NodeType> {
+        // Written as a match on the same list `as_str` produces, so adding a
+        // variant fails to compile here too rather than quietly losing a name.
+        Some(match name {
+            "blockquote" => NodeType::Blockquote,
+            "code" => NodeType::Code,
+            "comment" => NodeType::Comment,
+            "document" => NodeType::Document,
+            "em" => NodeType::Em,
+            "error" => NodeType::Error,
+            "fence" => NodeType::Fence,
+            "hardbreak" => NodeType::Hardbreak,
+            "heading" => NodeType::Heading,
+            "hr" => NodeType::Hr,
+            "image" => NodeType::Image,
+            "inline" => NodeType::Inline,
+            "item" => NodeType::Item,
+            "link" => NodeType::Link,
+            "list" => NodeType::List,
+            "node" => NodeType::Node,
+            "paragraph" => NodeType::Paragraph,
+            "s" => NodeType::S,
+            "softbreak" => NodeType::Softbreak,
+            "strong" => NodeType::Strong,
+            "table" => NodeType::Table,
+            "tag" => NodeType::Tag,
+            "tbody" => NodeType::Tbody,
+            "td" => NodeType::Td,
+            "text" => NodeType::Text,
+            "th" => NodeType::Th,
+            "thead" => NodeType::Thead,
+            "tr" => NodeType::Tr,
+            _ => return None,
+        })
+    }
 }
 
 impl std::fmt::Display for NodeType {

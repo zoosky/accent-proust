@@ -65,17 +65,25 @@ also maintain a CommonMark implementation". The consequence is that CommonMark
 edge behaviour differs wherever the two engines differ; entries 5-7 are the
 specific cases where that difference is decided rather than incidental.
 
-## 3. Transform hooks are synchronous
+## 3. Schema hooks are synchronous
 
-**Upstream:** `transform` accepts a `MaybePromise`, so a schema's `transform`
-may be async.
+**Upstream:** every schema hook returns a `MaybePromise`. `Schema.transform`
+and `Schema.validate` may both be async, and `validate` and `transform` at the
+top level then return a promise in turn.
 
-**Here:** transform hooks are ordinary synchronous functions.
+**Here:** all of them are ordinary synchronous functions, and so are the
+function hooks on `ConfigFunction`.
 
-**Why:** the async variant exists upstream to let a schema fetch during
-transform. This crate performs no I/O by construction, so an async hook would
-be a signature with no reachable implementation, and it would colour every
-caller above it.
+**Why:** the async variants exist upstream to let a schema fetch while it runs.
+This crate performs no I/O by construction, so an async hook would be a
+signature with no reachable implementation, and it would colour every caller
+above it -- `validate_tree` would have to be async because a schema *might*
+be.
+
+**What it costs, exactly.** One test in upstream's `validator.test.ts`, "should
+allow async validators", which asserts that an `async validate()` on a node
+schema is awaited. It is not ported, because the thing it tests is the thing
+this entry declines. Nothing in the conformance corpus is async.
 
 ## 4. The React renderers are unimplemented
 
@@ -262,3 +270,39 @@ entry 8, which subsumes them, and "Disabled setext heading" is reachable
 because the `lheading` half *is* reproduced. A document that relies on four-space
 indentation to write a paragraph -- rather than to nest one inside a tag --
 renders as code here and as prose upstream.
+
+---
+
+The last one comes from the validator: one field of the schema shape is a
+JavaScript type this crate has no equivalent of and declines to acquire.
+
+## 12. `matches` takes a host-supplied pattern, not a regular expression
+
+**Upstream:** `SchemaAttribute.matches` is `RegExp | string[] | null`. A schema
+writes `matches: /^[a-z-]+$/` and the validator calls `matches.test(value)`,
+reporting `Attribute 'x' must match /^[a-z-]+$/. Got 'Y' instead.` -- the
+pattern's own source, interpolated into the message.
+
+**Here:** the string-list and null forms are ported unchanged. The regular
+expression form becomes `SchemaMatches::Pattern`, which holds a host
+implementation of the `MatchPattern` trait: a predicate over the coerced value,
+plus the spelling the message quotes. A host that wants Markdoc's exact
+behaviour supplies a matcher over its own regular expression engine and spells
+`display()` as `/source/flags`.
+
+**Why:** the alternative is a regular expression dependency in a leaf parsing
+library, for one optional field of one schema type. It would also not buy
+fidelity: JavaScript's regular expression dialect is not Rust's, so
+`matches: /(?<=a)b/` would either fail to compile or mean something else, and a
+schema ported by copying the literal across would be quietly wrong rather than
+loudly unsupported. Making the host bring its own engine keeps the choice of
+dialect where the schema is written.
+
+**What it costs, exactly.** Nothing the corpus or upstream's unit tests
+measure: no case in `spec/marktest/tests.yaml` sets `matches` at all, no
+built-in Markdoc schema uses the regular expression form, and `validator.test.ts`
+exercises only the string-list form. The error id and message shape are
+unchanged, so tooling reading `attribute-value-invalid` sees what it saw
+before. What is given up is the ability to paste a Markdoc schema's regular
+expression literal into a Rust schema and have it work without a matcher around
+it.

@@ -30,7 +30,12 @@
 /// The segmenter added one: upstream disables two markdown-it block rules that
 /// pulldown-cmark has no switch for, and only one of the two can be undone
 /// after the fact.
-const DECLARED_DIVERGENCES: usize = 11;
+///
+/// The validator added one: `SchemaAttribute.matches` takes a host-supplied
+/// pattern rather than a regular expression, because the alternative is a
+/// regular expression dependency in a leaf library for one optional field, and
+/// a JavaScript literal pasted into Rust would not mean the same thing anyway.
+const DECLARED_DIVERGENCES: usize = 12;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 
