@@ -34,6 +34,7 @@
 //! # Layout
 //!
 //! - [`corpus`] reads the YAML. The only module that knows YAML exists.
+//! - [`config`] turns a case's `config:` block into a `proust` config.
 //! - [`value`] is the shape a corpus expectation and a rendered tree both
 //!   reduce to.
 //! - [`engine`] is the seam into `proust`, and the one file a phase of the port
@@ -43,6 +44,7 @@
 //!   holds the ratchet.
 
 mod baseline;
+mod config;
 mod corpus;
 mod diff;
 mod divergence;
@@ -91,6 +93,7 @@ fn conformance() {
     println!("{}", report::render(&results));
 
     check_annotations(&results);
+    check_configs(&cases);
     check_readme(counts);
 
     let recorded = match baseline::read() {
@@ -265,6 +268,32 @@ fn check_annotations(results: &[CaseResult]) {
          {}. The corpus and the declared divergences disagree about how much of it is \
          out of reach.",
         divergence::EXPECTED_COUNT
+    );
+}
+
+/// Every case's `config:` block must map onto a `proust` config.
+///
+/// Run apart from the cases themselves, and before the counts are believed,
+/// because a config the mapping does not understand is a harness defect rather
+/// than a conformance result -- and one that would otherwise present as a case
+/// graded against half its own definition. A corpus refresh introducing a new
+/// config shape fails here, naming the key.
+fn check_configs(cases: &[Case]) {
+    // Collected rather than reported one at a time: a corpus refresh that adds
+    // one key adds it to many cases, and a run that names all of them is one
+    // fix instead of one per iteration.
+    let unmapped: Vec<String> = cases
+        .iter()
+        .filter_map(|case| {
+            config::build(case)
+                .err()
+                .map(|reason| format!("tests.yaml:{}: {:?}: {reason}", case.line + 1, case.name))
+        })
+        .collect();
+    assert!(
+        unmapped.is_empty(),
+        "some cases declare a config this harness does not map, so they would be graded \
+         against half their own definition:\n{unmapped:#?}"
     );
 }
 

@@ -4,11 +4,12 @@ A Rust implementation of the [Markdoc](https://markdoc.dev) language: parse,
 validate, transform, render, and format.
 
 > **Status: in port.** The layout, the licence, the divergence budget, CI and
-> the conformance harness are in place. Source text now parses to an AST: the
-> tag-internals grammar -- what appears between `{%` and `%}` -- the segmenter
-> that finds tags in raw text, and the `Tokenizer` seam over CommonMark. What
-> the AST feeds -- validate, transform, render and format -- is not ported, and
-> nothing is published. See [Conformance](#conformance) for the live number.
+> the conformance harness are in place. Source text parses to an AST -- the
+> tag-internals grammar, the segmenter that finds tags in raw text, and the
+> `Tokenizer` seam over CommonMark -- and an AST validates against a schema.
+> What the schema shape describes but nothing yet produces -- transform, render
+> and format, and the built-in schemas they carry -- is not ported, and nothing
+> is published. See [Conformance](#conformance) for the live number.
 
 ## What this is
 
@@ -65,8 +66,8 @@ lines of TypeScript across `src/`, excluding tests.
   disagree, the difference is declared in
   [`DIVERGENCES.md`](DIVERGENCES.md), never emulated silently.
 
-Every deliberate difference lives in that file, which starts at eight entries
-rather than empty.
+Every deliberate difference lives in that file, which started at eight entries
+rather than empty and stands at twelve.
 
 One of the eight is worth knowing before reading the conformance number:
 upstream's corpus is graded under a **non-default tokenizer configuration**
@@ -97,10 +98,17 @@ runner switches on and this crate cannot reach; three are fences relying on the
 `process` default that divergence 1 inverts; one is frontmatter, which
 divergence 7 makes the host's.
 
-The green three are the cases graded on a grammar error message. Everything
-else in the corpus is graded on a *renderable* tree or on HTML, which the
-transform stage produces, so parsing alone cannot reach it -- the harness says
-so per case, naming the stage each one is waiting for.
+The green three are the cases graded on a grammar error message. The harness
+names, per case, the stage each of the others is waiting for. Two answers cover
+almost all of them:
+
+- **The renderable tree.** 96 of the 105 cases are graded on a transformed tree
+  or on rendered HTML, so parsing and validating alone cannot reach them.
+- **The built-in schemas.** Six cases are graded on a *schema* error. The
+  validator produces those errors, but upstream's `validate` merges its built-in
+  node and tag schemas in before validating, and those are schema content rather
+  than schema shape. Until they land, a `document` node has no schema and the
+  harness reports the missing stage rather than a diff about it.
 
 `conformance-baseline.txt` is the ratchet. The harness fails on any drift from
 it: a drop is a regression and is not mergeable, and a rise is a baseline that
