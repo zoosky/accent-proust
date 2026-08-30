@@ -36,13 +36,24 @@
 /// regular expression dependency in a leaf library for one optional field, and
 /// a JavaScript literal pasted into Rust would not mean the same thing anyway.
 ///
+/// The formatter added two. One is the third bound in the same family: the
+/// walk that reprints a tree is depth-limited, because it recurses over
+/// document structure and a stack overflow in Rust aborts. It is the only one
+/// of the three whose number was arrived at by measuring rather than by
+/// picking, and the measurement changed the answer. The other goes the opposite
+/// way from every entry before it: four places where upstream's own formatter
+/// emits output that does not parse back to the tree it came from are fixed
+/// rather than reproduced, because the round trip is this stage's
+/// specification and the first consumer of the formatter rewrites files with
+/// it.
+///
 /// The transform stage added two. The table rewrite was the first pass to look
 /// at what the segmenter does to a block tag indented inside a list item:
 /// upstream nests it in the item, and a segmenter that runs before the
 /// container parser cannot. And the tree walk is depth-limited, for the reason
 /// values are -- one stage further up, and with a schema hook's signature
 /// standing between the recursion and an iterative rewrite.
-const DECLARED_DIVERGENCES: usize = 14;
+const DECLARED_DIVERGENCES: usize = 16;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

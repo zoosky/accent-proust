@@ -714,14 +714,14 @@ mod upstream {
     /// table rewrite rejects. What is left is a `{% table %}` holding an empty
     /// `table`, and the trailing item becomes a fence for the same reason.
     ///
-    /// **And that empty table does not settle in one pass.** A tag with a child
-    /// prints an open and a close; the child here is an empty `table`, which
-    /// prints one newline and nothing else. Reparsing `{% table %}\n{% /table %}`
-    /// gives a tag with no children, which prints self-closing. Upstream does
-    /// the same with the same tree -- its `tags` case fixes `{% a %}{% /a %}`
-    /// as `{% a /%}` -- so this is the tree being unusual, not the formatter
-    /// being wrong. The second pass is a fixed point, which is asserted below
-    /// rather than left to be discovered.
+    /// **And the empty table is why a tag can self-close here and not upstream.**
+    /// A tag with a child prints an open and a close; the child here is an
+    /// empty `table`, which prints one newline and nothing else. Upstream would
+    /// therefore write `{% table %}\n{% /table %}`, which re-parses as a tag
+    /// with *no* children -- so its own output does not settle until the second
+    /// pass. This port asks what the children came to rather than whether there
+    /// are any, and writes `{% table /%}` at once. See `DIVERGENCES.md` entry
+    /// 16.
     #[test]
     fn complicated_nested_lists() {
         let source = concat!(
@@ -771,8 +771,7 @@ mod upstream {
             "\n",
             "  1. Enter these values in the form that opens:\n",
             "\n",
-            "{% table %}\n",
-            "{% /table %}\n",
+            "{% table /%}\n",
             "\n",
             "```\n",
             "1. foo\\\n",
@@ -783,11 +782,8 @@ mod upstream {
             "   Markdoc uses…\n",
             "```\n",
         );
-        let settled = first.replace("{% table %}\n{% /table %}", "{% table /%}");
-
         check(source, first);
-        check(first, &settled);
-        stable(&settled);
+        stable(first);
     }
 
     #[test]
@@ -900,6 +896,40 @@ mod upstream {
         assert_eq!(format(&node).trim(), "{% tag validAttribute=true /%}");
     }
 
+    /// The text escaper is upstream's, and it covers three block starters.
+    ///
+    /// `escapeMarkdownCharacters` escapes a leading `*`, a leading `>`, and a
+    /// run of `#` before whitespace -- the three that would turn a paragraph
+    /// into a list item, a blockquote or a heading. It does not escape the
+    /// others, and the set is the contract rather than an oversight to fix
+    /// unilaterally: widening it changes the bytes of every document that
+    /// contains a backtick or a backslash.
+    ///
+    /// The consequence, written down rather than left to be found: a `text`
+    /// node whose content begins with a fence marker reprints unescaped, and
+    /// reprinted source therefore parses as a fence. Reaching that tree takes a
+    /// document whose backticks were already inline -- here, because an
+    /// annotation opened the paragraph first.
+    #[test]
+    fn the_escape_set_is_upstreams_three_starters() {
+        // Each source is a paragraph whose text *starts* with a block marker,
+        // which is only reachable by escaping it in the first place. Reprinting
+        // has to put the escape back or the paragraph becomes a block.
+        for escaped in ["\\* item\n", "\\> quote\n", "\\### head\n"] {
+            // Bound, not a temporary: a `Node` borrows the text it spans.
+            let text = escaped.to_owned();
+            let document = parse(&text);
+            assert_eq!(format(&document), escaped);
+        }
+
+        // And the shape that is not covered. A paragraph beginning with a fence
+        // marker reprints as itself, which re-parses as a fence.
+        let document = parse("{% #id %}```");
+        let once = format(&document);
+        assert_eq!(once, "```{% #id %}\n");
+        assert_ne!(format(&parse(&once)), once);
+    }
+
     #[test]
     fn a_fence_whose_content_has_no_ending_newline_still_closes() {
         let mut node = Node::new(NodeType::Fence);
@@ -979,5 +1009,101 @@ mod properties {
 
     fn outline(node: &Node<'_>) -> String {
         support::outline(node)
+    }
+}
+
+/// Panic-freedom against generated input.
+///
+/// The two round-trip properties are asserted over documents, in
+/// [`properties`], and restated per case by every `stable` call above. What
+/// belongs here instead is the property that has no corpus at all: the
+/// formatter returns for **any** tree the parser can build, including trees
+/// generated nesting cannot be reasoned about.
+///
+/// # Why idempotence is not asserted over generated soup
+///
+/// It was, and it kept finding the same thing: upstream escapes exactly three
+/// things at the start of a run of text -- a `*`, a `>`, and a run of `#` --
+/// and there are more than three ways for text to look like a block. A
+/// paragraph beginning with three backticks re-parses as a code fence; one
+/// ending in a backslash escapes the tag that follows it. Generated
+/// concatenation manufactures those trees readily, and a document written by a
+/// person almost never contains one, because the text came from a document that
+/// parsed the other way in the first place.
+///
+/// Widening the escape set would fix them and is not this goal's call to make:
+/// it is upstream's contract, the full set of CommonMark block starters is a
+/// good deal longer than three, and every addition changes bytes for every
+/// document. [`upstream::the_escape_set_is_upstreams_three_starters`] records
+/// the limitation with a case, so it is visible rather than rediscovered.
+mod proptests {
+    use super::{format, parse};
+    use proptest::prelude::*;
+
+    /// The fragments a formatter branches on, so a generated document is mostly
+    /// interesting rather than mostly noise. The block characters that need
+    /// escaping and the delimiters that need balancing are the whole point.
+    ///
+    /// **No comment fragment**, deliberately: an *inline* comment is not
+    /// idempotent, in this port and upstream alike, and the reason is recorded
+    /// as its own case in [`super::upstream::an_inline_comment_is_upstream_s_one_unstable_shape`]
+    /// rather than hidden by leaving the property test to find it every run.
+    const FRAGMENTS: &[&str] = &[
+        "{% foo %}",
+        "{% /foo %}",
+        "{% foo a=1 /%}",
+        "{% table %}",
+        "{% /table %}",
+        "{% $a.b[0] %}",
+        "para {% #id .cls %}",
+        "```",
+        "~~~",
+        "\n",
+        "\n\n",
+        "  ",
+        "*",
+        "**",
+        "__",
+        "~~",
+        "`",
+        "[a](b)",
+        "![a](b)",
+        "<http://a.b>",
+        "|",
+        "---",
+        "# ",
+        "> ",
+        "- ",
+        "1. ",
+        "\\",
+        "\u{a0}",
+        "\u{e9}",
+        "\u{1f600}",
+    ];
+
+    fn document() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop_oneof![
+                2 => prop::sample::select(FRAGMENTS).prop_map(ToString::to_string),
+                1 => "[a-z ]{0,8}",
+            ],
+            0..24,
+        )
+        .prop_map(|parts| parts.join("\n"))
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2048))]
+
+        /// `format` returns for any tree the parser can build.
+        ///
+        /// It takes no `Result`, so "did not panic" is the whole assertion --
+        /// and the assertion covers an abort too, which is what an unbounded
+        /// walk over generated nesting would produce.
+        #[test]
+        fn formatting_arbitrary_documents_never_panics(source in document()) {
+            let _ = format(&parse(&source));
+        }
+
     }
 }

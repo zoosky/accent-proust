@@ -24,7 +24,7 @@
 //! each yielded string becomes its own line, so merging two of them merges two
 //! lines.
 //!
-//! So [`Out`] keeps the yields as a `Vec` of [`Chunk`], one per `yield`, and
+//! So the walk keeps the yields as a `Vec` of chunks, one per `yield`, and
 //! joins only at the end. That is the generator stream, made data.
 //!
 //! # Where upstream has no defined behaviour
@@ -190,11 +190,14 @@ impl FormatOptions {
 /// `__bold__` does not become `**bold**`.
 ///
 /// ```
+/// # #[cfg(feature = "pulldown-cmark-tokenizer")]
+/// # {
 /// let document = proust::parse::parse("{% callout   type=\"note\" %}\nBody\n{% /callout %}\n");
 /// assert_eq!(
 ///     proust::format::format(&document),
 ///     "{% callout type=\"note\" %}\nBody\n{% /callout %}\n"
 /// );
+/// # }
 /// ```
 #[must_use]
 pub fn format(node: &Node<'_>) -> String {
@@ -206,9 +209,12 @@ pub fn format(node: &Node<'_>) -> String {
 /// ```
 /// use proust::format::{format_with, FormatOptions, OrderedListMode};
 ///
+/// # #[cfg(feature = "pulldown-cmark-tokenizer")]
+/// # {
 /// let document = proust::parse::parse("1. one\n1. two\n1. three\n");
 /// let options = FormatOptions::new().ordered_list_mode(OrderedListMode::Increment);
 /// assert_eq!(format_with(&document, &options), "1. one\n2. two\n3. three\n");
+/// # }
 /// ```
 #[must_use]
 pub fn format_with(node: &Node<'_>, options: &FormatOptions) -> String {
@@ -353,7 +359,7 @@ impl Out {
                 // A row has no `trimStart`; upstream would throw. No caller of
                 // this can produce one, and passing it through is the reading
                 // that loses nothing.
-                row => {
+                row @ Chunk::Row(_) => {
                     out.chunks.push(row);
                     break;
                 }

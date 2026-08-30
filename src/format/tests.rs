@@ -154,9 +154,12 @@ fn a_deeply_nested_tree_formats_without_exhausting_the_stack() {
         );
     }
     let formatted = format(&node);
-    // One open and one close per level that was reached, and no more.
-    assert_eq!(formatted.matches("{% a %}").count(), MAX_FORMAT_DEPTH);
-    assert_eq!(formatted.matches("{% /a %}").count(), MAX_FORMAT_DEPTH);
+    // One open and one close per level that was reached, and no more. The
+    // deepest one self-closes: its own child is past the bound, so its content
+    // comes to nothing and the tag is written `{% a /%}`.
+    assert_eq!(formatted.matches("{% a %}").count(), MAX_FORMAT_DEPTH - 1);
+    assert_eq!(formatted.matches("{% /a %}").count(), MAX_FORMAT_DEPTH - 1);
+    assert_eq!(formatted.matches("{% a /%}").count(), 1);
 }
 
 #[test]

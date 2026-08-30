@@ -179,21 +179,27 @@ impl Formatter<'_> {
         out.text(NL);
     }
 
+    /// Upstream's `blockquote` arm, with one fix: the prefix goes on every line.
+    ///
+    /// Upstream writes `NL + indent + prefix + d`, one `> ` per child. That is
+    /// right only while every child prints on one line, which is all its own
+    /// test covers. Give it `> a\n> b` -- one paragraph, one soft break -- and
+    /// the second line comes back without its `> `, outside the quote. See
+    /// `DIVERGENCES.md` entry 16.
     fn blockquote(&mut self, node: &Node<'_>, ctx: Ctx, no: Ctx, out: &mut Out) {
-        let indent = indent(ctx);
-        let prefix = format!(">{SPACE}");
+        let prefix = format!("{}>{SPACE}", indent(ctx));
         let parts: Vec<String> = node
             .children
             .iter()
             .map(|child| {
                 let formatted = self.subtree(child, no);
-                format!("{NL}{indent}{prefix}{formatted}")
+                format!("{NL}{}", quote(&formatted, &prefix))
             })
             .collect();
         // The separator carries no newline, so it lands directly after the
         // previous child's trailing one. That is what produces the bare `> `
         // line between two quoted paragraphs.
-        out.text(parts.join(&format!("{indent}{prefix}")));
+        out.text(parts.join(&prefix));
     }
 
     fn fence(&mut self, node: &Node<'_>, ctx: Ctx, out: &mut Out) {
@@ -231,6 +237,13 @@ impl Formatter<'_> {
         );
         if needs_newline_before_close {
             out.text(NL);
+            // Upstream yields the closing boundary with no indent. It looks
+            // right in its own tests because content that *ends* with a newline
+            // leaves a trailing empty segment, and the join above indents that.
+            // Content without one -- an empty fence, or a last line with no
+            // terminator -- closes at column zero instead, which re-parses as a
+            // fence that never closed. See `DIVERGENCES.md` entry 16.
+            out.text(indent.clone());
         }
         out.text(boundary);
         out.text(NL);
@@ -263,14 +276,32 @@ impl Formatter<'_> {
         } else {
             inline_tag
         };
-        let closer = if node.children.is_empty() { "/" } else { "" };
+        // Upstream indents nested children when `allowIndentation` is on. The
+        // option does not exist here (`DIVERGENCES.md` entry 8), so this is the
+        // `false` branch and only that branch.
+        //
+        // The children are printed *before* the opening is decided, because
+        // whether the tag self-closes depends on what they came to. Upstream
+        // asks only whether the child list is empty, so a tag holding children
+        // that print nothing -- an empty `table`, an `error` node -- is written
+        // as an open and a close with whitespace between, which re-parses as a
+        // tag with no children at all. See `DIVERGENCES.md` entry 16.
+        let body = if node.children.is_empty() {
+            None
+        } else {
+            let body = self.collect_children(node, no);
+            if body.joined().trim().is_empty() {
+                None
+            } else {
+                Some(body)
+            }
+        };
+
+        let closer = if body.is_none() { "/" } else { "" };
         out.text(format!("{opening}{SPACE}{closer}{CLOSE}"));
 
-        if !node.children.is_empty() {
-            // Upstream indents nested children when `allowIndentation` is on.
-            // The option does not exist here (`DIVERGENCES.md` entry 8), so
-            // this is the `false` branch and only that branch.
-            self.children(node, no, out);
+        if let Some(body) = body {
+            out.append(body);
             if !node.inline {
                 out.text(indent);
             }
@@ -293,12 +324,20 @@ impl Formatter<'_> {
         }
     }
 
+    /// Upstream's `comment` arm, with one fix: an inline comment ends no line.
+    ///
+    /// Upstream appends a newline to every comment. That is right for a comment
+    /// on a line of its own and wrong for one inside a sentence, where it
+    /// splits the paragraph -- upstream's own tokenizer has an inline comment
+    /// rule, so upstream can produce the node it then misprints. See
+    /// `DIVERGENCES.md` entry 17.
     fn comment(&mut self, node: &Node<'_>, out: &mut Out) {
         let content = match node.get("content") {
             Some(value) => self.text_of(value),
             None => String::new(),
         };
-        out.text(format!("<!-- {content} -->\n"));
+        let trailing = if node.inline { "" } else { NL };
+        out.text(format!("<!-- {content} -->{trailing}"));
     }
 
     /// Upstream's `list` arm.
@@ -355,6 +394,22 @@ impl Formatter<'_> {
         }
         out.text(NL);
     }
+}
+
+/// Every line of `text`, behind `prefix`.
+///
+/// An empty subtree still gets a marker, so a blockquote holding a node that
+/// prints nothing is still a blockquote.
+fn quote(text: &str, prefix: &str) -> String {
+    if text.is_empty() {
+        return prefix.to_owned();
+    }
+    let mut out = String::with_capacity(text.len() + prefix.len());
+    for line in text.split_inclusive('\n') {
+        out.push_str(prefix);
+        out.push_str(line);
+    }
+    out
 }
 
 /// The leading whitespace for a node at this context.

@@ -22,6 +22,8 @@
 //!
 //! [`Node::annotations`]: crate::ast::Node::annotations
 
+use std::fmt::Write as _;
+
 use super::{Ctx, Formatter, Out, MAX_FORMAT_DEPTH, SEP};
 use crate::ast::{Node, PathSegment, Value};
 use crate::grammar::Attribute;
@@ -304,7 +306,7 @@ fn json_string(text: &str) -> String {
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             control if control < ' ' => {
-                out.push_str(&format!("\\u{:04x}", control as u32));
+                let _ = write!(out, "\\u{:04x}", control as u32);
             }
             other => out.push(other),
         }
