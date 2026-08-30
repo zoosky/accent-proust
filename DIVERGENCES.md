@@ -216,27 +216,36 @@ behaviour here is an uncaught host error, not a specification, and reproducing
 The bound is far above authored content. A value nested 64 deep is not a
 document, and no corpus case exceeds three.
 
-## 10. Function parameters keep authored order, not JavaScript object order
+## 10. Maps keep authored order, not JavaScript object order
 
-**Upstream:** parameters are one JavaScript object keyed by `name || index`, so
-iteration follows JavaScript's property order, which hoists integer-like keys
-ahead of named ones and sorts them ascending. `f(x=1, 2)` iterates as `2, 1`.
+**Upstream:** every ordered map in Markdoc is a JavaScript object, so iterating
+one follows JavaScript's property order, which hoists integer-like keys ahead of
+named ones and sorts them ascending. Function parameters are keyed by
+`name || index`, so `f(x=1, 2)` iterates as `2, 1`.
 
-**Here:** parameters are an `IndexMap` in authored order. `f(x=1, 2)` iterates
-as `1, 2`.
+**Here:** every such map is an `IndexMap` in authored order. `f(x=1, 2)`
+iterates as `1, 2`.
 
 **Why:** hash order is exactly what this crate refuses to have -- rendered
 output must be byte-reproducible, and "the map decides" is how that stops being
 true. Emulating the hoist would mean reimplementing a JavaScript engine detail
 in order to reorder something the author wrote in an order they chose.
 
-**What it costs, exactly.** The only consumer of the order is the formatter,
-which prints `Object.values(f.parameters)` and drops the names
+**What it costs, exactly.** Two consumers read an order.
+
+The **formatter** prints `Object.values(f.parameters)` and drops the names
 (`formatter.ts:117-121`). The two orders therefore agree for every call that is
 entirely positional (keys `0, 1, 2`, already ascending) and every call that is
 entirely named (no integer keys, insertion order). They differ only when a
 named parameter precedes a positional one in the same call, which reprints as
 `f(1, 2)` here and `f(2, 1)` upstream. No corpus case does this.
+
+The **HTML renderer** iterates a tag's attributes in map order
+(`renderers/html.ts:38`), so the same hoist would reorder attributes in rendered
+markup. The grammar admits `[a-zA-Z0-9_-]+` as an attribute name, which includes
+`1`, so `{% x bar="b" 1="a" %}` renders as `<x bar="b" 1="a">` here and
+`<x 1="a" bar="b">` upstream. Neither is valid HTML and no corpus case writes
+one; it is recorded because the alternative is discovering it.
 
 ## 11. Upstream's two disabled markdown-it rules are only half reachable
 
