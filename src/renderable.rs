@@ -254,6 +254,65 @@ impl Default for Tag {
     }
 }
 
+/// Dropping a renderable tree is iterative, for the reason dropping an AST is.
+///
+/// [`Node`](crate::ast::Node) carries a manual `Drop` because nesting depth is
+/// attacker-controlled and the derived recursive drop aborts the process on a
+/// deep document. A renderable tree is *built from* that AST, one tag per
+/// nested tag, so it inherits the same exposure and needs the same guard. An
+/// abort cannot be caught, so the crate's panic-freedom promise is not true
+/// without it.
+///
+/// One `Drop` covers the whole tree. A [`RenderableTreeNode`] and a
+/// [`RenderableTreeNodes`] are shallow wrappers whose derived drops recurse
+/// exactly one level before reaching a [`Tag`], and this implementation unlinks
+/// every descendant onto the heap before any of them is dropped -- so each tag
+/// it drops is already empty and recurses no further. Putting a manual `Drop`
+/// on the enums instead would forbid moving a tag *out* of one, which is what
+/// a renderer does on every node.
+///
+/// [`Scalar`] is deliberately not guarded, for the same reason
+/// [`Value`](crate::ast::Value) is not: scalar nesting comes from the value
+/// grammar, which is bounded at `grammar::MAX_VALUE_DEPTH` (`DIVERGENCES.md`
+/// entry 9). Tag nesting has no such bound.
+///
+/// The cost, stated because it is invisible until someone hits it: a type with a
+/// manual `Drop` cannot have a field moved out of it, so taking ownership of
+/// [`Tag::children`] needs [`std::mem::take`] rather than a partial move. That
+/// is the same tax `Node` charges, paid for the same reason.
+impl Drop for Tag {
+    fn drop(&mut self) {
+        let mut pending: Vec<Tag> = Vec::new();
+        unlink(self, &mut pending);
+        while let Some(mut tag) = pending.pop() {
+            unlink(&mut tag, &mut pending);
+            // `tag` is dropped here already emptied, so this recurses once.
+        }
+    }
+}
+
+/// Move every tag directly inside `tag` onto `pending`, leaving it empty.
+///
+/// Attributes are walked as well as children: a rendered slot is stored in the
+/// attribute map as that slot's transformed nodes, so a tree can be arbitrarily
+/// deep through attributes alone.
+fn unlink(tag: &mut Tag, pending: &mut Vec<Tag>) {
+    let children = std::mem::take(&mut tag.children);
+    let attributes = std::mem::take(&mut tag.attributes);
+    pending.extend(children.into_iter().filter_map(into_tag));
+    for (_, value) in attributes {
+        pending.extend(value.into_vec().into_iter().filter_map(into_tag));
+    }
+}
+
+/// The tag inside a node, if it is one. Scalars drop where they stand.
+fn into_tag(node: RenderableTreeNode) -> Option<Tag> {
+    match node {
+        RenderableTreeNode::Tag(tag) => Some(*tag),
+        RenderableTreeNode::Scalar(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,6 +366,31 @@ mod tests {
             Scalar::from_value(&Value::Array(vec![Value::Variable(Variable::default())])),
             None
         );
+    }
+
+    #[test]
+    fn dropping_a_deep_tree_does_not_abort() {
+        // Nesting depth is attacker-controlled: `{% a %}` repeated is one tag
+        // per line, and every one of them becomes a tag here. A derived
+        // recursive drop aborts the process on this, which no caller can catch.
+        let mut tag = Tag::new("leaf");
+        for _ in 0..100_000 {
+            tag = Tag::with("a", IndexMap::new(), vec![RenderableTreeNode::tag(tag)]);
+        }
+        drop(tag);
+    }
+
+    #[test]
+    fn dropping_a_tree_nested_through_attributes_does_not_abort() {
+        // A rendered slot lands in the attribute map, so depth can be reached
+        // without a single child. Guarding only `children` would leave this.
+        let mut tag = Tag::new("leaf");
+        for _ in 0..100_000 {
+            let mut outer = Tag::new("a");
+            outer.set("slot", RenderableTreeNode::tag(tag));
+            tag = outer;
+        }
+        drop(tag);
     }
 
     #[test]
