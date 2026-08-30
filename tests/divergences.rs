@@ -14,13 +14,19 @@
 //! Changing the number here is expected. Changing it without touching
 //! `DIVERGENCES.md` is not possible, which is the entire point.
 
-/// The day-one budget: four from the porting strategy (fences default to
-/// `process=false`, pulldown-cmark rather than markdown-it, synchronous
-/// transform hooks, no React renderers), three CommonMark precedence rules the
-/// conformance corpus cannot arbitrate, and the `allowIndentation` option,
-/// which upstream reaches by patching markdown-it and which the host forbids
-/// reaching at all.
-const DECLARED_DIVERGENCES: usize = 8;
+/// The day-one budget was eight: four from the porting strategy (fences
+/// default to `process=false`, pulldown-cmark rather than markdown-it,
+/// synchronous transform hooks, no React renderers), three CommonMark
+/// precedence rules the conformance corpus cannot arbitrate, and the
+/// `allowIndentation` option, which upstream reaches by patching markdown-it
+/// and which the host forbids reaching at all.
+///
+/// The tag-internals parser added two more, both forced by the target language
+/// rather than chosen: nested values are depth-limited, because a stack
+/// overflow in Rust aborts and cannot be caught; and function parameters keep
+/// authored order rather than JavaScript's object order, which hoists
+/// integer-like keys.
+const DECLARED_DIVERGENCES: usize = 10;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

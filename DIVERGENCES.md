@@ -21,8 +21,9 @@ annotated with the divergence they exercise and counted separately from
 failures, so `N green, M annotated, P failing` distinguishes "we chose this"
 from "we have not done this yet".
 
-The file starts at **eight entries**, on purpose. An empty divergence file
-invites the belief that there are none.
+The file started at **eight entries**, on purpose. An empty divergence file
+invites the belief that there are none. Entries 9 and 10 were added by the
+tag-internals parser, declared in the pull request that ported it.
 
 ---
 
@@ -162,3 +163,50 @@ option absent it never emits indented nested children, and
 `parse(format(ast))` round-trips under ordinary CommonMark rules. The option
 being missing is what keeps the formatter self-consistent, not what threatens
 it.
+
+---
+
+The next two come from the tag-internals parser. Both are consequences of the
+target language rather than choices about Markdoc: one is a stack that cannot
+be caught when it overflows, the other is a map that does not reorder its keys.
+
+## 9. Nested values are depth-limited
+
+**Upstream:** the PEG parser recurses without a bound. A value nested past the
+JavaScript stack limit throws a `RangeError`, which is not a `SyntaxError`, so
+the tokenizer's `catch` rethrows it and it escapes as an unhandled error.
+
+**Here:** nesting is bounded at `grammar::MAX_VALUE_DEPTH` (64). Past it the
+value fails to parse and the error says so.
+
+**Why:** the same input in Rust would overflow the stack, and a stack overflow
+aborts the process. It cannot be caught, so the crate's panic-freedom
+promise -- "an open parser fed arbitrary text returns" -- is only true with a
+bound. Emulation was rejected because there is nothing to emulate: upstream's
+behaviour here is an uncaught host error, not a specification, and reproducing
+"crash the process" is not a compatibility goal.
+
+The bound is far above authored content. A value nested 64 deep is not a
+document, and no corpus case exceeds three.
+
+## 10. Function parameters keep authored order, not JavaScript object order
+
+**Upstream:** parameters are one JavaScript object keyed by `name || index`, so
+iteration follows JavaScript's property order, which hoists integer-like keys
+ahead of named ones and sorts them ascending. `f(x=1, 2)` iterates as `2, 1`.
+
+**Here:** parameters are an `IndexMap` in authored order. `f(x=1, 2)` iterates
+as `1, 2`.
+
+**Why:** hash order is exactly what this crate refuses to have -- rendered
+output must be byte-reproducible, and "the map decides" is how that stops being
+true. Emulating the hoist would mean reimplementing a JavaScript engine detail
+in order to reorder something the author wrote in an order they chose.
+
+**What it costs, exactly.** The only consumer of the order is the formatter,
+which prints `Object.values(f.parameters)` and drops the names
+(`formatter.ts:117-121`). The two orders therefore agree for every call that is
+entirely positional (keys `0, 1, 2`, already ascending) and every call that is
+entirely named (no integer keys, insertion order). They differ only when a
+named parameter precedes a positional one in the same call, which reprints as
+`f(1, 2)` here and `f(2, 1)` upstream. No corpus case does this.
