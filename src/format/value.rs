@@ -55,7 +55,19 @@ pub(super) enum AttributeKind {
 
 impl Formatter<'_> {
     /// Upstream's `formatValue`: a value printed as content.
+    ///
+    /// Bounded at [`MAX_FORMAT_DEPTH`] for the reason [`Formatter::scalar`] is:
+    /// an array holds arrays, and how deep is the caller's choice.
     pub(super) fn value(&mut self, value: &Value, ctx: Ctx, out: &mut Out) {
+        if self.stack >= MAX_FORMAT_DEPTH {
+            return;
+        }
+        self.stack += 1;
+        self.value_inner(value, ctx, out);
+        self.stack -= 1;
+    }
+
+    fn value_inner(&mut self, value: &Value, ctx: Ctx, out: &mut Out) {
         match value {
             // `case 'undefined'` and `if (v === null) break` -- both print
             // nothing at all, which is what makes `format(null)` the empty

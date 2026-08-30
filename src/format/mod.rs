@@ -44,7 +44,9 @@
 //! is bounded: see [`MAX_FORMAT_DEPTH`] and `DIVERGENCES.md` entry 15.
 
 mod escape;
+mod inline;
 mod node;
+mod table;
 mod value;
 
 #[cfg(test)]
@@ -90,9 +92,21 @@ pub const MAX_TAG_OPENING_WIDTH: usize = 80;
 /// depth formats to nothing; its ancestors print normally. See `DIVERGENCES.md`
 /// entry 15.
 ///
-/// 512 is far past anything a person writes and matches the transform stage, so
-/// a document that transforms also formats.
-pub const MAX_FORMAT_DEPTH: usize = 512;
+/// # Why 128 and not the transform stage's 512
+///
+/// Because the number has to be measured, not chosen. This walk carries a
+/// fatter frame than the transform's: printing a tag builds several strings
+/// before it recurses. Measured on a 2 MiB thread stack in a debug build --
+/// which is what `cargo test` gives every test -- the walk overflows a little
+/// past 700 levels of nested tags. A bound of 512 would sit inside that by less
+/// than half, which is not a margin for a published promise; 128 sits inside it
+/// by a factor of five, in the least favourable configuration this crate is
+/// built in.
+///
+/// The cost is nothing a document pays. 128 is around forty levels of authored
+/// nesting, because a paragraph of text is already four, and no document a
+/// person writes is close.
+pub const MAX_FORMAT_DEPTH: usize = 128;
 
 /// The largest number of `#` characters a heading prints.
 ///
@@ -245,6 +259,16 @@ pub fn format_value_with(value: &Value, options: &FormatOptions) -> String {
     let mut out = Out::default();
     formatter.value(value, Ctx::default(), &mut out);
     trim_start_owned(out.joined())
+}
+
+/// `String.prototype.length`: UTF-16 code units.
+///
+/// Every width the formatter measures is a JavaScript string length -- the
+/// tag-opening threshold and the table column widths -- and counting bytes or
+/// `char`s instead would move a line break for a document with an astral
+/// character in it.
+fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
 }
 
 /// `String::trim_start` without a second allocation.
