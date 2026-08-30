@@ -88,8 +88,8 @@ impl std::fmt::Display for Unimplemented {
 
 /// Run one case through `proust`.
 ///
-/// Parse and validate are implemented; transform and render are not. So this
-/// dispatches on how the corpus grades the case and answers with the first
+/// Parse, validate and the HTML renderer are implemented; transform is not. So
+/// this dispatches on how the corpus grades the case and answers with the first
 /// stage that is missing, by name. A blanket "parse is not implemented" told
 /// every case the same untrue thing; naming the stage makes the failing column
 /// readable as a work list rather than a wall.
@@ -159,14 +159,21 @@ pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
         ));
     }
 
+    // Both graded shapes wait on the same stage, whichever renderer the case
+    // names: `expected` in the corpus is the *renderable* tree, not the AST.
+    // The four `renderer: html` cases were tagged "transform and the html
+    // renderer" / "D/E" until Goal E landed; the renderer exists now, so they
+    // wait on one stage and this says which. When transform lands the arms
+    // separate again, into
+    //
+    //     Renderer::Tree => Ok(Outcome::Tree { .. }),
+    //     Renderer::Html => Ok(Outcome::Html(proust::render::render_all(..))),
+    //
+    // and nothing else in this file changes.
     match case.renderer {
-        Renderer::Tree => Err(Unimplemented {
+        Renderer::Tree | Renderer::Html => Err(Unimplemented {
             stage: "transform",
             phase: "D",
-        }),
-        Renderer::Html => Err(Unimplemented {
-            stage: "transform and the html renderer",
-            phase: "D/E",
         }),
     }
 }

@@ -6,10 +6,11 @@ validate, transform, render, and format.
 > **Status: in port.** The layout, the licence, the divergence budget, CI and
 > the conformance harness are in place. Source text parses to an AST -- the
 > tag-internals grammar, the segmenter that finds tags in raw text, and the
-> `Tokenizer` seam over CommonMark -- and an AST validates against a schema.
-> What the schema shape describes but nothing yet produces -- transform, render
-> and format, and the built-in schemas they carry -- is not ported, and nothing
-> is published. See [Conformance](#conformance) for the live number.
+> `Tokenizer` seam over CommonMark -- an AST validates against a schema, and a
+> renderable tree renders to HTML. What sits between the last two and after
+> them -- transform, the built-in schemas it carries, and the formatter -- is
+> not ported, and nothing is published. See [Conformance](#conformance) for the
+> live number.
 
 ## What this is
 
@@ -103,7 +104,10 @@ names, per case, the stage each of the others is waiting for. Two answers cover
 almost all of them:
 
 - **The renderable tree.** 96 of the 105 cases are graded on a transformed tree
-  or on rendered HTML, so parsing and validating alone cannot reach them.
+  or on rendered HTML, so parsing and validating alone cannot reach them. The
+  HTML renderer is ported and moves nothing on its own, which is the clearest
+  illustration: the four cases graded through it must be transformed before
+  they can be rendered.
 - **The built-in schemas.** Six cases are graded on a *schema* error. The
   validator produces those errors, but upstream's `validate` merges its built-in
   node and tag schemas in before validating, and those are schema content rather
