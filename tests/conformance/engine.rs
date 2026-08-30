@@ -159,20 +159,19 @@ pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
         ));
     }
 
+    // Both graded shapes wait on the same stage, whichever renderer the case
+    // names: `expected` in the corpus is the *renderable* tree, not the AST.
+    // The four `renderer: html` cases were tagged "transform and the html
+    // renderer" / "D/E" until Goal E landed; the renderer exists now, so they
+    // wait on one stage and this says which. When transform lands the arms
+    // separate again, into
+    //
+    //     Renderer::Tree => Ok(Outcome::Tree { .. }),
+    //     Renderer::Html => Ok(Outcome::Html(proust::render::render_all(..))),
+    //
+    // and nothing else in this file changes.
     match case.renderer {
-        Renderer::Tree => Err(Unimplemented {
-            stage: "transform",
-            phase: "D",
-        }),
-        // The renderer landed with Goal E, so these four cases are no longer
-        // waiting on two stages. What remains is the tree to render: when the
-        // transform stage lands, this arm becomes
-        //
-        //     Ok(Outcome::Html(proust::render::render_all(&transformed)))
-        //
-        // and nothing else here changes. The four are still failing today, and
-        // they fail for Goal D's reason, which is what this now says.
-        Renderer::Html => Err(Unimplemented {
+        Renderer::Tree | Renderer::Html => Err(Unimplemented {
             stage: "transform",
             phase: "D",
         }),
