@@ -58,6 +58,7 @@
 //!   parser is a claim about its attack surface.
 
 pub mod ast;
+pub mod builtins;
 pub mod format;
 pub mod functions;
 pub mod grammar;

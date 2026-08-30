@@ -7,10 +7,9 @@ validate, transform, render, and format.
 > the conformance harness are in place. Source text parses to an AST -- the
 > tag-internals grammar, the segmenter that finds tags in raw text, and the
 > `Tokenizer` seam over CommonMark -- an AST validates against a schema, and a
-> renderable tree renders to HTML. What sits between the last two and after
-> them -- transform, the built-in schemas it carries, and the formatter -- is
-> not ported, and nothing is published. See [Conformance](#conformance) for the
-> live number.
+> validated AST transforms into a renderable tree and renders to HTML. The
+> formatter is not ported, and nothing is published. See
+> [Conformance](#conformance) for the live number.
 
 ## What this is
 
@@ -68,7 +67,7 @@ lines of TypeScript across `src/`, excluding tests.
   [`DIVERGENCES.md`](DIVERGENCES.md), never emulated silently.
 
 Every deliberate difference lives in that file, which started at eight entries
-rather than empty and stands at twelve.
+rather than empty and stands at fourteen.
 
 One of the eight is worth knowing before reading the conformance number:
 upstream's corpus is graded under a **non-default tokenizer configuration**
@@ -88,31 +87,21 @@ cargo test --test conformance -- --nocapture
 ```
 
 ```text
-conformance: 3 green, 10 annotated, 92 failing (of 105)
+conformance: 95 green, 10 annotated, 0 failing (of 105)
 ```
 
 "Annotated" is a case that fails because it exercises a declared divergence;
 it is counted apart from a failure so that giving something up stays visible
-instead of being absorbed. Six are
-[divergence 8](DIVERGENCES.md), the `allowIndentation` option upstream's corpus
-runner switches on and this crate cannot reach; three are fences relying on the
-`process` default that divergence 1 inverts; one is frontmatter, which
-divergence 7 makes the host's.
+instead of being absorbed. Four are [divergence 8](DIVERGENCES.md), the
+`allowIndentation` option upstream's corpus runner switches on and this crate
+cannot reach; four are fences relying on the `process` default that divergence 1
+inverts; one is frontmatter, which divergence 7 makes the host's; and one writes
+a block tag indented inside a list item, which divergence 13 puts out of reach.
 
-The green three are the cases graded on a grammar error message. The harness
-names, per case, the stage each of the others is waiting for. Two answers cover
-almost all of them:
-
-- **The renderable tree.** 96 of the 105 cases are graded on a transformed tree
-  or on rendered HTML, so parsing and validating alone cannot reach them. The
-  HTML renderer is ported and moves nothing on its own, which is the clearest
-  illustration: the four cases graded through it must be transformed before
-  they can be rendered.
-- **The built-in schemas.** Six cases are graded on a *schema* error. The
-  validator produces those errors, but upstream's `validate` merges its built-in
-  node and tag schemas in before validating, and those are schema content rather
-  than schema shape. Until they land, a `document` node has no schema and the
-  harness reports the missing stage rather than a diff about it.
+Nothing fails. Every case either matches upstream or exercises a divergence
+declared in [`DIVERGENCES.md`](DIVERGENCES.md), which is the exit condition for
+the engine phases. The corpus grades no formatter output at all, so the
+formatter is gated on the unit tests ported with it rather than on this number.
 
 `conformance-baseline.txt` is the ratchet. The harness fails on any drift from
 it: a drop is a regression and is not mergeable, and a rise is a baseline that

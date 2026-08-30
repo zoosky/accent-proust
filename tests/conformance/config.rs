@@ -16,14 +16,20 @@
 //! # What it does not build
 //!
 //! Anything expressed as behaviour. Upstream's config type carries `transform`
-//! and `validate` hooks and its built-in node, tag and function schemas, none of
-//! which a YAML file can hold: `mergeConfig` supplies them in `index.ts`, and
-//! they are schema content rather than schema shape. Cases needing them are
-//! reported against the phase that lands them, by name.
+//! and `validate` hooks, which a YAML file cannot hold. The built-in node, tag
+//! and function schemas are not built here either -- they come from
+//! [`proust::builtins::config`], which is `mergeConfig` reached at construction
+//! -- and a case's own declarations are merged *over* them, keeping a redeclared
+//! key in its built-in position and taking the case's value. That is what
+//! JavaScript's `{...nodes, ...config.nodes}` does, and the corpus depends on
+//! the replacement being total: "Using a backtick in a fenced code block string
+//! attribute" supplies a `fence` schema with no transform hook and expects the
+//! built-in hook to be gone with it.
 
 use indexmap::IndexMap;
 
 use proust::ast::{Node, NodeType, ValidationError, Value as AstValue};
+use proust::builtins;
 use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
 use proust::validate::{
     AttributeType, Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot,
@@ -41,7 +47,7 @@ use crate::value::Value;
 /// understand. That is always a gap in this harness, never a conformance
 /// result.
 pub fn build(case: &Case) -> Result<Config<'_>, String> {
-    let mut config = Config::new();
+    let mut config = builtins::config();
     let Some(source) = &case.config else {
         return Ok(config);
     };
@@ -51,8 +57,8 @@ pub fn build(case: &Case) -> Result<Config<'_>, String> {
 
     for (key, value) in entries {
         match key.as_str() {
-            "tags" => config.tags = tags(value)?,
-            "nodes" => config.nodes = nodes(value)?,
+            "tags" => config.tags.extend(tags(value)?),
+            "nodes" => config.nodes.extend(nodes(value)?),
             "variables" => config.variables = Some(variables(value)?),
             "partials" => config.partials = partials(value)?,
             other => {

@@ -35,7 +35,14 @@
 /// pattern rather than a regular expression, because the alternative is a
 /// regular expression dependency in a leaf library for one optional field, and
 /// a JavaScript literal pasted into Rust would not mean the same thing anyway.
-const DECLARED_DIVERGENCES: usize = 12;
+///
+/// The transform stage added two. The table rewrite was the first pass to look
+/// at what the segmenter does to a block tag indented inside a list item:
+/// upstream nests it in the item, and a segmenter that runs before the
+/// container parser cannot. And the tree walk is depth-limited, for the reason
+/// values are -- one stage further up, and with a schema hook's signature
+/// standing between the recursion and an iterative rewrite.
+const DECLARED_DIVERGENCES: usize = 14;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

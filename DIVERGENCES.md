@@ -22,8 +22,9 @@ failures, so `N green, M annotated, P failing` distinguishes "we chose this"
 from "we have not done this yet".
 
 The file started at **eight entries**, on purpose. An empty divergence file
-invites the belief that there are none. Entries 9 and 10 were added by the
-tag-internals parser, declared in the pull request that ported it.
+invites the belief that there are none. Each entry since was declared in the
+pull request that ported the stage which found it: 9 and 10 by the tag-internals
+parser, 11 by the segmenter, 12 by the validator, 13 and 14 by the transformer.
 
 ---
 
@@ -48,8 +49,19 @@ cases do rely on the default and are annotated against this entry: "Conditional
 and variable in code example with indentation", "Tag after a comment in a code
 example", and "Multiple sequential tags in a code example". Each has a fence
 carrying no `process` annotation and expects its content split into text and tag
-children. Every other fence case in the corpus states `process` explicitly and
-is reached either way.
+children.
+
+A fourth, "Using a backtick in a fenced code block string attribute", is charged
+here for a subtler reason worth spelling out. It replaces the `fence` schema
+with one of its own, which has no `transform` hook -- and a replacement is total
+upstream, hook included. Its fence therefore takes the generic path and renders
+its *children*, which upstream has because it processed the fence and this crate
+does not: here the text is the unrendered `content` attribute that the built-in
+hook exists to put back. So the case fails on the `process` default even though
+nothing in it mentions `process`.
+
+Every other fence case in the corpus states `process` explicitly and is reached
+either way.
 
 ## 2. The CommonMark engine is pulldown-cmark, not markdown-it
 
@@ -179,10 +191,19 @@ a mode that stock Markdoc also does not enable by default.
 false`, so this matches default Markdoc. But upstream's **conformance corpus
 runs with the option on** (`spec/marktest/index.ts:21-24`, which constructs its
 tokenizer with `allowIndentation: true, allowComments: true`). Six of the 105
-cases exercise it, and they name themselves: "Indented paragraph in a tag"
-(three of them), "Oddly indented paragraph in a tag", "Indented fence in a
-tag", and "Advanced table with inner content". Those six are annotated against
-this entry rather than counted as failures.
+cases were annotated against this entry when it was written, before there was a
+transform stage to grade them through. Four still are: "Indented paragraph in a
+tag", which the corpus uses three times, and "Indented fence in a tag".
+
+The other two -- "Oddly indented paragraph in a tag" and "Advanced table with
+inner content" -- turned out to be reachable, and the annotations were removed
+when the transformer made that visible. Neither actually needs the option:
+their indentation is inside a list item or a tag body, where stock CommonMark
+already reads it as content rather than as a code block. They were annotated on
+the reasonable prediction that anything indented inside a tag would need
+`allowIndentation`, and the prediction was too wide. The harness is what caught
+it -- an annotated case is still run, and a passing one is reported as a
+divergence that has stopped being true.
 
 The formatter is unaffected in a way worth stating, because the opposite is
 easy to assume: its indenting branch is gated on the same option, so with the
@@ -274,7 +295,7 @@ exact trade entry 2 exists to refuse. Emulating half of it and calling it done
 would be worse than declaring it.
 
 **What it costs, exactly.** Nothing the corpus currently charges to this entry:
-the six cases that indent content inside a tag are already annotated against
+the cases that indent content inside a tag are already annotated against
 entry 8, which subsumes them, and "Disabled setext heading" is reachable
 because the `lheading` half *is* reproduced. A document that relies on four-space
 indentation to write a paragraph -- rather than to nest one inside a tag --
@@ -282,8 +303,10 @@ renders as code here and as prose upstream.
 
 ---
 
-The last one comes from the validator: one field of the schema shape is a
-JavaScript type this crate has no equivalent of and declines to acquire.
+The last three come from the stages above the parser. One is a field of the
+schema shape whose JavaScript type this crate has no equivalent of and declines
+to acquire; the other two the transformer found, which is the first stage
+positioned to see either.
 
 ## 12. `matches` takes a host-supplied pattern, not a regular expression
 
@@ -315,3 +338,87 @@ unchanged, so tooling reading `attribute-value-invalid` sees what it saw
 before. What is given up is the ability to paste a Markdoc schema's regular
 expression literal into a Rust schema and have it work without a matcher around
 it.
+## 13. A block tag indented inside a list item is not part of the item
+
+**Upstream:** the Markdoc block-tag rule is a markdown-it *block rule*,
+registered after `list`, `heading` and `blockquote`. By the time it runs, the
+container parser has already stripped a list item's indentation, so a tag
+written two spaces in under `* Some content` opens inside that item:
+
+```markdown
+{% table %}
+* Cell 1
+* Some content
+
+  {% if $foo %}
+  Conditional block
+  {% /if %}
+{% /table %}
+```
+
+Upstream reads the `{% if %}` as content of the second cell. The conditional's
+paragraphs render inside the `<td>`.
+
+**Here:** the segmenter resolves tag syntax *before* the CommonMark parse (the
+one redesign, `src/parse/segment.rs`), so it has no containers to consult. A
+line whose only content is a block tag splits the document wherever it appears,
+indented or not, and the list ends there. The tag becomes a sibling of the list
+rather than a child of its last item.
+
+**Why:** knowing that a line sits inside a list item means having parsed the
+list, and the segmenter runs first by construction -- that ordering is what
+reproduces markdown-it's "the tag rule consumed the tag before the emphasis rule
+saw it" without a ruler to hook (entry 2). Recovering the container structure
+means implementing CommonMark's container phase in the segmenter, ahead of the
+CommonMark parser it feeds, and then keeping the two in agreement forever. That
+is a second Markdown implementation to maintain, and the failure mode when they
+drift is silent: a document that segments one way and parses another. Guessing
+from indentation alone is worse than either -- four spaces inside a list item is
+item content, four spaces outside one is a code block, and the segmenter cannot
+tell which it is looking at.
+
+**What it costs, exactly.** One corpus case, "Advanced table with conditional
+inside cell", which is annotated against this entry. Its inline conditional
+(`* {% if $foo %}...{% /if %}`) is unaffected -- inline tags are masked, not
+split -- and only the indented block form diverges. Upstream's
+`transforms/table.test.ts` has the same shape in "does not produce errors for
+valid conditionals within a cell"; the ported test asserts what this crate
+produces and names this entry, so fixing the segmenter turns that test red
+rather than leaving it silently wrong.
+
+## 14. Transform recursion is depth-limited
+
+**Upstream:** `transformer.node` recurses into `transformer.children`, which
+recurses back into `transformer.node`, with no bound. A document nested deeply
+enough exhausts V8's stack and throws a `RangeError` a caller can catch.
+
+**Here:** the same recursion stops at `MAX_TRANSFORM_DEPTH` -- 512 levels. A node
+below that depth transforms to nothing, and its ancestors render normally.
+
+**Why:** the same reason as entry 9, one stage further up. Nesting depth is
+attacker-controlled -- `{% a %}` repeated is one level per line -- and the Rust
+equivalent of V8's `RangeError` is a stack overflow, which aborts the process
+and cannot be caught. A crate that promises panic-freedom over arbitrary input
+needs a bound rather than a hope.
+
+The recursion cannot simply be made iterative, which would have been the better
+answer. A schema `transform` hook receives a node and calls back into
+`transform::children` for its content, so unrolling the walk onto an explicit
+stack would mean giving every hook a continuation -- changing the signature a
+host writes against, and changing it for a case no real document reaches. The
+bound is counted in a thread-local rather than passed as an argument for the
+same reason: a hook that forgot to thread it would silently disable the guard.
+
+**What it costs, exactly.** Nothing the corpus contains, and nothing a person
+writes: 512 levels of nesting is far past where HTML stops meaning anything.
+It is reachable by a generated or hostile document, and such a document renders
+truncated rather than taking the process down.
+
+**And what still holds because of it.** `Scalar` has no iterative `Drop`, on the
+grounds that scalar nesting comes from the value grammar, which entry 9 bounds
+at 64. The transform stage keeps that true: it builds a `Scalar` only through
+`Scalar::from_value` over a value that resolution has already bounded, and never
+synthesises one from document structure. Slot content, which *does* track
+document depth, goes into the attribute map as `RenderableTreeNodes` -- whose
+`Tag` carries the iterative `Drop`. A later stage that builds scalars from
+document structure breaks that assumption and needs to say so.

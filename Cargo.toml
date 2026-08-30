@@ -100,3 +100,11 @@ required-features = ["pulldown-cmark-tokenizer"]
 [[test]]
 name = "validator"
 required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "table_transform"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
+name = "utils"
+required-features = ["pulldown-cmark-tokenizer"]

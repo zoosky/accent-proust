@@ -9,6 +9,6 @@
 # mergeable: a case that should stop being green is a divergence, which
 # means an entry in DIVERGENCES.md and a move to annotated, not a
 # smaller number here.
-green 3
+green 95
 annotated 10
 total 105
