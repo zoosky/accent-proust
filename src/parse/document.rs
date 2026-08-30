@@ -481,10 +481,27 @@ impl<'s, 'o> Builder<'s, 'o> {
             }
             Event::Html(_) => {
                 self.close_inline();
-                self.html_block = Some(match self.html_block.take() {
-                    Some(open) => open.start..span.end,
-                    None => span,
-                });
+                match self.html_block.take() {
+                    // A tokenizer reports an HTML block one line at a time, so
+                    // the lines are gathered back into one node. Where one block
+                    // ends and the next begins has to be read off the spans:
+                    // the lines of a block are contiguous, and two blocks are
+                    // separated by at least the blank line between them. The
+                    // block wrapper itself carries nothing and is dropped (see
+                    // `pulldown::container`), so it cannot say instead -- and
+                    // without this test two `<!-- ... -->` comments a blank line
+                    // apart merge into one comment whose content contains the
+                    // first one's terminator.
+                    Some(open) if open.end == span.start => {
+                        self.html_block = Some(open.start..span.end);
+                    }
+                    Some(open) => {
+                        self.html_block = Some(open);
+                        self.flush_html_block();
+                        self.html_block = Some(span);
+                    }
+                    None => self.html_block = Some(span),
+                }
             }
             Event::InlineHtml(_) => {
                 self.open_inline(&span);
