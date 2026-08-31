@@ -55,7 +55,13 @@
 //!   order, so two runs over the same input produce identical bytes.
 //! - **Panic-freedom is a promise.** Property tests assert the parser never
 //!   panics on arbitrary input, and fuzzing precedes publication. An open
-//!   parser is a claim about its attack surface.
+//!   parser is a claim about its attack surface. The promise covers values a
+//!   *caller* builds as well as documents this crate parses, which is why every
+//!   public recursive type -- [`ast::Node`], [`ast::Value`],
+//!   [`renderable::Tag`] and [`renderable::Scalar`] -- carries a manual
+//!   iterative [`Drop`]: a derived one aborts on a deep value, and an abort
+//!   cannot be caught. The visible cost is that a variant's contents are taken
+//!   with [`std::mem::take`] rather than moved out.
 
 pub mod ast;
 pub mod builtins;

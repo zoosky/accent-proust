@@ -24,6 +24,8 @@
 //! only, which is the line that lets `proust` be published without shipping
 //! anybody's schemas.
 
+use std::sync::Arc;
+
 use indexmap::IndexMap;
 
 use crate::ast::{Node, NodeType, Value};
@@ -47,25 +49,53 @@ pub type Variables = IndexMap<String, Value>;
 /// `Config<'a>` is wanted. That is deliberate: a schema registry that could
 /// only validate documents of its own lifetime would have to be rebuilt per
 /// page.
+///
+/// # Why four fields are behind an [`Arc`]
+///
+/// A config is cloned on a hot path and only one field differs between the
+/// original and the copy: `{% partial %}` scopes a partial's body by cloning
+/// the whole config to replace [`variables`](Config::variables). Everything
+/// else -- the schemas, the functions, the parsed partials -- is registered
+/// once and read many times, so copying it per expansion charges the caller for
+/// the site's whole partial corpus on every partial in every page, which
+/// compounds exactly where partials earn their keep.
+///
+/// So those four are shared rather than copied. Reads are unchanged
+/// ([`Arc`] derefs), and the copy-on-write mutators
+/// ([`nodes_mut`](Config::nodes_mut) and its three siblings) hand back an
+/// ordinary `&mut IndexMap` for assembly.
 #[derive(Clone, Default)]
 pub struct Config<'a> {
     /// Schemas for built-in node types, keyed by type.
-    pub nodes: IndexMap<NodeType, Schema>,
+    ///
+    /// Shared: see the note on [`Config`]. Use [`nodes_mut`](Config::nodes_mut)
+    /// to edit one in place.
+    pub nodes: Arc<IndexMap<NodeType, Schema>>,
     /// Schemas for tags, keyed by tag name.
-    pub tags: IndexMap<String, Schema>,
+    ///
+    /// Shared: see the note on [`Config`]. Use [`tags_mut`](Config::tags_mut)
+    /// to edit one in place.
+    pub tags: Arc<IndexMap<String, Schema>>,
     /// Variables a `$name` reference resolves against.
     ///
     /// [`None`] switches variable checking off; `Some` of an empty map switches
     /// it on with nothing defined.
     pub variables: Option<Variables>,
     /// Functions a `f()` call resolves against.
-    pub functions: IndexMap<String, ConfigFunction>,
+    ///
+    /// Shared: see the note on [`Config`]. Use
+    /// [`functions_mut`](Config::functions_mut) to edit one in place.
+    pub functions: Arc<IndexMap<String, ConfigFunction>>,
     /// Parsed partial documents, keyed by the name `{% partial file=... %}`
     /// uses.
     ///
     /// Parsed, not raw: this crate performs no I/O, so a host reads the file and
     /// parses it. That is why the config carries a lifetime.
-    pub partials: IndexMap<String, Node<'a>>,
+    ///
+    /// Shared: see the note on [`Config`], where this field is the one that
+    /// made the sharing worth doing. Use
+    /// [`partials_mut`](Config::partials_mut) to edit the map in place.
+    pub partials: Arc<IndexMap<String, Node<'a>>>,
     /// Switches and context for the validation pass.
     pub validation: ValidationOptions<'a>,
 }
@@ -80,6 +110,33 @@ impl<'a> Config<'a> {
     #[must_use]
     pub fn new() -> Config<'a> {
         Config::default()
+    }
+
+    /// The node schemas, for in-place edit.
+    ///
+    /// Copy-on-write: the map is copied only if another `Config` is sharing it,
+    /// which is what makes registering schemas once and scoping many times
+    /// cheap.
+    pub fn nodes_mut(&mut self) -> &mut IndexMap<NodeType, Schema> {
+        Arc::make_mut(&mut self.nodes)
+    }
+
+    /// The tag schemas, for in-place edit. Copy-on-write, as
+    /// [`nodes_mut`](Config::nodes_mut) is.
+    pub fn tags_mut(&mut self) -> &mut IndexMap<String, Schema> {
+        Arc::make_mut(&mut self.tags)
+    }
+
+    /// The functions, for in-place edit. Copy-on-write, as
+    /// [`nodes_mut`](Config::nodes_mut) is.
+    pub fn functions_mut(&mut self) -> &mut IndexMap<String, ConfigFunction> {
+        Arc::make_mut(&mut self.functions)
+    }
+
+    /// The parsed partials, for in-place edit. Copy-on-write, as
+    /// [`nodes_mut`](Config::nodes_mut) is.
+    pub fn partials_mut(&mut self) -> &mut IndexMap<String, Node<'a>> {
+        Arc::make_mut(&mut self.partials)
     }
 
     /// The schema for a node: its tag's if it has a tag, its type's otherwise.
@@ -185,8 +242,12 @@ mod tests {
     #[test]
     fn a_tag_is_looked_up_by_name_and_a_node_by_type() {
         let mut config = Config::new();
-        config.tags.insert("callout".to_string(), Schema::default());
-        config.nodes.insert(NodeType::Heading, Schema::default());
+        config
+            .tags_mut()
+            .insert("callout".to_string(), Schema::default());
+        config
+            .nodes_mut()
+            .insert(NodeType::Heading, Schema::default());
 
         let mut tag = Node::new(NodeType::Tag);
         tag.tag = Some("callout".to_string());

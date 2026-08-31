@@ -380,28 +380,9 @@ mod tests {
             value = Scalar::Array(vec![value]);
         }
         assert_eq!(string(&value), "1");
-        dismantle(value);
-    }
-
-    /// Take a nested value apart iteratively, so the fixture's own cleanup is
-    /// not what fails.
-    ///
-    /// [`Tag`](crate::renderable::Tag) carries a manual iterative `Drop`, so a
-    /// deep *tree* cleans itself up. [`Scalar`] deliberately does not -- it is
-    /// the leaf type, and scalars drop where they stand -- so this fixture, and
-    /// only this one, has to unwind itself. Without it the test passes and then
-    /// aborts with SIGABRT while dropping, which reads as a failure in the code
-    /// under test rather than in the fixture. Verified by deleting it.
-    fn dismantle(value: Scalar) {
-        let mut current = value;
-        loop {
-            let Scalar::Array(mut items) = current else {
-                break;
-            };
-            match items.pop() {
-                Some(inner) => current = inner,
-                None => break,
-            }
-        }
+        // No fixture cleanup: `Scalar` carries its own iterative `Drop`, so the
+        // value unwinds itself. This test used to hand-dismantle it, because
+        // without that the test passed and then aborted with SIGABRT while
+        // dropping -- which read as a failure in the code under test.
     }
 }

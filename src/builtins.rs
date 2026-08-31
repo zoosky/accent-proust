@@ -39,8 +39,8 @@ use crate::validate::Config;
 #[must_use]
 pub fn config<'a>() -> Config<'a> {
     let mut config = Config::new();
-    config.nodes = crate::validate::nodes::builtin();
-    config.tags = crate::tags::builtin();
-    config.functions = crate::functions::builtin();
+    config.nodes = std::sync::Arc::new(crate::validate::nodes::builtin());
+    config.tags = std::sync::Arc::new(crate::tags::builtin());
+    config.functions = std::sync::Arc::new(crate::functions::builtin());
     config
 }

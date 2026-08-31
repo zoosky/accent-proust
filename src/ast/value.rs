@@ -184,6 +184,58 @@ impl Function {
     }
 }
 
+/// Dropping a value is iterative, for the reason dropping a
+/// [`Node`](crate::ast::Node) is.
+///
+/// [`Node`](crate::ast::Node) and [`Tag`](crate::renderable::Tag) carry manual
+/// `Drop` implementations because their nesting is attacker-controlled. This
+/// type's nesting is not: every value the crate itself builds comes out of the
+/// value grammar, which is bounded at
+/// [`MAX_VALUE_DEPTH`](crate::grammar::MAX_VALUE_DEPTH) (`DIVERGENCES.md` entry
+/// 9), so no document can produce a value deep enough to overflow a recursive
+/// drop.
+///
+/// **That bound covers construction inside the crate and does not bind a
+/// caller.** `Value` is public and three of its variants are recursive --
+/// [`Value::Array`], [`Value::Hash`] and the parameters inside
+/// [`Value::Function`] -- so a host can assemble one of any depth through the
+/// public API. A derived drop would then abort the process, and an abort cannot
+/// be caught, which makes the crate's panic-freedom promise untrue for input the
+/// crate never parsed. Guarding here is what keeps that promise a property of
+/// the type rather than of one code path.
+///
+/// The cost, stated because it is invisible until someone hits it: a type with a
+/// manual `Drop` cannot have a field moved out of it, so taking ownership of a
+/// variant's contents needs [`std::mem::take`] or [`std::mem::replace`] rather
+/// than a partial move. That is the same tax [`Node`](crate::ast::Node) charges,
+/// paid for the same reason.
+impl Drop for Value {
+    fn drop(&mut self) {
+        let mut pending: Vec<Value> = Vec::new();
+        unlink(self, &mut pending);
+        while let Some(mut value) = pending.pop() {
+            unlink(&mut value, &mut pending);
+            // `value` is dropped here already emptied, so this recurses once.
+        }
+    }
+}
+
+/// Move every value directly inside `value` onto `pending`, leaving it empty.
+///
+/// [`Value::Variable`] is not walked: a [`PathSegment`] holds a string or a
+/// number and never another value, so a variable path is flat however long it
+/// is.
+fn unlink(value: &mut Value, pending: &mut Vec<Value>) {
+    match value {
+        Value::Array(items) => pending.append(items),
+        Value::Hash(entries) => pending.extend(entries.drain(..).map(|(_, value)| value)),
+        Value::Function(function) => {
+            pending.extend(function.parameters.drain(..).map(|(_, value)| value));
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +253,43 @@ mod tests {
         assert!(Value::Array(Vec::new()).is_truthy());
         assert!(Value::Hash(IndexMap::new()).is_truthy());
         assert!(Value::Variable(Variable::default()).is_truthy());
+    }
+
+    #[test]
+    fn dropping_a_deep_array_does_not_abort() {
+        // The value grammar bounds nesting at MAX_VALUE_DEPTH, so the crate
+        // never parses one this deep. `Value` is public and `Array` is
+        // recursive, so a host can build it anyway, and a derived drop aborts
+        // -- which no caller can catch.
+        let mut value = Value::Null;
+        for _ in 0..100_000 {
+            value = Value::Array(vec![value]);
+        }
+        drop(value);
+    }
+
+    #[test]
+    fn dropping_a_deep_hash_does_not_abort() {
+        let mut value = Value::Null;
+        for _ in 0..100_000 {
+            let mut hash = IndexMap::new();
+            hash.insert("k".to_string(), value);
+            value = Value::Hash(hash);
+        }
+        drop(value);
+    }
+
+    #[test]
+    fn dropping_deeply_nested_function_parameters_does_not_abort() {
+        // A function's parameters are values, so depth is reachable through a
+        // call with no array or hash in it at all.
+        let mut value = Value::Null;
+        for _ in 0..100_000 {
+            let mut parameters = IndexMap::new();
+            parameters.insert("0".to_string(), value);
+            value = Value::Function(Function::new("f".to_string(), parameters));
+        }
+        drop(value);
     }
 
     #[test]

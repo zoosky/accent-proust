@@ -271,10 +271,9 @@ impl Default for Tag {
 /// on the enums instead would forbid moving a tag *out* of one, which is what
 /// a renderer does on every node.
 ///
-/// [`Scalar`] is deliberately not guarded, for the same reason
-/// [`Value`] is not: scalar nesting comes from the value
-/// grammar, which is bounded at `grammar::MAX_VALUE_DEPTH` (`DIVERGENCES.md`
-/// entry 9). Tag nesting has no such bound.
+/// [`Scalar`] carries its own guard, below, for a different reason: its nesting
+/// is bounded for values this crate builds and unbounded for values a caller
+/// builds.
 ///
 /// The cost, stated because it is invisible until someone hits it: a type with a
 /// manual `Drop` cannot have a field moved out of it, so taking ownership of
@@ -310,6 +309,39 @@ fn into_tag(node: RenderableTreeNode) -> Option<Tag> {
     match node {
         RenderableTreeNode::Tag(tag) => Some(*tag),
         RenderableTreeNode::Scalar(_) => None,
+    }
+}
+
+/// Dropping a scalar is iterative, for the reason dropping a [`Value`] is.
+///
+/// Scalar nesting inside this crate comes from the value grammar, which is
+/// bounded at [`MAX_VALUE_DEPTH`](crate::grammar::MAX_VALUE_DEPTH)
+/// (`DIVERGENCES.md` entry 9): every `Scalar` the crate builds passes through
+/// [`Scalar::from_value`], so no document can produce one deep enough to
+/// overflow a recursive drop.
+///
+/// **That bound does not bind a caller.** [`Scalar::Array`] and
+/// [`Scalar::Object`] are public and recursive, so a host can assemble one of
+/// any depth and a derived drop would abort the process on it. An abort cannot
+/// be caught, so the crate's panic-freedom promise does not survive one. Same
+/// exposure as [`Value`], same guard.
+impl Drop for Scalar {
+    fn drop(&mut self) {
+        let mut pending: Vec<Scalar> = Vec::new();
+        unlink_scalar(self, &mut pending);
+        while let Some(mut scalar) = pending.pop() {
+            unlink_scalar(&mut scalar, &mut pending);
+            // `scalar` is dropped here already emptied, so this recurses once.
+        }
+    }
+}
+
+/// Move every scalar directly inside `scalar` onto `pending`, leaving it empty.
+fn unlink_scalar(scalar: &mut Scalar, pending: &mut Vec<Scalar>) {
+    match scalar {
+        Scalar::Array(items) => pending.append(items),
+        Scalar::Object(entries) => pending.extend(entries.drain(..).map(|(_, value)| value)),
+        _ => {}
     }
 }
 
@@ -391,6 +423,31 @@ mod tests {
             tag = outer;
         }
         drop(tag);
+    }
+
+    #[test]
+    fn dropping_a_deep_scalar_array_does_not_abort() {
+        // The crate never builds one this deep -- the value grammar is bounded
+        // at MAX_VALUE_DEPTH -- but `Scalar` is public and `Array` is
+        // recursive, so a host can. A derived drop aborts here, and an abort is
+        // not catchable, so the panic-freedom promise would not survive it.
+        let mut scalar = Scalar::Null;
+        for _ in 0..100_000 {
+            scalar = Scalar::Array(vec![scalar]);
+        }
+        drop(scalar);
+    }
+
+    #[test]
+    fn dropping_a_deep_scalar_object_does_not_abort() {
+        // The other recursive variant, which a guard over `Array` alone leaves.
+        let mut scalar = Scalar::Null;
+        for _ in 0..100_000 {
+            let mut object = IndexMap::new();
+            object.insert("k".to_string(), scalar);
+            scalar = Scalar::Object(object);
+        }
+        drop(scalar);
     }
 
     #[test]
