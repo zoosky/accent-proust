@@ -75,9 +75,10 @@ pub fn partial() -> Schema {
 /// The configuration a partial's body is transformed under.
 ///
 /// Upstream spreads the caller's config and replaces `variables`; the same here,
-/// which means a copy. Only [`Config::variables`] differs, so a config whose
-/// partials are large pays for them once per expansion -- worth knowing before
-/// a host puts a book in one.
+/// which means a copy of the [`Config`] struct. Only [`Config::variables`]
+/// differs, and the schemas, functions and parsed partials are shared rather
+/// than copied (see the note on [`Config`]) -- so what an expansion actually
+/// pays for is the scoped variable map, not the site's partial corpus.
 fn scope<'a>(config: &Config<'a>, file: &str, node: &crate::ast::Node<'a>) -> Config<'a> {
     let mut variables: IndexMap<String, Value> = config.variables.clone().unwrap_or_default();
     // Taken, not cloned: `Value`'s manual `Drop` forbids moving the map out of

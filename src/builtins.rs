@@ -7,8 +7,8 @@
 //! Doing that per call would rebuild three maps for every document, so
 //! [`config`] builds them once and the caller overrides what it wants. The
 //! result is the same, reached at construction instead of at use:
-//! `builtins::config()` then `config.tags.insert("if", mine)` leaves a config in
-//! which the caller's `if` wins, exactly as passing one to
+//! `builtins::config()` then `config.tags_mut().insert("if", mine)` leaves a
+//! config in which the caller's `if` wins, exactly as passing one to
 //! `Markdoc.transform` does.
 //!
 //! [`Config::new`] stays empty, which is the honest starting point for a host
