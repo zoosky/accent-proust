@@ -168,10 +168,13 @@ fn a_deeply_nested_value_formats_without_exhausting_the_stack() {
     // one this deep -- `MAX_VALUE_DEPTH` is 64 -- but a host can.
     //
     // The depth is a small multiple of the bound rather than the node test's
-    // 50,000, because `Value` has no iterative `Drop` and a value deep enough
-    // to overflow the formatter would overflow its own destructor first. That
-    // hazard is the crate's, not this module's: it is the open follow-up on
-    // `Scalar`, and it applies to `Value` for the same reason.
+    // 50,000, and the reason has narrowed rather than gone away. `Value` now
+    // carries an iterative `Drop`, so the destructor is no longer what caps
+    // this. `Clone` is still derived and therefore recursive, and `tag` clones
+    // the value it is handed, so a 50,000-deep value aborts on the way in --
+    // measured, not assumed: cloning one overflows with no formatter involved.
+    // Guarding the derived traversals is a separate question from guarding
+    // destruction; see the panic-freedom note in `lib.rs`.
     let mut value = Value::Number(1.0);
     for _ in 0..MAX_FORMAT_DEPTH * 4 {
         value = Value::Array(vec![value]);

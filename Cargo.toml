@@ -112,3 +112,9 @@ required-features = ["pulldown-cmark-tokenizer"]
 [[test]]
 name = "formatter"
 required-features = ["pulldown-cmark-tokenizer"]
+
+# Parses its own fixtures, so it is gated like the suites above and skipped by
+# `--no-default-features` rather than failing to compile in that lane.
+[[example]]
+name = "partial_scope_cost"
+required-features = ["pulldown-cmark-tokenizer"]

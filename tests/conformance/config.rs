@@ -57,10 +57,10 @@ pub fn build(case: &Case) -> Result<Config<'_>, String> {
 
     for (key, value) in entries {
         match key.as_str() {
-            "tags" => config.tags.extend(tags(value)?),
-            "nodes" => config.nodes.extend(nodes(value)?),
+            "tags" => config.tags_mut().extend(tags(value)?),
+            "nodes" => config.nodes_mut().extend(nodes(value)?),
             "variables" => config.variables = Some(variables(value)?),
-            "partials" => config.partials = partials(value)?,
+            "partials" => config.partials = std::sync::Arc::new(partials(value)?),
             other => {
                 return Err(format!(
                     "unknown config key {other:?}. The corpus declares something this harness \

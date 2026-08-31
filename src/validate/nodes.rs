@@ -4,7 +4,8 @@
 //! This is schema *content* -- what a `heading` renders as, which attributes a
 //! `fence` has -- as distinct from the schema *shape*, which the rest of
 //! [`crate::validate`] owns. The two are separated because a host replaces
-//! content freely (`config.nodes[Fence] = ...`) and never replaces shape.
+//! content freely (`config.nodes_mut().insert(Fence, ...)`) and never replaces
+//! shape.
 //!
 //! # Why these are built in at all, when nothing else is
 //!

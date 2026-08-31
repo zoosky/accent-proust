@@ -49,10 +49,13 @@ pub fn partial() -> Schema {
     schema.self_closing = true;
     schema.inline = Some(false);
     schema.transform = Some(Arc::new(|node, config| {
-        let Some(Value::String(file)) = node
+        // Borrowed rather than destructured: `Value` carries a manual `Drop`,
+        // so a variant's contents cannot be moved out of it. Nothing here needs
+        // to own the name.
+        let resolved = node
             .get("file")
-            .and_then(|value| transform::resolve(value, config))
-        else {
+            .and_then(|value| transform::resolve(value, config));
+        let Some(Value::String(file)) = resolved.as_ref() else {
             // Upstream's `if (!partial) return null`, reached one step earlier:
             // a `file` that is not a string cannot name one.
             return RenderableTreeNodes::One(RenderableTreeNode::Scalar(
@@ -64,7 +67,7 @@ pub fn partial() -> Schema {
                 crate::renderable::Scalar::Null,
             ));
         };
-        RenderableTreeNodes::Many(transform::children(document, &scope(config, &file, node)))
+        RenderableTreeNodes::Many(transform::children(document, &scope(config, file, node)))
     }));
     schema
 }
@@ -72,16 +75,19 @@ pub fn partial() -> Schema {
 /// The configuration a partial's body is transformed under.
 ///
 /// Upstream spreads the caller's config and replaces `variables`; the same here,
-/// which means a copy. Only [`Config::variables`] differs, so a config whose
-/// partials are large pays for them once per expansion -- worth knowing before
-/// a host puts a book in one.
+/// which means a copy of the [`Config`] struct. Only [`Config::variables`]
+/// differs, and the schemas, functions and parsed partials are shared rather
+/// than copied (see the note on [`Config`]) -- so what an expansion actually
+/// pays for is the scoped variable map, not the site's partial corpus.
 fn scope<'a>(config: &Config<'a>, file: &str, node: &crate::ast::Node<'a>) -> Config<'a> {
     let mut variables: IndexMap<String, Value> = config.variables.clone().unwrap_or_default();
-    if let Some(Value::Hash(passed)) = node
+    // Taken, not cloned: `Value`'s manual `Drop` forbids moving the map out of
+    // the variant, and `take` leaves an empty husk that drops for free.
+    let mut resolved = node
         .get("variables")
-        .and_then(|value| transform::resolve(value, config))
-    {
-        variables.extend(passed);
+        .and_then(|value| transform::resolve(value, config));
+    if let Some(Value::Hash(passed)) = resolved.as_mut() {
+        variables.extend(std::mem::take(passed));
     }
     variables.insert(
         PARTIAL_FILENAME.to_string(),

@@ -51,7 +51,7 @@ use proust::validate::{
 /// left unrestricted rather than copying upstream's lists, because no test here
 /// exercises a nesting rule and an unenforced list is easier to remove honestly
 /// than a half-copied one.
-fn nodes() -> IndexMap<NodeType, Schema> {
+fn nodes() -> Arc<IndexMap<NodeType, Schema>> {
     let mut nodes = IndexMap::new();
     nodes.insert(NodeType::Document, Schema::new());
     nodes.insert(NodeType::Paragraph, Schema::new());
@@ -70,7 +70,7 @@ fn nodes() -> IndexMap<NodeType, Schema> {
             .attribute("content", hidden(required(string())))
             .attribute("language", string()),
     );
-    nodes
+    Arc::new(nodes)
 }
 
 /// A config with the node schemas above and nothing else.
@@ -106,11 +106,13 @@ fn hidden(mut attribute: SchemaAttribute) -> SchemaAttribute {
     attribute
 }
 
-fn tags(pairs: Vec<(&str, Schema)>) -> IndexMap<String, Schema> {
-    pairs
-        .into_iter()
-        .map(|(name, schema)| (name.to_string(), schema))
-        .collect()
+fn tags(pairs: Vec<(&str, Schema)>) -> Arc<IndexMap<String, Schema>> {
+    Arc::new(
+        pairs
+            .into_iter()
+            .map(|(name, schema)| (name.to_string(), schema))
+            .collect(),
+    )
 }
 
 fn functions(pairs: Vec<(&str, ConfigFunction)>) -> IndexMap<String, ConfigFunction> {
@@ -152,7 +154,7 @@ fn expected(pairs: &[(&'static str, &str)]) -> Vec<(&'static str, String)> {
 fn function_config(functions: IndexMap<String, ConfigFunction>) -> Config<'static> {
     let mut config = config();
     config.validation.validate_functions = true;
-    config.functions = functions;
+    config.functions = Arc::new(functions);
     config.tags = tags(vec![
         ("foo", Schema::new().attribute("bar", string())),
         (
@@ -807,7 +809,7 @@ fn parent_validation_for_deep_nesting() {
         })),
         ..Schema::new().attribute("level", hidden(required(number())))
     };
-    config.nodes.insert(NodeType::Heading, heading);
+    config.nodes_mut().insert(NodeType::Heading, heading);
 
     let document =
         parse("\n{% foo %}\n{% bar %}\n{% baz %}\n# testing\n{% /baz %}\n{% /bar %}\n{% /foo %}\n");
