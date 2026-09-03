@@ -18,7 +18,7 @@
 //! Anything expressed as behaviour. Upstream's config type carries `transform`
 //! and `validate` hooks, which a YAML file cannot hold. The built-in node, tag
 //! and function schemas are not built here either -- they come from
-//! [`proust::builtins::config`], which is `mergeConfig` reached at construction
+//! [`accent_proust::builtins::config`], which is `mergeConfig` reached at construction
 //! -- and a case's own declarations are merged *over* them, keeping a redeclared
 //! key in its built-in position and taking the case's value. That is what
 //! JavaScript's `{...nodes, ...config.nodes}` does, and the corpus depends on
@@ -28,10 +28,10 @@
 
 use indexmap::IndexMap;
 
-use proust::ast::{Node, NodeType, ValidationError, Value as AstValue};
-use proust::builtins;
-use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
-use proust::validate::{
+use accent_proust::ast::{Node, NodeType, ValidationError, Value as AstValue};
+use accent_proust::builtins;
+use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::validate::{
     AttributeType, Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot,
     ValidationType, Variables,
 };

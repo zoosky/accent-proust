@@ -20,8 +20,8 @@
 //! and drop the end line rather than assert a number that describes upstream's
 //! representation instead of this one.
 
-use proust::ast::{ErrorLevel, Node, ValidationError};
-use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::ast::{ErrorLevel, Node, ValidationError};
+use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
 
 /// Every `table-syntax` error in a document, in walk order.
 ///

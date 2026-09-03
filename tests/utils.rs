@@ -2,7 +2,7 @@
 //!
 //! 186 lines covering two functions that upstream keeps together and this crate
 //! splits: `findTagEnd`, which the segmenter uses verbatim
-//! ([`proust::parse::find_tag_end`]), and `parseTags`, which upstream's
+//! ([`accent_proust::parse::find_tag_end`]), and `parseTags`, which upstream's
 //! tokenizer plugin uses to cut a text run into markdown-it tokens.
 //!
 //! # `findTagEnd` is ported as itself
@@ -34,8 +34,8 @@
 
 mod support;
 
-use proust::ast::NodeType;
-use proust::parse::{find_tag_end, parse};
+use accent_proust::ast::NodeType;
+use accent_proust::parse::{find_tag_end, parse};
 use support::{at, attribute, outline};
 
 /// Upstream asserts the offset and the byte it lands on. Both, every time.

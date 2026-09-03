@@ -19,8 +19,8 @@
 
 use std::borrow::Cow;
 
-use proust::ast::{Node, NodeType};
-use proust::parse::{
+use accent_proust::ast::{Node, NodeType};
+use accent_proust::parse::{
     parse_with, Container, ContainerKind, Event, ParseOptions, Spanned, Tokenizer,
 };
 

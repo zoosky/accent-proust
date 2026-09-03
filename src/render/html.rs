@@ -77,8 +77,8 @@ pub fn is_void_element(name: &str) -> bool {
 ///
 /// ```
 /// use indexmap::IndexMap;
-/// use proust::render::render;
-/// use proust::renderable::{RenderableTreeNode, Tag};
+/// use accent_proust::render::render;
+/// use accent_proust::renderable::{RenderableTreeNode, Tag};
 ///
 /// let heading = Tag::with("h1", IndexMap::new(), vec![RenderableTreeNode::text("test")]);
 /// assert_eq!(render(&RenderableTreeNode::tag(heading)), "<h1>test</h1>");
@@ -98,8 +98,8 @@ pub fn render(node: &RenderableTreeNode) -> String {
 ///
 /// ```
 /// use indexmap::IndexMap;
-/// use proust::render::render_all;
-/// use proust::renderable::{RenderableTreeNode, Tag};
+/// use accent_proust::render::render_all;
+/// use accent_proust::renderable::{RenderableTreeNode, Tag};
 ///
 /// let paragraph = |text: &str| {
 ///     RenderableTreeNode::tag(Tag::with(

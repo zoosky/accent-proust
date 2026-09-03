@@ -2,7 +2,7 @@
 //!
 //! Mirrors upstream's `Schema`, `SchemaAttribute`, `SchemaSlot` and
 //! `SchemaMatches` in `src/types.ts`. This is the crate's central extension
-//! point: everything a host teaches `proust` about its own content model
+//! point: everything a host teaches `accent-proust` about its own content model
 //! arrives as one of these.
 //!
 //! # Hooks are synchronous

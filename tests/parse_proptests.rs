@@ -13,8 +13,8 @@
 //! actually drive this code -- the delimiters, the fences, and the newlines that
 //! decide where a block begins.
 
+use accent_proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
 use proptest::prelude::*;
-use proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
 
 /// Fragments the segmenter makes decisions about, so a generated document is
 /// mostly interesting rather than mostly noise.

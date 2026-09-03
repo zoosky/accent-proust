@@ -1,4 +1,4 @@
-# proust
+# accent-proust
 
 A Rust implementation of the [Markdoc](https://markdoc.dev) language: parse,
 validate, transform, render, and format.
@@ -16,7 +16,7 @@ validate, transform, render, and format.
 
 Markdoc is a Markdown-based authoring language: CommonMark, plus a tag syntax
 (`{% callout type="note" %} ... {% /callout %}`) that turns documents into
-structured, validatable content rather than pre-rendered HTML. `proust`
+structured, validatable content rather than pre-rendered HTML. `accent-proust`
 implements that language in Rust, as a library:
 
 ```text
@@ -34,7 +34,7 @@ through data the caller passes in or through a trait the caller implements:
 | Tag rendering | `trait TagRenderer` | the host |
 
 That boundary is the crate's main design constraint, and it is enforced in CI:
-one job builds and tests `proust` with nothing else present. A library that
+one job builds and tests `accent-proust` with nothing else present. A library that
 reaches into its host cannot be published, and a library that can be published
 cannot be where the host's decisions live.
 
@@ -181,3 +181,6 @@ Marcel Proust, who composed *A la recherche du temps perdu* by writing on
 strips of paper and gluing them into the manuscript to extend it. Those
 *paperoles* are, exactly, what a formatter does: parse, mutate, and print
 canonical source. The name refers to nothing of Stripe's.
+
+`accent-proust` belongs to the family of [Accent CMS](https://accentcms.dev)
+crates.

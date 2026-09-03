@@ -34,10 +34,10 @@
 
 mod support;
 
+use accent_proust::ast::{Node, NodeType, Value};
+use accent_proust::format::{format, format_value, format_with, FormatOptions, OrderedListMode};
+use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
 use indexmap::IndexMap;
-use proust::ast::{Node, NodeType, Value};
-use proust::format::{format, format_value, format_with, FormatOptions, OrderedListMode};
-use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
 
 /// Upstream's `check`, minus the diff library.
 ///
@@ -946,7 +946,7 @@ mod upstream {
 /// that does not survive reparsing, an indent that shifts by one on each pass.
 mod properties {
     use super::{format, parse, support};
-    use proust::ast::Node;
+    use accent_proust::ast::Node;
 
     /// Every source this file formats, so that adding a case adds two property
     /// fixtures with it.

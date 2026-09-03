@@ -21,7 +21,7 @@
 //!
 //! Nowhere in this crate. A `Config` is assembled by the host -- from a file, a
 //! constant, a plugin manifest -- and handed in. This module owns the *shape*
-//! only, which is the line that lets `proust` be published without shipping
+//! only, which is the line that lets `accent-proust` be published without shipping
 //! anybody's schemas.
 
 use std::sync::Arc;

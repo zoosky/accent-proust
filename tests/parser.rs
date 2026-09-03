@@ -24,12 +24,12 @@
 
 mod support;
 
-use proust::ast::{NodeType, Value};
-use proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::ast::{NodeType, Value};
+use accent_proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
 use support::{all_error_ids, at, attribute, dedent, error_ids, outline};
 
 /// Upstream's `convert(example, options)`, which every test calls.
-fn convert<'s>(source: &'s str, options: &ParseOptions<'s>) -> proust::ast::Node<'s> {
+fn convert<'s>(source: &'s str, options: &ParseOptions<'s>) -> accent_proust::ast::Node<'s> {
     parse_with(source, &PulldownTokenizer::new(), options)
 }
 
@@ -659,7 +659,7 @@ fn table_document(rows: &[&str]) -> String {
 }
 
 /// Every tag name in a document, in walk order.
-fn tag_names(document: &proust::ast::Node<'_>) -> Vec<String> {
+fn tag_names(document: &accent_proust::ast::Node<'_>) -> Vec<String> {
     document
         .walk()
         .filter(|node| node.node_type == NodeType::Tag)
