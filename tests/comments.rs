@@ -22,10 +22,10 @@
 
 mod support;
 
-use proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
 use support::{dedent, outline};
 
-fn parse_comments(source: &str) -> proust::ast::Node<'_> {
+fn parse_comments(source: &str) -> accent_proust::ast::Node<'_> {
     parse_with(
         source,
         &PulldownTokenizer::new(),

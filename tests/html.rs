@@ -14,9 +14,9 @@
 //! Written against the renderable tree, so it runs in the
 //! `--no-default-features` lane too: rendering needs no tokenizer.
 
+use accent_proust::render::{is_void_element, render, render_all, VOID_ELEMENTS};
+use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
 use indexmap::IndexMap;
-use proust::render::{is_void_element, render, render_all, VOID_ELEMENTS};
-use proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
 
 /// Upstream's `tag(name, attributes, children)` test helper.
 ///

@@ -21,8 +21,8 @@
 
 mod support;
 
-use proust::ast::NodeType;
-use proust::parse::parse;
+use accent_proust::ast::NodeType;
+use accent_proust::parse::parse;
 use support::{at, attribute, dedent, outline};
 
 // ---- parsing containers in content --------------------------------------

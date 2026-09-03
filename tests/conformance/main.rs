@@ -34,10 +34,10 @@
 //! # Layout
 //!
 //! - [`corpus`] reads the YAML. The only module that knows YAML exists.
-//! - [`config`] turns a case's `config:` block into a `proust` config.
+//! - [`config`] turns a case's `config:` block into a `accent-proust` config.
 //! - [`value`] is the shape a corpus expectation and a rendered tree both
 //!   reduce to.
-//! - [`engine`] is the seam into `proust`, and the one file a phase of the port
+//! - [`engine`] is the seam into `accent-proust`, and the one file a phase of the port
 //!   edits.
 //! - [`divergence`] lists the annotated cases.
 //! - [`diff`] says what differed; [`report`] counts and prints; [`baseline`]
@@ -271,7 +271,7 @@ fn check_annotations(results: &[CaseResult]) {
     );
 }
 
-/// Every case's `config:` block must map onto a `proust` config.
+/// Every case's `config:` block must map onto a `accent-proust` config.
 ///
 /// Run apart from the cases themselves, and before the counts are believed,
 /// because a config the mapping does not understand is a harness defect rather

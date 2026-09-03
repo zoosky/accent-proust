@@ -57,7 +57,7 @@ use std::borrow::Cow;
 /// # Examples
 ///
 /// ```
-/// use proust::render::escape_html;
+/// use accent_proust::render::escape_html;
 ///
 /// assert_eq!(escape_html("a & b"), "a &amp; b");
 /// assert_eq!(escape_html(r#""quoted""#), "&quot;quoted&quot;");

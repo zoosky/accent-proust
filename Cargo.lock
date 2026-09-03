@@ -3,6 +3,17 @@
 version = 3
 
 [[package]]
+name = "accent-proust"
+version = "0.0.0"
+dependencies = [
+ "indexmap",
+ "proptest",
+ "pulldown-cmark",
+ "saphyr",
+ "thiserror",
+]
+
+[[package]]
 name = "arraydeque"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -203,17 +214,6 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "proust"
-version = "0.0.0"
-dependencies = [
- "indexmap",
- "proptest",
- "pulldown-cmark",
- "saphyr",
- "thiserror",
 ]
 
 [[package]]

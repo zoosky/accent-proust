@@ -48,12 +48,12 @@ use crate::validate::Config;
 ///
 /// ```
 /// # #[cfg(feature = "pulldown-cmark-tokenizer")] {
-/// use proust::renderable::{RenderableTreeNode, RenderableTreeNodes};
+/// use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes};
 ///
-/// let document = proust::parse::parse("# Title\n");
-/// let config = proust::builtins::config();
+/// let document = accent_proust::parse::parse("# Title\n");
+/// let config = accent_proust::builtins::config();
 /// let RenderableTreeNodes::One(RenderableTreeNode::Tag(article)) =
-///     proust::transform::transform(&document, &config)
+///     accent_proust::transform::transform(&document, &config)
 /// else {
 ///     panic!("a document renders one element");
 /// };

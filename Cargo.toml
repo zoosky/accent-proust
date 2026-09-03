@@ -1,12 +1,12 @@
 [package]
-name = "proust"
+name = "accent-proust"
 version = "0.0.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
 description = "A Rust implementation of the Markdoc language: parse, validate, transform, render, and format."
 readme = "README.md"
-repository = "https://github.com/zoosky/proust"
+repository = "https://github.com/zoosky/accent-proust"
 keywords = ["markdoc", "markdown", "commonmark", "parser", "formatter"]
 categories = ["parser-implementations", "text-processing"]
 # Not published until the three trademark clearance items are answered.

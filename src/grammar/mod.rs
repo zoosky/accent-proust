@@ -141,8 +141,8 @@ pub enum Attribute {
 /// instead would be a divergence, and a silent one.
 ///
 /// ```
-/// use proust::ast::Value;
-/// use proust::grammar::{parse_tag, Attribute, TagItem};
+/// use accent_proust::ast::Value;
+/// use accent_proust::grammar::{parse_tag, Attribute, TagItem};
 ///
 /// let item = parse_tag(r#"callout type="note" /"#)?;
 /// assert_eq!(
@@ -156,7 +156,7 @@ pub enum Attribute {
 ///         self_closing: true,
 ///     }
 /// );
-/// # Ok::<(), proust::grammar::TagError>(())
+/// # Ok::<(), accent_proust::grammar::TagError>(())
 /// ```
 ///
 /// # Errors
