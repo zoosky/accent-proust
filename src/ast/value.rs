@@ -32,7 +32,6 @@ use indexmap::IndexMap;
 /// load-bearing at parse time -- `null` is matched before an identifier could
 /// be, and a function call is matched before a variable -- but here it is only
 /// documentation, because by the time you hold a `Value` the choice is made.
-#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Value {
     /// `null`.
@@ -61,6 +60,350 @@ pub enum Value {
     Function(Function),
     /// A `$`-prefixed variable reference, `$foo.bar[0]`.
     Variable(Variable),
+}
+
+/// # Why the three traversals are written out rather than derived
+///
+/// The same reason [`Drop`] is, and the reasoning is set out once on
+/// [`Scalar`](crate::renderable::Scalar): a derived `Clone`, `PartialEq` or
+/// `Debug` recurses per level, [`Value::Array`], [`Value::Hash`] and the
+/// parameters inside [`Value::Function`] are public and recursive, and a stack
+/// overflow aborts rather than panics.
+///
+/// [`Variable`] is delegated to its own derive on purpose: a
+/// [`PathSegment`] holds a string or a number and never another value, so a
+/// path is flat however long it is. [`Function`] is **not** delegated, even
+/// though it derives the three: its parameters are values, so calling its
+/// derive would re-enter this type once per nested call.
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        let mut plan = vec![ValueStep::Open(self)];
+        let mut done: Vec<Value> = Vec::new();
+
+        while let Some(step) = plan.pop() {
+            match step {
+                ValueStep::Open(value) => match value {
+                    Value::Array(items) => {
+                        plan.push(ValueStep::Close(value));
+                        for item in items.iter().rev() {
+                            plan.push(ValueStep::Open(item));
+                        }
+                    }
+                    Value::Hash(entries) => {
+                        plan.push(ValueStep::Close(value));
+                        for (_, nested) in entries.iter().rev() {
+                            plan.push(ValueStep::Open(nested));
+                        }
+                    }
+                    Value::Function(function) => {
+                        plan.push(ValueStep::Close(value));
+                        for (_, nested) in function.parameters.iter().rev() {
+                            plan.push(ValueStep::Open(nested));
+                        }
+                    }
+                    Value::Null => done.push(Value::Null),
+                    Value::Boolean(inner) => done.push(Value::Boolean(*inner)),
+                    Value::Number(inner) => done.push(Value::Number(*inner)),
+                    Value::String(inner) => done.push(Value::String(inner.clone())),
+                    Value::Variable(inner) => done.push(Value::Variable(inner.clone())),
+                },
+                ValueStep::Close(value) => match value {
+                    Value::Array(items) => {
+                        let start = done.len().saturating_sub(items.len());
+                        let children = done.split_off(start);
+                        done.push(Value::Array(children));
+                    }
+                    Value::Hash(entries) => {
+                        let start = done.len().saturating_sub(entries.len());
+                        let values = done.split_off(start);
+                        done.push(Value::Hash(entries.keys().cloned().zip(values).collect()));
+                    }
+                    Value::Function(function) => {
+                        let start = done.len().saturating_sub(function.parameters.len());
+                        let values = done.split_off(start);
+                        done.push(Value::Function(Function::new(
+                            function.name.clone(),
+                            function.parameters.keys().cloned().zip(values).collect(),
+                        )));
+                    }
+                    _ => {}
+                },
+            }
+        }
+
+        done.pop().unwrap_or(Value::Null)
+    }
+}
+
+/// One step of the post-order clone plan: see a value, then rebuild it.
+enum ValueStep<'v> {
+    Open(&'v Value),
+    Close(&'v Value),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        let mut work: Vec<(&Value, &Value)> = vec![(self, other)];
+        while let Some((left, right)) = work.pop() {
+            match (left, right) {
+                (Value::Null, Value::Null) => {}
+                (Value::Boolean(a), Value::Boolean(b)) => {
+                    if a != b {
+                        return false;
+                    }
+                }
+                (Value::Number(a), Value::Number(b)) => {
+                    if a != b {
+                        return false;
+                    }
+                }
+                (Value::String(a), Value::String(b)) => {
+                    if a != b {
+                        return false;
+                    }
+                }
+                // Flat: a path segment never holds a value.
+                (Value::Variable(a), Value::Variable(b)) => {
+                    if a != b {
+                        return false;
+                    }
+                }
+                (Value::Array(a), Value::Array(b)) => {
+                    if a.len() != b.len() {
+                        return false;
+                    }
+                    work.extend(a.iter().zip(b.iter()));
+                }
+                (Value::Hash(a), Value::Hash(b)) => {
+                    // Unordered, because that is what `IndexMap::eq` does.
+                    if a.len() != b.len() {
+                        return false;
+                    }
+                    for (key, value) in a {
+                        match b.get(key) {
+                            Some(nested) => work.push((value, nested)),
+                            None => return false,
+                        }
+                    }
+                }
+                (Value::Function(a), Value::Function(b)) => {
+                    if a.name != b.name || a.parameters.len() != b.parameters.len() {
+                        return false;
+                    }
+                    for (key, value) in &a.parameters {
+                        match b.parameters.get(key) {
+                            Some(nested) => work.push((value, nested)),
+                            None => return false,
+                        }
+                    }
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
+impl std::fmt::Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let alternate = f.alternate();
+        let mut stack: Vec<ValueTok<'_>> = vec![ValueTok::Node(self, 0)];
+
+        while let Some(token) = stack.pop() {
+            match token {
+                ValueTok::Text(text) => f.write_str(text)?,
+                ValueTok::Owned(text) => f.write_str(&text)?,
+                ValueTok::Line(depth) => {
+                    f.write_str("\n")?;
+                    for _ in 0..depth {
+                        f.write_str("    ")?;
+                    }
+                }
+                ValueTok::Node(value, depth) => {
+                    expand_value(f, &mut stack, value, depth, alternate)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// One pending piece of `Debug` output for a [`Value`].
+enum ValueTok<'v> {
+    Node(&'v Value, usize),
+    Text(&'static str),
+    Owned(String),
+    Line(usize),
+}
+
+/// The derive expands a tuple variant's field onto its own line under `{:#?}`,
+/// even when the field cannot nest.
+fn value_leaf(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &str,
+    body: &str,
+    depth: usize,
+    alternate: bool,
+) -> std::fmt::Result {
+    if alternate {
+        let pad = "    ".repeat(depth);
+        write!(f, "{name}(\n{pad}    {body},\n{pad})")
+    } else {
+        write!(f, "{name}({body})")
+    }
+}
+
+/// Re-pad every line after the first, so a block formatted at column zero can
+/// be spliced in at `depth`.
+fn indent_block(body: &str, depth: usize) -> String {
+    let pad = "    ".repeat(depth);
+    body.replace('\n', &format!("\n{pad}"))
+}
+
+/// Write a value's opening text and queue the rest of it.
+#[allow(clippy::too_many_lines)]
+fn expand_value<'v>(
+    f: &mut std::fmt::Formatter<'_>,
+    stack: &mut Vec<ValueTok<'v>>,
+    value: &'v Value,
+    depth: usize,
+    alternate: bool,
+) -> std::fmt::Result {
+    match value {
+        Value::Null => f.write_str("Null"),
+        Value::Boolean(inner) => value_leaf(f, "Boolean", &format!("{inner:?}"), depth, alternate),
+        Value::Number(inner) => value_leaf(f, "Number", &format!("{inner:?}"), depth, alternate),
+        Value::String(inner) => value_leaf(f, "String", &format!("{inner:?}"), depth, alternate),
+        // Flat -- a path segment never holds a value -- so its own derive is
+        // safe here and is exactly what the outer derive would have called.
+        //
+        // The delegated block has to be re-indented, though: `{:#?}` formats it
+        // as if it started at column zero, and it is being spliced in at
+        // `depth + 1`. Without this its inner lines keep the wrong padding,
+        // which the parity test catches.
+        Value::Variable(inner) => {
+            if alternate {
+                let block = indent_block(&format!("{inner:#?}"), depth + 1);
+                value_leaf(f, "Variable", &block, depth, alternate)
+            } else {
+                value_leaf(f, "Variable", &format!("{inner:?}"), depth, alternate)
+            }
+        }
+        Value::Array(items) => {
+            if items.is_empty() {
+                return value_leaf(f, "Array", "[]", depth, alternate);
+            }
+            f.write_str("Array(")?;
+            let mut queued: Vec<ValueTok<'v>> = Vec::new();
+            if alternate {
+                queued.push(ValueTok::Line(depth + 1));
+                queued.push(ValueTok::Text("["));
+                for item in items {
+                    queued.push(ValueTok::Line(depth + 2));
+                    queued.push(ValueTok::Node(item, depth + 2));
+                    queued.push(ValueTok::Text(","));
+                }
+                queued.push(ValueTok::Line(depth + 1));
+                queued.push(ValueTok::Text("],"));
+                queued.push(ValueTok::Line(depth));
+                queued.push(ValueTok::Text(")"));
+            } else {
+                queued.push(ValueTok::Text("["));
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        queued.push(ValueTok::Text(", "));
+                    }
+                    queued.push(ValueTok::Node(item, depth));
+                }
+                queued.push(ValueTok::Text("])"));
+            }
+            stack.extend(queued.into_iter().rev());
+            Ok(())
+        }
+        Value::Hash(entries) => {
+            if entries.is_empty() {
+                return value_leaf(f, "Hash", "{}", depth, alternate);
+            }
+            f.write_str("Hash(")?;
+            let mut queued: Vec<ValueTok<'v>> = Vec::new();
+            if alternate {
+                queued.push(ValueTok::Line(depth + 1));
+                queued.push(ValueTok::Text("{"));
+                for (key, nested) in entries {
+                    queued.push(ValueTok::Line(depth + 2));
+                    queued.push(ValueTok::Owned(format!("{key:?}: ")));
+                    queued.push(ValueTok::Node(nested, depth + 2));
+                    queued.push(ValueTok::Text(","));
+                }
+                queued.push(ValueTok::Line(depth + 1));
+                queued.push(ValueTok::Text("},"));
+                queued.push(ValueTok::Line(depth));
+                queued.push(ValueTok::Text(")"));
+            } else {
+                queued.push(ValueTok::Text("{"));
+                for (index, (key, nested)) in entries.iter().enumerate() {
+                    if index > 0 {
+                        queued.push(ValueTok::Text(", "));
+                    }
+                    queued.push(ValueTok::Owned(format!("{key:?}: ")));
+                    queued.push(ValueTok::Node(nested, depth));
+                }
+                queued.push(ValueTok::Text("})"));
+            }
+            stack.extend(queued.into_iter().rev());
+            Ok(())
+        }
+        // `Function(Function { name: .., parameters: .. })` -- a tuple variant
+        // wrapping a struct, so both layers are written out here. Delegating to
+        // `Function`'s own derive would re-enter this type per nested call.
+        Value::Function(function) => {
+            let mut queued: Vec<ValueTok<'v>> = Vec::new();
+            let name = format!("{:?}", function.name);
+            if alternate {
+                f.write_str("Function(")?;
+                queued.push(ValueTok::Line(depth + 1));
+                queued.push(ValueTok::Text("Function {"));
+                queued.push(ValueTok::Line(depth + 2));
+                queued.push(ValueTok::Owned(format!("name: {name},")));
+                queued.push(ValueTok::Line(depth + 2));
+                if function.parameters.is_empty() {
+                    queued.push(ValueTok::Text("parameters: {},"));
+                } else {
+                    queued.push(ValueTok::Text("parameters: {"));
+                    for (key, nested) in &function.parameters {
+                        queued.push(ValueTok::Line(depth + 3));
+                        queued.push(ValueTok::Owned(format!("{key:?}: ")));
+                        queued.push(ValueTok::Node(nested, depth + 3));
+                        queued.push(ValueTok::Text(","));
+                    }
+                    queued.push(ValueTok::Line(depth + 2));
+                    queued.push(ValueTok::Text("},"));
+                }
+                queued.push(ValueTok::Line(depth + 1));
+                queued.push(ValueTok::Text("},"));
+                queued.push(ValueTok::Line(depth));
+                queued.push(ValueTok::Text(")"));
+            } else {
+                write!(f, "Function(Function {{ name: {name}, parameters: ")?;
+                if function.parameters.is_empty() {
+                    queued.push(ValueTok::Text("{}"));
+                } else {
+                    queued.push(ValueTok::Text("{"));
+                    for (index, (key, nested)) in function.parameters.iter().enumerate() {
+                        if index > 0 {
+                            queued.push(ValueTok::Text(", "));
+                        }
+                        queued.push(ValueTok::Owned(format!("{key:?}: ")));
+                        queued.push(ValueTok::Node(nested, depth));
+                    }
+                    queued.push(ValueTok::Text("}"));
+                }
+                queued.push(ValueTok::Text(" })"));
+            }
+            stack.extend(queued.into_iter().rev());
+            Ok(())
+        }
+    }
 }
 
 impl Value {
@@ -233,6 +576,180 @@ fn unlink(value: &mut Value, pending: &mut Vec<Value>) {
             pending.extend(function.parameters.drain(..).map(|(_, value)| value));
         }
         _ => {}
+    }
+}
+
+/// `Debug` output is observable, so the hand-written emitter is pinned against
+/// the derive rather than against a reading of it. See the same pattern on
+/// [`Scalar`](crate::renderable::Scalar).
+#[cfg(test)]
+mod debug_parity {
+    use super::*;
+
+    mod mirror {
+        // Every field exists to be formatted by the derive and is never read
+        // otherwise -- that is the whole point of the type.
+        #![allow(dead_code)]
+
+        use indexmap::IndexMap;
+
+        #[derive(Debug)]
+        pub struct Function {
+            pub name: String,
+            pub parameters: IndexMap<String, Value>,
+        }
+
+        #[derive(Debug)]
+        pub enum Value {
+            Null,
+            Boolean(bool),
+            String(String),
+            Number(f64),
+            Array(Vec<Value>),
+            Hash(IndexMap<String, Value>),
+            Function(Function),
+            Variable(crate::ast::Variable),
+        }
+    }
+
+    fn to_mirror(value: &Value) -> mirror::Value {
+        match value {
+            Value::Null => mirror::Value::Null,
+            Value::Boolean(inner) => mirror::Value::Boolean(*inner),
+            Value::String(inner) => mirror::Value::String(inner.clone()),
+            Value::Number(inner) => mirror::Value::Number(*inner),
+            Value::Variable(inner) => mirror::Value::Variable(inner.clone()),
+            Value::Array(items) => mirror::Value::Array(items.iter().map(to_mirror).collect()),
+            Value::Hash(entries) => mirror::Value::Hash(
+                entries
+                    .iter()
+                    .map(|(key, nested)| (key.clone(), to_mirror(nested)))
+                    .collect(),
+            ),
+            Value::Function(function) => mirror::Value::Function(mirror::Function {
+                name: function.name.clone(),
+                parameters: function
+                    .parameters
+                    .iter()
+                    .map(|(key, nested)| (key.clone(), to_mirror(nested)))
+                    .collect(),
+            }),
+        }
+    }
+
+    fn assert_parity(value: &Value) {
+        let reference = to_mirror(value);
+        assert_eq!(
+            format!("{value:?}"),
+            format!("{reference:?}"),
+            "plain Debug"
+        );
+        assert_eq!(
+            format!("{value:#?}"),
+            format!("{reference:#?}"),
+            "alternate Debug"
+        );
+    }
+
+    fn hash(pairs: Vec<(&str, Value)>) -> Value {
+        Value::Hash(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
+    }
+
+    fn call(name: &str, pairs: Vec<(&str, Value)>) -> Value {
+        Value::Function(Function::new(
+            name.to_owned(),
+            pairs
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        ))
+    }
+
+    #[test]
+    fn every_value_shape_formats_as_the_derive_would() {
+        let shapes = vec![
+            Value::Null,
+            Value::Boolean(true),
+            Value::Number(1.0),
+            Value::String("hi".to_owned()),
+            Value::String("a \"quote\" and a \\ and a \n".to_owned()),
+            Value::Variable(Variable::default()),
+            Value::Variable(Variable::new(vec![
+                PathSegment::Key("a".to_owned()),
+                PathSegment::Index(1.0),
+            ])),
+            Value::Array(Vec::new()),
+            hash(Vec::new()),
+            call("f", Vec::new()),
+            Value::Array(vec![Value::Null, Value::Boolean(false)]),
+            hash(vec![("a", Value::Null), ("b", Value::Number(2.0))]),
+            call("f", vec![("0", Value::Null)]),
+            call(
+                "g",
+                vec![("0", Value::Null), ("1", Value::String("x".into()))],
+            ),
+            // Every recursive edge nested inside another.
+            Value::Array(vec![
+                hash(vec![("k", call("inner", vec![("0", Value::Null)]))]),
+                Value::Array(vec![Value::Array(Vec::new())]),
+            ]),
+            call(
+                "outer",
+                vec![("0", call("inner", vec![("0", Value::Null)]))],
+            ),
+        ];
+        for shape in &shapes {
+            assert_parity(shape);
+        }
+    }
+
+    #[test]
+    fn a_deep_value_formats_clones_and_compares_without_aborting() {
+        // The reason all three are hand-written. A recursive mirror is not
+        // built here: it would overflow before the assertions could run.
+        let mut value = Value::Null;
+        for _ in 0..100_000 {
+            value = Value::Array(vec![value]);
+        }
+        let copy = value.clone();
+        assert!(copy == value);
+        assert!(format!("{value:?}").starts_with("Array([Array("));
+    }
+
+    #[test]
+    fn a_deep_value_through_function_parameters_survives_all_three() {
+        // Depth reachable with no array or hash in it at all.
+        let mut value = Value::Null;
+        for _ in 0..100_000 {
+            value = call("f", vec![("0", value)]);
+        }
+        let copy = value.clone();
+        assert!(copy == value);
+        assert!(format!("{value:?}").starts_with("Function(Function { name: \"f\""));
+    }
+
+    #[test]
+    fn cloning_preserves_key_order() {
+        let original = hash(vec![("z", Value::Null), ("a", Value::Number(1.0))]);
+        let copy = original.clone();
+        let Value::Hash(entries) = &copy else {
+            panic!("expected a hash")
+        };
+        assert_eq!(entries.keys().collect::<Vec<_>>(), ["z", "a"]);
+    }
+
+    #[test]
+    fn equality_ignores_hash_order_as_indexmap_does() {
+        let left = hash(vec![("a", Value::Null), ("b", Value::Number(1.0))]);
+        let right = hash(vec![("b", Value::Number(1.0)), ("a", Value::Null)]);
+        assert!(left == right);
+        assert!(left != hash(vec![("a", Value::Null)]));
+        assert!(call("f", vec![("0", Value::Null)]) != call("g", vec![("0", Value::Null)]));
     }
 }
 

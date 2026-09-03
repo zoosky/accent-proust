@@ -202,7 +202,7 @@ impl std::fmt::Display for NodeType {
 /// tree without a source document. [`Node::new`] gives the latter a node with
 /// no location, which is the same shape upstream produces when its `location`
 /// option is off.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Default)]
 pub struct Node<'a> {
     /// What kind of node this is.
     pub node_type: NodeType,
@@ -242,6 +242,252 @@ pub struct Node<'a> {
     pub inline: bool,
     /// Where the node came from, unless locations were switched off.
     pub location: Option<Location<'a>>,
+}
+
+/// # Why the three traversals are written out rather than derived
+///
+/// The reasoning is on [`Scalar`](crate::renderable::Scalar), and applies here
+/// for the reason [`Drop`] applies: `{% a %}` repeated is one nesting level per
+/// line, so a derived `Clone`, `PartialEq` or `Debug` recurses once per line of
+/// an attacker-supplied document.
+///
+/// Only [`Node::children`] and [`Node::slots`] recurse. The other eight fields
+/// bottom out in types that are already safe -- [`Value`] carries its own
+/// iterative traversals, and everything else is flat -- so they are handled
+/// whole rather than walked.
+impl Clone for Node<'_> {
+    fn clone(&self) -> Self {
+        enum Step<'s, 'a> {
+            Open(&'s Node<'a>),
+            Close(&'s Node<'a>),
+        }
+
+        let mut plan = vec![Step::Open(self)];
+        let mut done: Vec<Node<'_>> = Vec::new();
+
+        while let Some(step) = plan.pop() {
+            match step {
+                Step::Open(node) => {
+                    plan.push(Step::Close(node));
+                    // Slots then children, reversed, so `done` receives
+                    // finished subtrees in the order `Close` reclaims them.
+                    for child in node.children.iter().rev() {
+                        plan.push(Step::Open(child));
+                    }
+                    for (_, slot) in node.slots.iter().rev() {
+                        plan.push(Step::Open(slot));
+                    }
+                }
+                Step::Close(node) => {
+                    let total = node.slots.len() + node.children.len();
+                    let start = done.len().saturating_sub(total);
+                    let mut finished = done.split_off(start).into_iter();
+
+                    let slots: IndexMap<String, Node<'_>> = node
+                        .slots
+                        .keys()
+                        .cloned()
+                        .zip(finished.by_ref().take(node.slots.len()))
+                        .collect();
+                    let children: Vec<Node<'_>> = finished.collect();
+
+                    done.push(Node {
+                        node_type: node.node_type,
+                        tag: node.tag.clone(),
+                        attributes: node.attributes.clone(),
+                        children,
+                        slots,
+                        errors: node.errors.clone(),
+                        lines: node.lines.clone(),
+                        annotations: node.annotations.clone(),
+                        inline: node.inline,
+                        location: node.location,
+                    });
+                }
+            }
+        }
+
+        done.pop().unwrap_or_default()
+    }
+}
+
+impl PartialEq for Node<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        let mut work: Vec<(&Node<'_>, &Node<'_>)> = vec![(self, other)];
+        while let Some((left, right)) = work.pop() {
+            // Every field that cannot recurse, compared whole.
+            if left.node_type != right.node_type
+                || left.tag != right.tag
+                || left.attributes != right.attributes
+                || left.errors != right.errors
+                || left.lines != right.lines
+                || left.annotations != right.annotations
+                || left.inline != right.inline
+                || left.location != right.location
+                || left.children.len() != right.children.len()
+                || left.slots.len() != right.slots.len()
+            {
+                return false;
+            }
+            work.extend(left.children.iter().zip(right.children.iter()));
+            // Unordered, because that is what `IndexMap::eq` does.
+            for (key, slot) in &left.slots {
+                match right.slots.get(key) {
+                    Some(other_slot) => work.push((slot, other_slot)),
+                    None => return false,
+                }
+            }
+        }
+        true
+    }
+}
+
+impl std::fmt::Debug for Node<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let alternate = f.alternate();
+        let mut stack: Vec<NodeTok<'_, '_>> = vec![NodeTok::Node(self, 0)];
+
+        while let Some(token) = stack.pop() {
+            match token {
+                NodeTok::Text(text) => f.write_str(text)?,
+                NodeTok::Owned(text) => f.write_str(&text)?,
+                NodeTok::Line(depth) => {
+                    f.write_str("\n")?;
+                    for _ in 0..depth {
+                        f.write_str("    ")?;
+                    }
+                }
+                NodeTok::Node(node, depth) => expand_node(f, &mut stack, node, depth, alternate)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+/// One pending piece of `Debug` output for a [`Node`].
+enum NodeTok<'n, 'a> {
+    Node(&'n Node<'a>, usize),
+    Text(&'static str),
+    Owned(String),
+    Line(usize),
+}
+
+/// Re-pad every line after the first, so a block formatted at column zero can
+/// be spliced in at `depth`.
+fn indent_block(body: &str, depth: usize) -> String {
+    let pad = "    ".repeat(depth);
+    body.replace('\n', &format!("\n{pad}"))
+}
+
+/// Write a node's flat fields and queue its children and slots.
+///
+/// The eight non-recursive fields are delegated to their own `Debug`, which is
+/// what the derive would have called; only `children` and `slots` are walked.
+fn expand_node<'n, 'a>(
+    f: &mut std::fmt::Formatter<'_>,
+    stack: &mut Vec<NodeTok<'n, 'a>>,
+    node: &'n Node<'a>,
+    depth: usize,
+    alternate: bool,
+) -> std::fmt::Result {
+    /// Format a flat field the way the derive nests it.
+    fn flat(value: &dyn std::fmt::Debug, depth: usize, alternate: bool) -> String {
+        if alternate {
+            indent_block(&format!("{value:#?}"), depth)
+        } else {
+            format!("{value:?}")
+        }
+    }
+
+    let mut queued: Vec<NodeTok<'n, 'a>> = Vec::new();
+
+    if alternate {
+        let inner = depth + 1;
+        f.write_str("Node {")?;
+        for (name, rendered) in [
+            ("node_type", flat(&node.node_type, inner, true)),
+            ("tag", flat(&node.tag, inner, true)),
+            ("attributes", flat(&node.attributes, inner, true)),
+        ] {
+            queued.push(NodeTok::Line(inner));
+            queued.push(NodeTok::Owned(format!("{name}: {rendered},")));
+        }
+
+        queued.push(NodeTok::Line(inner));
+        if node.children.is_empty() {
+            queued.push(NodeTok::Text("children: [],"));
+        } else {
+            queued.push(NodeTok::Text("children: ["));
+            for child in &node.children {
+                queued.push(NodeTok::Line(inner + 1));
+                queued.push(NodeTok::Node(child, inner + 1));
+                queued.push(NodeTok::Text(","));
+            }
+            queued.push(NodeTok::Line(inner));
+            queued.push(NodeTok::Text("],"));
+        }
+
+        queued.push(NodeTok::Line(inner));
+        if node.slots.is_empty() {
+            queued.push(NodeTok::Text("slots: {},"));
+        } else {
+            queued.push(NodeTok::Text("slots: {"));
+            for (key, slot) in &node.slots {
+                queued.push(NodeTok::Line(inner + 1));
+                queued.push(NodeTok::Owned(format!("{key:?}: ")));
+                queued.push(NodeTok::Node(slot, inner + 1));
+                queued.push(NodeTok::Text(","));
+            }
+            queued.push(NodeTok::Line(inner));
+            queued.push(NodeTok::Text("},"));
+        }
+
+        for (name, rendered) in [
+            ("errors", flat(&node.errors, inner, true)),
+            ("lines", flat(&node.lines, inner, true)),
+            ("annotations", flat(&node.annotations, inner, true)),
+            ("inline", flat(&node.inline, inner, true)),
+            ("location", flat(&node.location, inner, true)),
+        ] {
+            queued.push(NodeTok::Line(inner));
+            queued.push(NodeTok::Owned(format!("{name}: {rendered},")));
+        }
+        queued.push(NodeTok::Line(depth));
+        queued.push(NodeTok::Text("}"));
+    } else {
+        write!(
+            f,
+            "Node {{ node_type: {}, tag: {}, attributes: {}, children: [",
+            flat(&node.node_type, depth, false),
+            flat(&node.tag, depth, false),
+            flat(&node.attributes, depth, false),
+        )?;
+        for (index, child) in node.children.iter().enumerate() {
+            if index > 0 {
+                queued.push(NodeTok::Text(", "));
+            }
+            queued.push(NodeTok::Node(child, depth));
+        }
+        queued.push(NodeTok::Text("], slots: {"));
+        for (index, (key, slot)) in node.slots.iter().enumerate() {
+            if index > 0 {
+                queued.push(NodeTok::Text(", "));
+            }
+            queued.push(NodeTok::Owned(format!("{key:?}: ")));
+            queued.push(NodeTok::Node(slot, depth));
+        }
+        queued.push(NodeTok::Owned(format!(
+            "}}, errors: {}, lines: {}, annotations: {}, inline: {}, location: {} }}",
+            flat(&node.errors, depth, false),
+            flat(&node.lines, depth, false),
+            flat(&node.annotations, depth, false),
+            flat(&node.inline, depth, false),
+            flat(&node.location, depth, false),
+        )));
+    }
+
+    stack.extend(queued.into_iter().rev());
+    Ok(())
 }
 
 impl<'a> Node<'a> {
@@ -388,6 +634,155 @@ impl<'n, 'a> Iterator for Walk<'n, 'a> {
         let node = self.stack.pop()?;
         self.stack.extend(node.descendants_in_order());
         Some(node)
+    }
+}
+
+/// `Debug` output is observable, so the hand-written emitter is pinned against
+/// the derive. Same pattern as [`Scalar`](crate::renderable::Scalar).
+#[cfg(test)]
+mod debug_parity {
+    use super::*;
+
+    mod mirror {
+        // Every field exists to be formatted by the derive and is never read
+        // otherwise -- that is the whole point of the type.
+        #![allow(dead_code, clippy::struct_field_names)]
+
+        use super::{Attribute, Location, NodeType, ValidationError, Value};
+        use indexmap::IndexMap;
+
+        #[derive(Debug)]
+        pub struct Node<'a> {
+            pub node_type: NodeType,
+            pub tag: Option<String>,
+            pub attributes: IndexMap<String, Value>,
+            pub children: Vec<Node<'a>>,
+            pub slots: IndexMap<String, Node<'a>>,
+            pub errors: Vec<ValidationError<'a>>,
+            pub lines: Vec<usize>,
+            pub annotations: Vec<Attribute>,
+            pub inline: bool,
+            pub location: Option<Location<'a>>,
+        }
+    }
+
+    fn to_mirror<'a>(node: &Node<'a>) -> mirror::Node<'a> {
+        mirror::Node {
+            node_type: node.node_type,
+            tag: node.tag.clone(),
+            attributes: node.attributes.clone(),
+            children: node.children.iter().map(to_mirror).collect(),
+            slots: node
+                .slots
+                .iter()
+                .map(|(key, slot)| (key.clone(), to_mirror(slot)))
+                .collect(),
+            errors: node.errors.clone(),
+            lines: node.lines.clone(),
+            annotations: node.annotations.clone(),
+            inline: node.inline,
+            location: node.location,
+        }
+    }
+
+    fn assert_parity(node: &Node<'_>) {
+        let reference = to_mirror(node);
+        assert_eq!(format!("{node:?}"), format!("{reference:?}"), "plain Debug");
+        assert_eq!(
+            format!("{node:#?}"),
+            format!("{reference:#?}"),
+            "alternate Debug"
+        );
+    }
+
+    #[test]
+    fn every_node_shape_formats_as_the_derive_would() {
+        let mut bare = Node::new(NodeType::Paragraph);
+        bare.lines = vec![1, 2];
+
+        let mut attributed = Node::new(NodeType::Tag);
+        attributed.tag = Some("callout".to_owned());
+        attributed.set("level", Value::Number(2.0));
+        attributed.set("title", Value::String("hi".to_owned()));
+        attributed.inline = true;
+
+        let nested = Node::with(
+            NodeType::Document,
+            IndexMap::new(),
+            vec![Node::with(
+                NodeType::Paragraph,
+                IndexMap::new(),
+                vec![Node::new(NodeType::Text)],
+                None,
+            )],
+            None,
+        );
+
+        let mut slotted = Node::new(NodeType::Tag);
+        slotted.tag = Some("card".to_owned());
+        slotted
+            .slots
+            .insert("header".to_owned(), Node::new(NodeType::Paragraph));
+
+        // A value deep enough to matter inside an attribute, which the node's
+        // own walk hands to `Value`'s.
+        let mut deep_attribute = Node::new(NodeType::Tag);
+        deep_attribute.set(
+            "data",
+            Value::Array(vec![Value::Hash(
+                [("k".to_owned(), Value::Null)].into_iter().collect(),
+            )]),
+        );
+
+        for shape in &[bare, attributed, nested, slotted, deep_attribute] {
+            assert_parity(shape);
+        }
+    }
+
+    #[test]
+    fn a_deep_node_survives_all_three_traversals() {
+        // `{% a %}` repeated is one level per line, so this depth is
+        // attacker-supplied rather than hypothetical.
+        let mut node = Node::new(NodeType::Paragraph);
+        for _ in 0..100_000 {
+            node = Node::with(NodeType::Tag, IndexMap::new(), vec![node], Some("a".into()));
+        }
+        let copy = node.clone();
+        assert!(copy == node, "an iterative clone must equal its source");
+        assert!(format!("{node:?}").starts_with("Node { node_type: Tag"));
+    }
+
+    #[test]
+    fn a_node_deep_through_slots_survives_all_three() {
+        let mut node = Node::new(NodeType::Paragraph);
+        for _ in 0..100_000 {
+            let mut outer = Node::new(NodeType::Tag);
+            outer.slots.insert("s".to_owned(), node);
+            node = outer;
+        }
+        let copy = node.clone();
+        assert!(copy == node);
+    }
+
+    #[test]
+    fn cloning_preserves_child_and_slot_order() {
+        let mut node = Node::with(
+            NodeType::Document,
+            IndexMap::new(),
+            vec![Node::new(NodeType::Heading), Node::new(NodeType::Paragraph)],
+            None,
+        );
+        node.slots.insert("z".to_owned(), Node::new(NodeType::Text));
+        node.slots
+            .insert("a".to_owned(), Node::new(NodeType::Fence));
+
+        let copy = node.clone();
+        assert_eq!(copy.children.len(), 2);
+        assert_eq!(copy.children[0].node_type, NodeType::Heading);
+        assert_eq!(copy.children[1].node_type, NodeType::Paragraph);
+        assert_eq!(copy.slots.keys().collect::<Vec<_>>(), ["z", "a"]);
+        assert_eq!(copy.slots["a"].node_type, NodeType::Fence);
+        assert!(copy == node);
     }
 }
 
