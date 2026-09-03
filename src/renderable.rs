@@ -1217,7 +1217,7 @@ mod debug_parity {
             tag = outer;
         }
         let copy = tag.clone();
-        assert!(copy == tag);
+        assert_eq!(copy, tag);
     }
 
     #[test]
@@ -1227,7 +1227,7 @@ mod debug_parity {
         one.set("k", RenderableTreeNode::text("x"));
         let mut many = Tag::new("t");
         many.set("k", vec![RenderableTreeNode::text("x")]);
-        assert!(one != many);
+        assert_ne!(one, many);
     }
 
     #[test]
@@ -1307,11 +1307,11 @@ mod debug_parity {
         // `PartialEq` has to keep saying that, so this pins it.
         let left = object(vec![("a", Scalar::Null), ("b", Scalar::Number(1.0))]);
         let right = object(vec![("b", Scalar::Number(1.0)), ("a", Scalar::Null)]);
-        assert!(left == right);
+        assert_eq!(left, right);
 
         let different = object(vec![("a", Scalar::Null), ("b", Scalar::Number(2.0))]);
-        assert!(left != different);
-        assert!(left != object(vec![("a", Scalar::Null)]));
+        assert_ne!(left, different);
+        assert_ne!(left, object(vec![("a", Scalar::Null)]));
     }
 }
 
