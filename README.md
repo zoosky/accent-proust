@@ -182,10 +182,5 @@ strips of paper and gluing them into the manuscript to extend it. Those
 *paperoles* are, exactly, what a formatter does: parse, mutate, and print
 canonical source. The name refers to nothing of Stripe's.
 
-The `accent-` prefix names the family this crate belongs to rather than a
-dependency on it: the crate builds and tests with no Accent code present, which
-its own CI asserts on every commit. The prefix is there because a bare literary
-surname is a poor identifier on a public registry -- it competes with a
-literary corpus for search results and says nothing about what the crate does
--- while the prefixed form is unambiguous about origin and cheap to disambiguate
-in a trademark search.
+`accent-proust` belongs to the family of [Accent CMS](https://accentcms.dev)
+crates.
