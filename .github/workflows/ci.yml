@@ -55,6 +55,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
+      # The README's examples, actually executed. Compiling them proves they
+      # type-check; only running them proves the outputs the README quotes.
+      - run: cargo run --example readme --all-features
 
   docs:
     name: Docs
