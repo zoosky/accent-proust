@@ -9,8 +9,6 @@ readme = "README.md"
 repository = "https://github.com/zoosky/accent-proust"
 keywords = ["markdoc", "markdown", "commonmark", "parser", "formatter"]
 categories = ["parser-implementations", "text-processing"]
-# Not published until the three trademark clearance items are answered.
-publish = false
 # `reference/` is upstream's TypeScript, vendored unmodified so that a porting
 # pull request shows its source and the yearly upstream refresh is a diff. It is
 # 392 KB of another language: useful in the repository, dead weight in a
@@ -117,4 +115,11 @@ required-features = ["pulldown-cmark-tokenizer"]
 # `--no-default-features` rather than failing to compile in that lane.
 [[example]]
 name = "partial_scope_cost"
+required-features = ["pulldown-cmark-tokenizer"]
+
+# The README's Rust blocks, run by CI. Gated for the same reason: every block
+# parses a document. `tests/readme.rs` holds the two copies together, and needs
+# no features because it only compares text.
+[[example]]
+name = "readme"
 required-features = ["pulldown-cmark-tokenizer"]
