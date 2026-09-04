@@ -13,8 +13,8 @@
 //! disjoint on purpose: escaping the block characters inside emphasis would
 //! litter a sentence with backslashes for no reader's benefit.
 
-use super::escape::{escape_markdown, Escape};
-use super::{Ctx, Formatter, Out, CLOSE, OPEN, SPACE};
+use super::escape::{Escape, escape_markdown};
+use super::{CLOSE, Ctx, Formatter, OPEN, Out, SPACE};
 use crate::ast::{Node, Value};
 
 impl Formatter<'_> {
@@ -37,13 +37,12 @@ impl Formatter<'_> {
 
         // <https://spec.commonmark.org/0.31.2/#autolinks>: a link whose text is
         // its own destination reprints in the short form.
-        if !has_title {
-            if let Some(Value::String(href)) = node.get("href") {
-                if children == *href {
-                    out.text(format!("<{href}>"));
-                    return;
-                }
-            }
+        if !has_title
+            && let Some(Value::String(href)) = node.get("href")
+            && children == *href
+        {
+            out.text(format!("<{href}>"));
+            return;
         }
 
         out.text("[");

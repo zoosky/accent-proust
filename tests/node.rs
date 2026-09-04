@@ -15,7 +15,7 @@
 mod support;
 
 use accent_proust::ast::Value;
-use accent_proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse, parse_with};
 use support::{at, attribute, dedent};
 
 fn names(document: &accent_proust::ast::Node<'_>) -> Vec<String> {

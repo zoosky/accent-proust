@@ -33,25 +33,20 @@ pub const EXPECTED_COUNT: usize = 10;
 
 const ALLOW_INDENTATION: &str = "DIVERGENCES.md #8 (allowIndentation)";
 const LITERAL_FENCES: &str = "DIVERGENCES.md #1 (fences do not process tags by default)";
-const LITERAL_FENCES_REASON: &str =
-    "expects a fence with no `process` annotation to have its content split into \
+const LITERAL_FENCES_REASON: &str = "expects a fence with no `process` annotation to have its content split into \
      text and tag children, which is upstream's default and the inverse of this \
      crate's";
-const LITERAL_FENCES_UNHOOKED_REASON: &str =
-    "replaces the `fence` schema with one carrying no transform hook, so the \
+const LITERAL_FENCES_UNHOOKED_REASON: &str = "replaces the `fence` schema with one carrying no transform hook, so the \
      fence renders its children -- which upstream has, because its fences \
      process tags by default, and this crate's do not";
 const NO_FRONTMATTER: &str = "DIVERGENCES.md #7 (metadata blocks are the host's)";
-const NO_FRONTMATTER_REASON: &str =
-    "feeds a document that still carries its metadata block; the host removes \
+const NO_FRONTMATTER_REASON: &str = "feeds a document that still carries its metadata block; the host removes \
      frontmatter before this crate sees it, and the corpus runner is not the host";
 const INDENTED_BLOCK_TAG: &str = "DIVERGENCES.md #12 (an indented block tag leaves its list item)";
-const INDENTED_BLOCK_TAG_REASON: &str =
-    "writes a block `{% if %}` two spaces in under a list item and expects it to \
+const INDENTED_BLOCK_TAG_REASON: &str = "writes a block `{% if %}` two spaces in under a list item and expects it to \
      be the item's content; the segmenter runs before the container parser, so \
      the tag splits the document instead";
-const ALLOW_INDENTATION_REASON: &str =
-    "graded under `allowIndentation: true`, which upstream reaches by patching \
+const ALLOW_INDENTATION_REASON: &str = "graded under `allowIndentation: true`, which upstream reaches by patching \
      markdown-it; unreachable above an unpatched CommonMark parser";
 
 /// The annotated cases.

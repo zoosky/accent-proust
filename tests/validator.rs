@@ -41,8 +41,8 @@ use indexmap::IndexMap;
 use accent_proust::ast::{ErrorLevel, Node, NodeType, ValidationError, Value};
 use accent_proust::parse::parse;
 use accent_proust::validate::{
-    validate_tree, AttributeType, Config, ConfigFunction, RenderPolicy, Schema, SchemaAttribute,
-    ValidationType, Variables,
+    AttributeType, Config, ConfigFunction, RenderPolicy, Schema, SchemaAttribute, ValidationType,
+    Variables, validate_tree,
 };
 
 /// The built-in node schemas these tests reach, standing in for upstream's.

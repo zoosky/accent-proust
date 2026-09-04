@@ -70,6 +70,19 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # `rust-version` is a promise to consumers, and every other job runs on
+  # stable, so nothing else here tests it. `--lib` is what a consumer compiles;
+  # `check` is the question the field actually answers.
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.96
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --lib
+      - run: cargo check --lib --no-default-features
+
   standalone:
     name: Standalone (Invariant 1)
     runs-on: ubuntu-latest

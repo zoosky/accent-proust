@@ -33,4 +33,4 @@ mod html;
 pub(crate) mod js;
 
 pub use escape::escape_html;
-pub use html::{is_void_element, render, render_all, VOID_ELEMENTS};
+pub use html::{VOID_ELEMENTS, is_void_element, render, render_all};

@@ -225,7 +225,7 @@ fn value_of(node: &MarkedYaml<'_>) -> Result<Value, CorpusError> {
                         return Err(error(
                             key.span.start.line(),
                             "expected a string mapping key",
-                        ))
+                        ));
                     }
                 };
                 out.push((key, value_of(value)?));

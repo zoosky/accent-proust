@@ -25,7 +25,7 @@
 mod support;
 
 use accent_proust::ast::{NodeType, Value};
-use accent_proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse, parse_with};
 use support::{all_error_ids, at, attribute, dedent, error_ids, outline};
 
 /// Upstream's `convert(example, options)`, which every test calls.

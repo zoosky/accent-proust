@@ -46,7 +46,7 @@
 
 use std::ops::Range;
 
-use crate::parse::scan::{find_tag_end, CLOSE, OPEN};
+use crate::parse::scan::{CLOSE, OPEN, find_tag_end};
 
 /// The span of one `{% ... %}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -257,10 +257,10 @@ impl Scan<'_> {
     /// the buffer the same length and still valid UTF-8.
     fn mask(&mut self, range: Range<usize>) {
         for index in range {
-            if let Some(byte) = self.masked.get_mut(index) {
-                if *byte != b'\n' {
-                    *byte = b'x';
-                }
+            if let Some(byte) = self.masked.get_mut(index)
+                && *byte != b'\n'
+            {
+                *byte = b'x';
             }
         }
     }
@@ -430,10 +430,12 @@ mod tests {
     fn an_inline_code_span_does_not_open_a_fence() {
         // ``` on a line with a closing backtick is a code span, not a fence.
         let source = "a ```b``` c\n{% foo %}\n";
-        assert!(segment(source)
-            .blocks
-            .iter()
-            .any(|block| matches!(block, Block::Tag(_))));
+        assert!(
+            segment(source)
+                .blocks
+                .iter()
+                .any(|block| matches!(block, Block::Tag(_)))
+        );
     }
 
     #[test]

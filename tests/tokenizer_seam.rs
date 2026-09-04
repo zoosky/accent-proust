@@ -21,7 +21,7 @@ use std::borrow::Cow;
 
 use accent_proust::ast::{Node, NodeType};
 use accent_proust::parse::{
-    parse_with, Container, ContainerKind, Event, ParseOptions, Spanned, Tokenizer,
+    Container, ContainerKind, Event, ParseOptions, Spanned, Tokenizer, parse_with,
 };
 
 /// A CommonMark tokenizer that knows about paragraphs and nothing else.

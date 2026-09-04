@@ -30,7 +30,7 @@ use indexmap::IndexMap;
 
 use accent_proust::ast::{Node, NodeType, ValidationError, Value as AstValue};
 use accent_proust::builtins;
-use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 use accent_proust::validate::{
     AttributeType, Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot,
     ValidationType, Variables,
@@ -241,7 +241,7 @@ fn render_policy(value: &Value) -> Result<RenderPolicy, String> {
             return Err(format!(
                 "render must be a boolean or a string, got {}",
                 other.kind()
-            ))
+            ));
         }
     })
 }

@@ -24,7 +24,7 @@
 //! - **`text` escapes differently depending on its parent** (`super::inline`).
 
 use super::{
-    Ctx, Formatter, OrderedListMode, Out, CLOSE, MAX_FORMAT_DEPTH, MAX_HEADING_LEVEL, NL, OL, OPEN,
+    CLOSE, Ctx, Formatter, MAX_FORMAT_DEPTH, MAX_HEADING_LEVEL, NL, OL, OPEN, OrderedListMode, Out,
     SPACE, UL, WRAPPING_TYPES,
 };
 use crate::ast::{Node, NodeType, Value};
@@ -152,10 +152,10 @@ impl Formatter<'_> {
         // The parser never sets `frontmatter`: metadata blocks belong to the
         // host (`DIVERGENCES.md` entry 7). The branch is ported anyway, so that
         // a host carrying its own frontmatter in that attribute gets it back.
-        if let Some(Value::String(frontmatter)) = node.get("frontmatter") {
-            if !frontmatter.is_empty() {
-                out.text(format!("---{NL}{frontmatter}{NL}---{NL}{NL}"));
-            }
+        if let Some(Value::String(frontmatter)) = node.get("frontmatter")
+            && !frontmatter.is_empty()
+        {
+            out.text(format!("---{NL}{frontmatter}{NL}---{NL}{NL}"));
         }
         let children = self.collect_children(node, no).trim_start();
         out.append(children);

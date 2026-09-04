@@ -13,7 +13,7 @@
 mod support;
 
 use accent_proust::ast::{Node, NodeType};
-use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 use support::dedent;
 
 fn parse_with_validation<'s>(source: &'s str, protocols: &[&str]) -> Node<'s> {

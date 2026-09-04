@@ -254,9 +254,11 @@ mod tests {
         assert!(config.find_schema(&tag).is_some());
 
         assert!(config.find_schema(&Node::new(NodeType::Heading)).is_some());
-        assert!(config
-            .find_schema(&Node::new(NodeType::Paragraph))
-            .is_none());
+        assert!(
+            config
+                .find_schema(&Node::new(NodeType::Paragraph))
+                .is_none()
+        );
 
         // A tag node is never looked up as a node type, even though `tag` is
         // one. Upstream branches on `node.tag` being set, not on the type.

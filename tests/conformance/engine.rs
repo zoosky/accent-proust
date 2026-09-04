@@ -41,7 +41,7 @@
 )]
 
 use accent_proust::ast::Node;
-use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar};
 use accent_proust::validate::validate_tree;
 

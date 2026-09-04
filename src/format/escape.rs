@@ -103,10 +103,10 @@ fn first_block_match(text: &str) -> Option<usize> {
         while let Some((_, '#')) = indices.peek().copied() {
             indices.next();
         }
-        if let Some((_, whitespace)) = indices.peek().copied() {
-            if is_js_whitespace(whitespace) {
-                return Some(index);
-            }
+        if let Some((_, whitespace)) = indices.peek().copied()
+            && is_js_whitespace(whitespace)
+        {
+            return Some(index);
         }
     }
     None
@@ -133,7 +133,7 @@ fn non_breaking_spaces(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_markdown, Escape};
+    use super::{Escape, escape_markdown};
 
     #[test]
     fn parentheses_are_escaped_everywhere_they_appear() {
