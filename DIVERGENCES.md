@@ -1,7 +1,7 @@
 # Divergences from upstream Markdoc
 
 This file is **normative, not a changelog**. It is the complete list of places
-where `proust` deliberately behaves differently from
+where `accent-proust` deliberately behaves differently from
 [Markdoc](https://github.com/markdoc/markdoc) at `afee1a4` (v0.5.9), and it is
 the only place a difference is allowed to be recorded.
 
@@ -147,7 +147,7 @@ removes the plain-Markdown one.
 Markdoc has a frontmatter tokenizer plugin.
 
 **Here:** frontmatter is the host's, parsed and removed upstream of this crate.
-`proust` never sees it and has no frontmatter concept.
+`accent-proust` never sees it and has no frontmatter concept.
 
 **Why:** frontmatter is document metadata, not document content, and the host
 already parses it before rendering. Handing it to the tag layer as well would
@@ -176,7 +176,7 @@ matching branch: with the option on, it indents nested tag children
 It works because upstream **patches markdown-it itself**
 (`patches/markdown-it+12.3.2.patch`), adding the option to nine rule files.
 
-**Here:** the option does not exist. `proust` always behaves as upstream does
+**Here:** the option does not exist. `accent-proust` always behaves as upstream does
 with the option off, which is stock CommonMark, and the formatter never indents
 nested tag children.
 

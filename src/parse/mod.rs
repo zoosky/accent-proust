@@ -25,7 +25,7 @@ mod tokenizer;
 #[cfg(feature = "pulldown-cmark-tokenizer")]
 mod pulldown;
 
-pub use scan::{contains_markdoc_tag_in_url, find_tag_end, CLOSE, OPEN};
+pub use scan::{CLOSE, OPEN, contains_markdoc_tag_in_url, find_tag_end};
 pub use tokenizer::{Alignment, Container, ContainerKind, Event, Spanned, Tokenizer};
 
 #[cfg(feature = "pulldown-cmark-tokenizer")]
@@ -144,13 +144,13 @@ impl<'s> ParseOptions<'s> {
 /// Parse a document with the bundled tokenizer and default options.
 ///
 /// ```
-/// use proust::ast::NodeType;
+/// use accent_proust::ast::NodeType;
 ///
-/// let document = proust::parse::parse("# Title {% #intro %}\n");
+/// let document = accent_proust::parse::parse("# Title {% #intro %}\n");
 /// let heading = &document.children[0];
 /// assert_eq!(heading.node_type, NodeType::Heading);
 /// assert_eq!(heading.get("id").and_then(|value| match value {
-///     proust::ast::Value::String(text) => Some(text.as_str()),
+///     accent_proust::ast::Value::String(text) => Some(text.as_str()),
 ///     _ => None,
 /// }), Some("intro"));
 /// ```

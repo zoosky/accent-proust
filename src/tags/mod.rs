@@ -17,7 +17,7 @@ mod slot;
 mod table;
 
 pub use conditional::{is_else, tag_else, tag_if, truthy};
-pub use partial::{partial, PartialFile, PARTIAL_FILENAME};
+pub use partial::{PARTIAL_FILENAME, PartialFile, partial};
 pub use slot::slot;
 pub use table::table;
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Invariant 1: proust compiles and tests pass with no host crate present.
+# Invariant 1: accent-proust compiles and tests pass with no host crate present.
 #
 # This is trivially true today, which is exactly why it is pinned now rather
 # than at publication. The invariant is cheap to hold and expensive to restore,
@@ -40,9 +40,15 @@ echo "==> dependency tree carries no host crate"
 # name; the source is dropped because a checkout path may legitimately contain
 # the host's name, and matching against it produces a false positive that is
 # invisible until someone renames a directory.
+#
+# This crate is itself named `accent-proust`, so it matches the pattern it is
+# testing for and has to be excluded by exact name -- not by loosening the
+# pattern, which would let a real `accent-*` dependency through. The rename
+# from `proust` tripped this check, which is the check working.
 names=$(cargo tree --all-features --prefix none --format '{p}' | awk '{print $1}' | sort -u)
-if printf '%s\n' "$names" | grep -Eiq '^accent'; then
-  printf '%s\n' "$names" | grep -Ei '^accent' >&2
+foreign=$(printf '%s\n' "$names" | grep -Ei '^accent' | grep -vx 'accent-proust' || true)
+if [ -n "$foreign" ]; then
+  printf '%s\n' "$foreign" >&2
   fail "a crate whose name begins with 'accent' is in the dependency tree"
 fi
 

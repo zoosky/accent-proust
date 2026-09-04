@@ -12,8 +12,8 @@
 
 mod support;
 
-use proust::ast::{Node, NodeType};
-use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::ast::{Node, NodeType};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 use support::dedent;
 
 fn parse_with_validation<'s>(source: &'s str, protocols: &[&str]) -> Node<'s> {
@@ -104,7 +104,7 @@ fn rejects_custom_protocols_defined_in_the_config_with_markdoc_variable() {
 #[test]
 fn the_check_is_off_unless_asked_for() {
     let source = dedent("https://example.com/{% tag /%}");
-    let document = proust::parse::parse(&source);
+    let document = accent_proust::parse::parse(&source);
     assert_eq!(inline_error(&document), None);
 }
 

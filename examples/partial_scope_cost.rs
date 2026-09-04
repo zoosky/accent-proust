@@ -25,7 +25,7 @@
 
 use std::time::Instant;
 
-use proust::{parse, transform};
+use accent_proust::{parse, transform};
 
 const EXPANSIONS: u32 = 50;
 const RUNS: u32 = 20;
@@ -42,13 +42,13 @@ fn main() {
         let sources: Vec<String> = (0..partial_count)
             .map(|_| partial_source.to_string())
             .collect();
-        let mut config = proust::builtins::config();
+        let mut config = accent_proust::builtins::config();
         for (i, source) in sources.iter().enumerate() {
             config
                 .partials_mut()
                 .insert(format!("p{i}.md"), parse::parse(source));
         }
-        config.variables = Some(proust::validate::Variables::new());
+        config.variables = Some(accent_proust::validate::Variables::new());
 
         let _ = transform::transform(&page, &config);
 

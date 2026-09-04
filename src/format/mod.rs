@@ -192,9 +192,9 @@ impl FormatOptions {
 /// ```
 /// # #[cfg(feature = "pulldown-cmark-tokenizer")]
 /// # {
-/// let document = proust::parse::parse("{% callout   type=\"note\" %}\nBody\n{% /callout %}\n");
+/// let document = accent_proust::parse::parse("{% callout   type=\"note\" %}\nBody\n{% /callout %}\n");
 /// assert_eq!(
-///     proust::format::format(&document),
+///     accent_proust::format::format(&document),
 ///     "{% callout type=\"note\" %}\nBody\n{% /callout %}\n"
 /// );
 /// # }
@@ -207,11 +207,11 @@ pub fn format(node: &Node<'_>) -> String {
 /// Print a tree as canonical Markdoc source.
 ///
 /// ```
-/// use proust::format::{format_with, FormatOptions, OrderedListMode};
+/// use accent_proust::format::{format_with, FormatOptions, OrderedListMode};
 ///
 /// # #[cfg(feature = "pulldown-cmark-tokenizer")]
 /// # {
-/// let document = proust::parse::parse("1. one\n1. two\n1. three\n");
+/// let document = accent_proust::parse::parse("1. one\n1. two\n1. three\n");
 /// let options = FormatOptions::new().ordered_list_mode(OrderedListMode::Increment);
 /// assert_eq!(format_with(&document, &options), "1. one\n2. two\n3. three\n");
 /// # }
@@ -236,14 +236,14 @@ pub fn format_with(node: &Node<'_>, options: &FormatOptions) -> String {
 /// what upstream's `format(null)` and `format($x)` reach.
 ///
 /// ```
-/// use proust::ast::{PathSegment, Value, Variable};
+/// use accent_proust::ast::{PathSegment, Value, Variable};
 ///
 /// let value = Value::Variable(Variable::new(vec![
 ///     PathSegment::Key("user".into()),
 ///     PathSegment::Key("name".into()),
 /// ]));
-/// assert_eq!(proust::format::format_value(&value), "$user.name");
-/// assert_eq!(proust::format::format_value(&Value::Null), "");
+/// assert_eq!(accent_proust::format::format_value(&value), "$user.name");
+/// assert_eq!(accent_proust::format::format_value(&Value::Null), "");
 /// ```
 #[must_use]
 pub fn format_value(value: &Value) -> String {

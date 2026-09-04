@@ -717,7 +717,7 @@ mod debug_parity {
             value = Value::Array(vec![value]);
         }
         let copy = value.clone();
-        assert!(copy == value);
+        assert_eq!(copy, value);
         assert!(format!("{value:?}").starts_with("Array([Array("));
     }
 
@@ -729,7 +729,7 @@ mod debug_parity {
             value = call("f", vec![("0", value)]);
         }
         let copy = value.clone();
-        assert!(copy == value);
+        assert_eq!(copy, value);
         assert!(format!("{value:?}").starts_with("Function(Function { name: \"f\""));
     }
 
@@ -747,9 +747,12 @@ mod debug_parity {
     fn equality_ignores_hash_order_as_indexmap_does() {
         let left = hash(vec![("a", Value::Null), ("b", Value::Number(1.0))]);
         let right = hash(vec![("b", Value::Number(1.0)), ("a", Value::Null)]);
-        assert!(left == right);
-        assert!(left != hash(vec![("a", Value::Null)]));
-        assert!(call("f", vec![("0", Value::Null)]) != call("g", vec![("0", Value::Null)]));
+        assert_eq!(left, right);
+        assert_ne!(left, hash(vec![("a", Value::Null)]));
+        assert_ne!(
+            call("f", vec![("0", Value::Null)]),
+            call("g", vec![("0", Value::Null)])
+        );
     }
 }
 

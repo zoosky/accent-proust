@@ -7,7 +7,7 @@
 
 use indexmap::IndexMap;
 
-use super::{format, format_value, format_with, FormatOptions, MAX_FORMAT_DEPTH};
+use super::{FormatOptions, MAX_FORMAT_DEPTH, format, format_value, format_with};
 use crate::ast::{Function, Node, NodeType, PathSegment, Value, Variable};
 
 /// A tag node with a name and attributes.

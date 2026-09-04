@@ -10,7 +10,7 @@
 use crate::corpus::{self, Case, Renderer};
 use crate::engine::Outcome;
 use crate::value::Value;
-use crate::{grade, CORPUS};
+use crate::{CORPUS, grade};
 
 // A helper, so outside a `#[test]` function and outside the relaxation in
 // `clippy.toml`. The panic is the point: a corpus that will not load is not a

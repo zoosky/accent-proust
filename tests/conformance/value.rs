@@ -3,7 +3,7 @@
 //! Upstream grades a case by JSON-diffing the expected tree against the
 //! renderable tree the pipeline produced (`spec/marktest/index.ts`, `run`). Two
 //! different shapes therefore have to become comparable: YAML read out of
-//! `tests.yaml`, and whatever `proust` returns. [`Value`] is that meeting
+//! `tests.yaml`, and whatever `accent-proust` returns. [`Value`] is that meeting
 //! point -- deliberately its own type rather than the YAML crate's, so that the
 //! choice of YAML reader stays confined to [`crate::corpus`] and the engine
 //! seam never depends on it.

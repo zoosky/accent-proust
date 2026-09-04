@@ -19,9 +19,9 @@
 
 use std::borrow::Cow;
 
-use proust::ast::{Node, NodeType};
-use proust::parse::{
-    parse_with, Container, ContainerKind, Event, ParseOptions, Spanned, Tokenizer,
+use accent_proust::ast::{Node, NodeType};
+use accent_proust::parse::{
+    Container, ContainerKind, Event, ParseOptions, Spanned, Tokenizer, parse_with,
 };
 
 /// A CommonMark tokenizer that knows about paragraphs and nothing else.

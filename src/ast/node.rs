@@ -761,7 +761,7 @@ mod debug_parity {
             node = outer;
         }
         let copy = node.clone();
-        assert!(copy == node);
+        assert_eq!(copy, node);
     }
 
     #[test]
@@ -782,7 +782,7 @@ mod debug_parity {
         assert_eq!(copy.children[1].node_type, NodeType::Paragraph);
         assert_eq!(copy.slots.keys().collect::<Vec<_>>(), ["z", "a"]);
         assert_eq!(copy.slots["a"].node_type, NodeType::Fence);
-        assert!(copy == node);
+        assert_eq!(copy, node);
     }
 }
 

@@ -14,11 +14,11 @@
 
 mod support;
 
-use proust::ast::Value;
-use proust::parse::{parse, parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::ast::Value;
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse, parse_with};
 use support::{at, attribute, dedent};
 
-fn names(document: &proust::ast::Node<'_>) -> Vec<String> {
+fn names(document: &accent_proust::ast::Node<'_>) -> Vec<String> {
     document
         .walk()
         .map(|node| node.name().to_string())
@@ -120,10 +120,10 @@ fn multiple_annotation_values_are_ordered_correctly() {
         .annotations
         .iter()
         .map(|annotation| match annotation {
-            proust::grammar::Attribute::Attribute { name, value } => {
+            accent_proust::grammar::Attribute::Attribute { name, value } => {
                 format!("{name}={}", support::show(value))
             }
-            proust::grammar::Attribute::Class { name } => format!(".{name}"),
+            accent_proust::grammar::Attribute::Class { name } => format!(".{name}"),
             other => format!("{other:?}"),
         })
         .collect();

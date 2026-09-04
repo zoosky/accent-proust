@@ -21,7 +21,7 @@
 //!
 //! Nowhere in this crate. A `Config` is assembled by the host -- from a file, a
 //! constant, a plugin manifest -- and handed in. This module owns the *shape*
-//! only, which is the line that lets `proust` be published without shipping
+//! only, which is the line that lets `accent-proust` be published without shipping
 //! anybody's schemas.
 
 use std::sync::Arc;
@@ -254,9 +254,11 @@ mod tests {
         assert!(config.find_schema(&tag).is_some());
 
         assert!(config.find_schema(&Node::new(NodeType::Heading)).is_some());
-        assert!(config
-            .find_schema(&Node::new(NodeType::Paragraph))
-            .is_none());
+        assert!(
+            config
+                .find_schema(&Node::new(NodeType::Paragraph))
+                .is_none()
+        );
 
         // A tag node is never looked up as a node type, even though `tag` is
         // one. Upstream branches on `node.tag` being set, not on the type.

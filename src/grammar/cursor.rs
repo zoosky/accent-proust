@@ -14,7 +14,7 @@
 //!   makes the messages in `error.rs` come out identical to upstream's.
 //! - **Value nesting is depth-limited.** See [`MAX_VALUE_DEPTH`].
 
-use super::error::{build_message, Expectation, TagError};
+use super::error::{Expectation, TagError, build_message};
 
 /// The deepest a value may nest before the parser gives up.
 ///

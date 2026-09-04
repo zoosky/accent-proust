@@ -38,11 +38,11 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use proust::ast::{ErrorLevel, Node, NodeType, ValidationError, Value};
-use proust::parse::parse;
-use proust::validate::{
-    validate_tree, AttributeType, Config, ConfigFunction, RenderPolicy, Schema, SchemaAttribute,
-    ValidationType, Variables,
+use accent_proust::ast::{ErrorLevel, Node, NodeType, ValidationError, Value};
+use accent_proust::parse::parse;
+use accent_proust::validate::{
+    AttributeType, Config, ConfigFunction, RenderPolicy, Schema, SchemaAttribute, ValidationType,
+    Variables, validate_tree,
 };
 
 /// The built-in node schemas these tests reach, standing in for upstream's.
@@ -494,7 +494,7 @@ fn an_attribute_validate_hook_using_a_simple_conditional() {
 }
 
 fn matches_config(allowed: Vec<&str>) -> Config<'static> {
-    use proust::validate::SchemaMatches;
+    use accent_proust::validate::SchemaMatches;
 
     let mut config = config();
     config.tags = tags(vec![(

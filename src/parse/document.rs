@@ -33,12 +33,12 @@
 use std::ops::Range;
 
 use crate::ast::{Lines, Location, Node, NodeType, ValidationError, Value};
-use crate::grammar::{parse_tag, Attribute, TagItem};
+use crate::grammar::{Attribute, TagItem, parse_tag};
+use crate::parse::ParseOptions;
 use crate::parse::annotate::annotate;
-use crate::parse::scan::{contains_markdoc_tag_in_url, find_tag_end, CLOSE, OPEN};
+use crate::parse::scan::{CLOSE, OPEN, contains_markdoc_tag_in_url, find_tag_end};
 use crate::parse::segment::{Block, Segmentation, TagSpan};
 use crate::parse::tokenizer::{Alignment, Container, ContainerKind, Event, Tokenizer};
-use crate::parse::ParseOptions;
 
 /// A fenced or indented code block being accumulated.
 ///
@@ -188,12 +188,13 @@ impl<'s, 'o> Builder<'s, 'o> {
         if self.merge_text(&node) {
             return;
         }
-        if self.options.slots && node.tag.as_deref() == Some("slot") {
-            if let Some(Value::String(name)) = node.get("primary") {
-                let name = name.clone();
-                self.top().slots.insert(name, node);
-                return;
-            }
+        if self.options.slots
+            && node.tag.as_deref() == Some("slot")
+            && let Some(Value::String(name)) = node.get("primary")
+        {
+            let name = name.clone();
+            self.top().slots.insert(name, node);
+            return;
         }
         self.top().push(node);
     }
@@ -430,11 +431,11 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     /// Apply a bare `{% #id .cls %}` to the block that owns the inline run.
     fn annotation(&mut self, attributes: &[Attribute], span: &TagSpan) {
-        if let Some(owner) = self.inline_parent {
-            if let Some(node) = self.stack.get_mut(owner) {
-                annotate(node, attributes);
-                return;
-            }
+        if let Some(owner) = self.inline_parent
+            && let Some(node) = self.stack.get_mut(owner)
+        {
+            annotate(node, attributes);
+            return;
         }
         let location = self.locate(span.outer.clone());
         let name = self.top().name().to_string();
@@ -545,16 +546,15 @@ impl<'s, 'o> Builder<'s, 'o> {
     fn html_node(&mut self, span: Range<usize>) -> Node<'s> {
         let raw = self.slice(&span);
         let trimmed = raw.trim();
-        if self.options.allow_comments {
-            if let Some(inner) = trimmed
+        if self.options.allow_comments
+            && let Some(inner) = trimmed
                 .strip_prefix("<!--")
                 .and_then(|rest| rest.strip_suffix("-->"))
-            {
-                let content = inner.trim().to_string();
-                let mut node = self.node(NodeType::Comment, span);
-                node.set("content", Value::String(content));
-                return node;
-            }
+        {
+            let content = inner.trim().to_string();
+            let mut node = self.node(NodeType::Comment, span);
+            node.set("content", Value::String(content));
+            return node;
         }
         self.text_node(raw.to_string(), span)
     }
@@ -830,31 +830,30 @@ impl<'s, 'o> Builder<'s, 'o> {
         node.set("content", Value::String(fence.content.clone()));
 
         let info = fence.info.unwrap_or_default();
-        if let Some(language) = info.split(' ').next() {
-            if !language.is_empty() && language != OPEN {
-                node.set("language", Value::String(language.to_string()));
-            }
+        if let Some(language) = info.split(' ').next()
+            && !language.is_empty()
+            && language != OPEN
+        {
+            node.set("language", Value::String(language.to_string()));
         }
 
         // The info string may carry an annotation: ```` ```js {% #id %} ````.
         // Upstream parses it in a core pass over the token stream; here it is
         // read straight off the fence line, which is the same information.
-        if let Some(start) = info.find(OPEN) {
-            if let Some(end) = find_tag_end(&info, start) {
-                let body = info.get(start + OPEN.len()..end).unwrap_or("").trim();
-                match parse_tag(body) {
-                    Ok(
-                        TagItem::Annotation { attributes } | TagItem::TagOpen { attributes, .. },
-                    ) => {
-                        annotate(&mut node, &attributes);
-                    }
-                    Ok(_) => {}
-                    Err(error) => node.errors.push(ValidationError::new(
-                        "fence-tag-error",
-                        crate::ast::ErrorLevel::Error,
-                        format!("Syntax error in fence tag: {}", error.message()),
-                    )),
+        if let Some(start) = info.find(OPEN)
+            && let Some(end) = find_tag_end(&info, start)
+        {
+            let body = info.get(start + OPEN.len()..end).unwrap_or("").trim();
+            match parse_tag(body) {
+                Ok(TagItem::Annotation { attributes } | TagItem::TagOpen { attributes, .. }) => {
+                    annotate(&mut node, &attributes);
                 }
+                Ok(_) => {}
+                Err(error) => node.errors.push(ValidationError::new(
+                    "fence-tag-error",
+                    crate::ast::ErrorLevel::Error,
+                    format!("Syntax error in fence tag: {}", error.message()),
+                )),
             }
         }
 

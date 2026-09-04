@@ -1,4 +1,4 @@
-//! The seam between the corpus and `proust`.
+//! The seam between the corpus and `accent-proust`.
 //!
 //! Everything else in this harness is finished work: it reads the corpus,
 //! compares values, counts, and holds the ratchet. This file is the one that
@@ -24,7 +24,7 @@
 //!
 //! # Why it returns a value rather than being a pipeline
 //!
-//! The harness never sees `proust`'s types. It asks for an [`Outcome`] and
+//! The harness never sees `accent-proust`'s types. It asks for an [`Outcome`] and
 //! compares it. That keeps the corpus runner from ossifying around whatever the
 //! renderable tree looks like this month, and it means a change to the tree's
 //! Rust representation touches the conversion in this file rather than the
@@ -40,10 +40,10 @@
     reason = "a harness that cannot grade a case must say so, not grade it wrongly"
 )]
 
-use proust::ast::Node;
-use proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
-use proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar};
-use proust::validate::validate_tree;
+use accent_proust::ast::Node;
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar};
+use accent_proust::validate::validate_tree;
 
 use crate::config;
 use crate::corpus::{Case, Renderer};
@@ -92,7 +92,7 @@ impl std::fmt::Display for Unimplemented {
     }
 }
 
-/// Run one case through `proust`.
+/// Run one case through `accent-proust`.
 ///
 /// Every stage but the formatter is implemented, and the formatter grades no
 /// case. So this dispatches on how the corpus grades the case, and the one
@@ -168,12 +168,12 @@ pub fn run(case: &Case) -> Result<Outcome, Unimplemented> {
             case.name
         ),
     };
-    let transformed = proust::transform::transform(&document, &config);
+    let transformed = accent_proust::transform::transform(&document, &config);
 
     match case.renderer {
         // `render_all` takes the list form, and `into_vec` is the flattening
         // upstream's renderer does when it is handed the union's array arm.
-        Renderer::Html => Ok(Outcome::Html(proust::render::render_all(
+        Renderer::Html => Ok(Outcome::Html(accent_proust::render::render_all(
             &transformed.into_vec(),
         ))),
         Renderer::Tree => Ok(Outcome::Tree {

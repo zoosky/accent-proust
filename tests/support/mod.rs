@@ -18,7 +18,7 @@
 
 use std::fmt::Write as _;
 
-use proust::ast::{Node, Value};
+use accent_proust::ast::{Node, Value};
 
 /// Upstream's `convert` preamble: strip the indentation a template literal adds.
 ///
@@ -110,11 +110,11 @@ pub fn show(value: &Value) -> String {
             let mut out = "$".to_string();
             for (index, segment) in variable.path.iter().enumerate() {
                 match segment {
-                    proust::ast::PathSegment::Key(key) if index == 0 => out.push_str(key),
-                    proust::ast::PathSegment::Key(key) => {
+                    accent_proust::ast::PathSegment::Key(key) if index == 0 => out.push_str(key),
+                    accent_proust::ast::PathSegment::Key(key) => {
                         let _ = write!(out, ".{key}");
                     }
-                    proust::ast::PathSegment::Index(number) => {
+                    accent_proust::ast::PathSegment::Index(number) => {
                         let _ = write!(out, "[{number}]");
                     }
                     other => {

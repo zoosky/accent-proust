@@ -32,7 +32,7 @@ use crate::validate::Config;
 /// none.
 ///
 /// ```
-/// let config = proust::builtins::config();
+/// let config = accent_proust::builtins::config();
 /// assert!(config.tags.contains_key("if"));
 /// assert!(config.functions.contains_key("equals"));
 /// ```
