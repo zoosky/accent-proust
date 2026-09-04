@@ -35,8 +35,8 @@
 mod support;
 
 use accent_proust::ast::{Node, NodeType, Value};
-use accent_proust::format::{format, format_value, format_with, FormatOptions, OrderedListMode};
-use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::format::{FormatOptions, OrderedListMode, format, format_value, format_with};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 use indexmap::IndexMap;
 
 /// Upstream's `check`, minus the diff library.
@@ -75,8 +75,8 @@ fn parse(source: &str) -> Node<'_> {
 /// Upstream's cases, in upstream's order.
 mod upstream {
     use super::{
-        check, check_with, format, format_value, parse, stable, stable_with, FormatOptions,
-        IndexMap, Node, NodeType, OrderedListMode, Value,
+        FormatOptions, IndexMap, Node, NodeType, OrderedListMode, Value, check, check_with, format,
+        format_value, parse, stable, stable_with,
     };
 
     #[test]
@@ -404,8 +404,7 @@ mod upstream {
         let source = "{% button type=\"button\" href=\"https://example.com/a-very-long-inline-tag\" %}A very long inline tag{% /button %}\n";
         stable(source);
 
-        let inline_parent =
-            "### {% image src=\"/src\" alt=\"A very long alt text to test if the tag wraps or not\" /%}\n";
+        let inline_parent = "### {% image src=\"/src\" alt=\"A very long alt text to test if the tag wraps or not\" /%}\n";
         check(inline_parent, inline_parent);
     }
 

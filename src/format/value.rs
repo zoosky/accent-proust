@@ -24,7 +24,7 @@
 
 use std::fmt::Write as _;
 
-use super::{Ctx, Formatter, Out, MAX_FORMAT_DEPTH, SEP};
+use super::{Ctx, Formatter, MAX_FORMAT_DEPTH, Out, SEP};
 use crate::ast::{Node, PathSegment, Value};
 use crate::grammar::Attribute;
 use crate::render::js;
@@ -177,12 +177,11 @@ impl Formatter<'_> {
         if name == "primary" {
             return formatted;
         }
-        if name == "id" {
-            if let Value::String(text) = value {
-                if is_identifier(text) {
-                    return format!("#{text}");
-                }
-            }
+        if name == "id"
+            && let Value::String(text) = value
+            && is_identifier(text)
+        {
+            return format!("#{text}");
         }
         if kind == AttributeKind::Class && is_identifier(name) {
             return format!(".{name}");

@@ -30,8 +30,8 @@ mod node;
 pub mod resolve;
 pub mod table;
 
-pub use node::{attributes, children, find_schema, global_attributes, node, MAX_TRANSFORM_DEPTH};
-pub use resolve::{resolve, resolve_variable, MAX_RESOLVE_DEPTH};
+pub use node::{MAX_TRANSFORM_DEPTH, attributes, children, find_schema, global_attributes, node};
+pub use resolve::{MAX_RESOLVE_DEPTH, resolve, resolve_variable};
 
 pub(crate) use node::scalar;
 

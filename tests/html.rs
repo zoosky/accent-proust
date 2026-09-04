@@ -14,7 +14,7 @@
 //! Written against the renderable tree, so it runs in the
 //! `--no-default-features` lane too: rendering needs no tokenizer.
 
-use accent_proust::render::{is_void_element, render, render_all, VOID_ELEMENTS};
+use accent_proust::render::{VOID_ELEMENTS, is_void_element, render, render_all};
 use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
 use indexmap::IndexMap;
 

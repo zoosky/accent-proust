@@ -39,8 +39,8 @@ use crate::ast::{
 };
 use crate::validate::schema_types::{Class, Id};
 use crate::validate::{
-    type_to_string, Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, ValidationType,
-    Variables,
+    Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, ValidationType, Variables,
+    type_to_string,
 };
 
 /// One problem, with the node and the lines it belongs to.
@@ -133,26 +133,26 @@ pub fn validate_type<'a>(
     config: &Config<'a>,
     key: &str,
 ) -> TypeCheck<'a> {
-    if let Value::Function(function) = value {
-        if config.validation.validate_functions {
-            let Some(schema) = config.functions.get(function.name.as_str()) else {
-                return TypeCheck::Valid;
-            };
-            let Some(returns) = &schema.returns else {
-                return TypeCheck::Valid;
-            };
-            let matched = match returns {
-                ValidationType::Union(members) => {
-                    members.iter().any(|member| member.is_same_type(value_type))
-                }
-                single => single.is_same_type(value_type),
-            };
-            return if matched {
-                TypeCheck::Valid
-            } else {
-                TypeCheck::Invalid
-            };
-        }
+    if let Value::Function(function) = value
+        && config.validation.validate_functions
+    {
+        let Some(schema) = config.functions.get(function.name.as_str()) else {
+            return TypeCheck::Valid;
+        };
+        let Some(returns) = &schema.returns else {
+            return TypeCheck::Valid;
+        };
+        let matched = match returns {
+            ValidationType::Union(members) => {
+                members.iter().any(|member| member.is_same_type(value_type))
+            }
+            single => single.is_same_type(value_type),
+        };
+        return if matched {
+            TypeCheck::Valid
+        } else {
+            TypeCheck::Invalid
+        };
     }
 
     if matches!(value, Value::Function(_) | Value::Variable(_)) {
@@ -291,18 +291,18 @@ pub fn validator<'a>(node: &'a Node<'a>, config: &Config<'a>) -> Vec<ValidationE
         return errors;
     };
 
-    if let Some(inline) = schema.inline {
-        if node.inline != inline {
-            errors.push(ValidationError::new(
-                "tag-placement-invalid",
-                ErrorLevel::Critical,
-                format!(
-                    "'{}' tag should be {}",
-                    node.tag.as_deref().unwrap_or_default(),
-                    if inline { "inline" } else { "block" }
-                ),
-            ));
-        }
+    if let Some(inline) = schema.inline
+        && node.inline != inline
+    {
+        errors.push(ValidationError::new(
+            "tag-placement-invalid",
+            ErrorLevel::Critical,
+            format!(
+                "'{}' tag should be {}",
+                node.tag.as_deref().unwrap_or_default(),
+                if inline { "inline" } else { "block" }
+            ),
+        ));
     }
 
     if schema.self_closing && !node.children.is_empty() {

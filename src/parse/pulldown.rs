@@ -247,16 +247,22 @@ mod tests {
 
     #[test]
     fn tables_and_strikethrough_are_on_and_nothing_else_is() {
-        assert!(events("| a |\n| - |\n| b |")
-            .iter()
-            .any(|event| matches!(event, Event::Start(Container::Table { .. }))));
-        assert!(events("~~x~~")
-            .iter()
-            .any(|event| matches!(event, Event::Start(Container::Strikethrough))));
+        assert!(
+            events("| a |\n| - |\n| b |")
+                .iter()
+                .any(|event| matches!(event, Event::Start(Container::Table { .. })))
+        );
+        assert!(
+            events("~~x~~")
+                .iter()
+                .any(|event| matches!(event, Event::Start(Container::Strikethrough)))
+        );
         // Heading attributes stay off: the braces are text, not an id.
-        assert!(events("# t {#id}")
-            .iter()
-            .any(|event| matches!(event, Event::Text(text) if text.contains("{#id}"))));
+        assert!(
+            events("# t {#id}")
+                .iter()
+                .any(|event| matches!(event, Event::Text(text) if text.contains("{#id}")))
+        );
     }
 
     #[test]

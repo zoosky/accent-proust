@@ -93,16 +93,16 @@ impl Cursor<'_> {
         // under a bare `if (primary)`, so a falsy primary is parsed and then
         // dropped: `{% foo 0 %}` and `{% foo null %}` carry no attributes at
         // all. That is a quirk, and porting it is the point.
-        if let Some(primary) = primary {
-            if primary.is_truthy() {
-                attributes.insert(
-                    0,
-                    Attribute::Attribute {
-                        name: "primary".to_string(),
-                        value: primary,
-                    },
-                );
-            }
+        if let Some(primary) = primary
+            && primary.is_truthy()
+        {
+            attributes.insert(
+                0,
+                Attribute::Attribute {
+                    name: "primary".to_string(),
+                    value: primary,
+                },
+            );
         }
 
         Some(TagItem::TagOpen {

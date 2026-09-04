@@ -16,7 +16,7 @@
 
 use indexmap::IndexMap;
 
-use super::{parse_tag, Attribute, TagItem, MAX_VALUE_DEPTH};
+use super::{Attribute, MAX_VALUE_DEPTH, TagItem, parse_tag};
 use crate::ast::{Function, PathSegment, Value, Variable};
 
 /// `{ type: 'attribute', name, value }`.

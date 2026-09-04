@@ -25,7 +25,7 @@ mod tokenizer;
 #[cfg(feature = "pulldown-cmark-tokenizer")]
 mod pulldown;
 
-pub use scan::{contains_markdoc_tag_in_url, find_tag_end, CLOSE, OPEN};
+pub use scan::{CLOSE, OPEN, contains_markdoc_tag_in_url, find_tag_end};
 pub use tokenizer::{Alignment, Container, ContainerKind, Event, Spanned, Tokenizer};
 
 #[cfg(feature = "pulldown-cmark-tokenizer")]

@@ -21,7 +21,7 @@
 //! representation instead of this one.
 
 use accent_proust::ast::{ErrorLevel, Node, ValidationError};
-use accent_proust::parse::{parse_with, ParseOptions, PulldownTokenizer};
+use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 
 /// Every `table-syntax` error in a document, in walk order.
 ///

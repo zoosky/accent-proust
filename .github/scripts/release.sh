@@ -13,7 +13,7 @@
 #   .github/scripts/release.sh --dry-run      # verify only, publishes nothing
 #   .github/scripts/release.sh                # publish, prompting once
 #
-#   MSRV=1.82     toolchain the gates run on (default: the rust-version field)
+#   MSRV=1.96     toolchain the gates run on (default: the rust-version field)
 #   NO_TAG=1      skip creating the git tag
 
 set -uo pipefail
@@ -148,19 +148,18 @@ echo "  standalone: pass"
 # job above runs on stable. It is checked here because a release is the moment
 # the promise becomes binding on strangers.
 #
-# `--lib` only, and that is not a shortcut. The dev-dependency tree needs a
-# newer rustc than this crate does (see the note on `saphyr` in Cargo.toml), so
-# `--all-targets` fails on a resolver error about someone else's crate rather
-# than on anything about ours. The lib is also precisely what a consumer
-# compiles, which makes it the right scope regardless.
+# `--lib` because that is what a consumer compiles, and `check` rather than
+# `clippy` because the question `rust-version` answers is whether the library
+# builds. Linting is stable's job, and the gates above already do it over both
+# feature configurations.
 
 step "MSRV $MSRV"
 
 for flags in "" "--no-default-features"; do
   # shellcheck disable=SC2086
-  cargo "+$MSRV" clippy --lib $flags -- -D warnings \
-    || die "the crate does not build clean on $MSRV ${flags:-(default features)}; either fix it or raise rust-version"
-  echo "  lib on $MSRV (${flags:-default features}): clean"
+  cargo "+$MSRV" check --lib $flags \
+    || die "the crate does not build on $MSRV ${flags:-(default features)}; either fix it or raise rust-version"
+  echo "  lib on $MSRV (${flags:-default features}): builds"
 done
 
 # --- Package check -----------------------------------------------------------

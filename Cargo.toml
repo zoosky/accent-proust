@@ -1,8 +1,8 @@
 [package]
 name = "accent-proust"
 version = "0.0.0"
-edition = "2021"
-rust-version = "1.82"
+edition = "2024"
+rust-version = "1.96"
 license = "MIT"
 description = "A Rust implementation of the Markdoc language: parse, validate, transform, render, and format."
 readme = "README.md"

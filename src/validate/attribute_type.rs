@@ -233,8 +233,9 @@ mod tests {
             }
         }
         let config = Config::new();
-        assert!(Bare
-            .validate(&Value::String("x".into()), &config, "k")
-            .is_none());
+        assert!(
+            Bare.validate(&Value::String("x".into()), &config, "k")
+                .is_none()
+        );
     }
 }

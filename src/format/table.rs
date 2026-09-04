@@ -19,7 +19,7 @@
 //! nothing coalesces adjacent output: each string a tag yields is a separate
 //! line here, so joining two of them would join two lines.
 
-use super::{Chunk, Ctx, Formatter, Out, NL, SPACE, UL};
+use super::{Chunk, Ctx, Formatter, NL, Out, SPACE, UL};
 use crate::ast::Node;
 
 impl Formatter<'_> {

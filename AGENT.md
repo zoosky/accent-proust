@@ -99,19 +99,25 @@ vendored under `spec/`.
 
 ### The MSRV
 
-`rust-version = "1.82"` is a promise about the **library**, and CI does not
-test it. Check it by hand when you touch anything a consumer compiles:
+`rust-version = "1.96"` is a promise about the **library**, normalised across
+the Accent crates. The `MSRV` CI job holds you to it:
 
 ```bash
-cargo +1.82 clippy --lib -- -D warnings
-cargo +1.82 clippy --lib --no-default-features -- -D warnings
+cargo +1.96 check --lib
+cargo +1.96 check --lib --no-default-features
 ```
 
-`--lib` only. Running the test suite needs a newer toolchain than 1.82, because
-the conformance harness reads YAML through `saphyr`, which pulls
-`ordered-float`, which requires rustc 1.90. That is a floor for `cargo test` in
-this repository, not for consumers: nobody builds a dev-dependency of a crate
-they depend on. Develop on stable.
+`--lib` because that is what a consumer compiles, and `check` because the
+question `rust-version` answers is whether the library builds. Lint on stable,
+where CI does it over both feature configurations.
+
+The floor used to be 1.82, which cost more than it bought. The whole
+dev-dependency tree needs a newer rustc than that -- `saphyr` pulls
+`ordered-float`, which wants 1.90 -- so the test suite could not run on the
+MSRV; and `indexmap` had resolved on to a `hashbrown` whose manifest is edition
+2024, which 1.82's cargo cannot parse, so the lockfile needed pinning back by
+hand. At 1.96 both problems are gone: the full suite runs on the MSRV, and
+edition 2024 brings resolver 3, which resolves MSRV-aware without being asked.
 
 ### CI jobs
 
@@ -202,9 +208,9 @@ level, and CI turns warnings into errors. Where a bound is genuinely proven,
 `.github/scripts/release.sh --dry-run` runs every gate above plus the package
 checks. Drop `--dry-run` to publish.
 
-The version is still `0.0.0`. The script refuses to publish that, because it is
-the placeholder the crate was created with and the one version number that
-cannot be corrected afterwards. Bump it first.
+Bump the version in `Cargo.toml` and move `Unreleased` into a dated section in
+`CHANGELOG.md` first. The script checks both: it refuses the `0.0.0`
+placeholder, and it refuses a version the changelog does not carry.
 
 ## Session completion
 
