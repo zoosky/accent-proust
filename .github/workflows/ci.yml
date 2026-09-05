@@ -127,6 +127,12 @@ jobs:
         env:
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
         run: cargo test -p accent-proust-wasm --target wasm32-unknown-unknown
+      # The npm package is the shipped artifact, so building it is a gate
+      # rather than a release-day surprise. `--pack` runs `npm pack --dry-run`,
+      # which is what catches a malformed `package.json`: nothing else here
+      # parses that file.
+      - name: Build the npm package
+        run: ./scripts/build-npm.sh --pack
 
   # The corpus is redistribution, and `spec/UPSTREAM.md` says so in prose: "These
   # files are never edited." Prose does not fail a build, and this one was broken
