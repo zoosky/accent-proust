@@ -1,3 +1,21 @@
+# The library is the workspace root package, and stays there. Three things read
+# this manifest by path and would all need repointing if it moved under
+# `crates/`: `scripts/check-standalone.sh` awks it for path and git
+# dependencies, `.github/scripts/release.sh` awks it for `version` and
+# `rust-version`, and the layout table in `AGENT.md` maps each upstream file to
+# its counterpart under `src/` -- that table is the port's contract, not
+# documentation about it.
+#
+# Members are hosts. A WebAssembly binding is a host like any other, so it gets
+# a crate beside the library rather than a feature inside it, on the same
+# reasoning that keeps `Tokenizer` and `TagRenderer` traits rather than
+# implementations. `default-members` holds a bare `cargo build`, `cargo test`
+# and `cargo clippy --all-targets` to the library alone, so a member cannot
+# quietly join the standalone, MSRV or conformance lanes.
+[workspace]
+members = []
+default-members = ["."]
+
 [package]
 name = "accent-proust"
 version = "0.9.0"
