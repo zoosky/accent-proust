@@ -262,10 +262,19 @@ Bump the version in `Cargo.toml` and move `Unreleased` into a dated section in
 placeholder, and it refuses a version the changelog does not carry.
 
 **The npm package.** `./scripts/build-npm.sh --pack` builds
-`crates/accent-proust-wasm/pkg` and dry-runs `npm pack` over it; `npm publish`
-from that directory ships it. The directory is generated and ignored -- the
-script is the only thing that writes it, and `package.json` is written from the
-member's `version`, so the crate manifest stays the one place a version lives.
+`crates/accent-proust-wasm/pkg` and dry-runs `npm pack` over it;
+`./scripts/build-npm.sh --publish` runs the checks below and ships it. The
+directory is generated and ignored, and the script is the only thing that
+writes it.
+
+Two `version` fields exist -- the library's and the member's -- and cargo does
+not make them agree, so the script does: it takes the library's, which is what
+the git tag and crates.io track, and refuses to run when the member's differs.
+Publishing additionally refuses when `CHANGELOG.md` has no section for that
+version, and when it still has entries under `Unreleased`: the crate reached
+its current version before the bindings existed, so npm would otherwise ship
+them under a heading that predates them. Last, it refuses a version the
+registry already carries, which is release.sh's tag check in its npm form.
 
 There is no wasm-opt step, which is measured rather than forgotten: over this
 artifact `wasm-opt -O3` takes 554,850 bytes to 526,162 and 213,250 gzipped to

@@ -22,9 +22,12 @@ npm install accent-proust
 
 ## Use
 
-The module is ESM and initialises once. `init()` fetches the `.wasm` beside the
-JavaScript, so Vite, native `<script type="module">` and a CDN all work
-unchanged.
+The module is ESM and initialises once, before any other call.
+
+### In a browser
+
+`init()` with no argument resolves the `.wasm` beside the JavaScript, so Vite,
+native `<script type="module">` and a CDN all work unchanged.
 
 ```js
 import init, { validate, renderHtml, transform, format } from "accent-proust";
@@ -47,6 +50,28 @@ import wasm from "accent-proust/accent_proust_wasm_bg.wasm?url";
 
 await init({ module_or_path: wasm });
 ```
+
+### In Node
+
+**`init()` with no argument does not work in Node.** The default location is a
+`file:` URL, and Node's `fetch` rejects those — you get `TypeError: fetch
+failed`. Read the file and hand it over:
+
+```js
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import init, { renderHtml } from "accent-proust";
+
+const wasm = fileURLToPath(
+  import.meta.resolve("accent-proust/accent_proust_wasm_bg.wasm")
+);
+await init({ module_or_path: readFileSync(wasm) });
+
+renderHtml("# Title\n"); // '<article><h1>Title</h1></article>'
+```
+
+This package ships the browser build only. A `nodejs` build, which would make
+`init()` work unaided, is additive and not here yet.
 
 ## The four entry points
 
