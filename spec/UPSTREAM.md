@@ -26,6 +26,13 @@ names `spec/**` in `ignorePaths` for that reason. A bump there would be
 unreachable from every test -- nothing here runs JavaScript -- while spending
 the clean diff a refresh depends on.
 
+The rule is also checked rather than only written down. `scripts/check-vendored.sh`
+fetches this directory at the revision named above and diffs it, and CI runs it
+on every push and pull request. It reads that revision out of this file, so the
+two cannot disagree: bumping the line without replacing the files fails, and so
+does editing a file without moving the line. A refresh is both, in one commit.
+`spec/LICENSE` is compared the same way.
+
 ## What was taken, and what was not
 
 Taken verbatim: `index.ts`, `package.json`, `package-lock.json`,

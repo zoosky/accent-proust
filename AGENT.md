@@ -87,6 +87,7 @@ cargo clippy --all-targets --no-default-features -- -D warnings
 cargo test --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 ./scripts/check-standalone.sh
+./scripts/check-vendored.sh
 ```
 
 Clippy runs **twice**, over both feature configurations. Code inside
@@ -95,7 +96,9 @@ Clippy runs **twice**, over both feature configurations. Code inside
 single default-feature pass leaves half the crate unlinted.
 
 `cargo test` needs no submodule and no network. The conformance corpus is
-vendored under `spec/`.
+vendored under `spec/`. `check-vendored.sh` is the one command here that does
+reach the network: it fetches that corpus from upstream at the revision
+`spec/UPSTREAM.md` pins and diffs it, which is the whole point of it.
 
 ### The MSRV
 
@@ -129,7 +132,9 @@ All in `.github/workflows/ci.yml`. Every one gates.
 | `Clippy (default)`, `Clippy (no-default-features)` | clippy over both feature configurations |
 | `Test` | `cargo test --all-features` |
 | `Docs` | `cargo doc --no-deps --all-features` with `-D warnings` |
+| `MSRV` | `cargo check --lib` on 1.96, over both feature configurations |
 | `Standalone (Invariant 1)` | `scripts/check-standalone.sh` |
+| `Vendored corpus` | `scripts/check-vendored.sh` -- `spec/` still byte-for-byte upstream's |
 | `Conformance` | runs the corpus and publishes the count to the run summary |
 
 ## The two ratchets
