@@ -187,6 +187,21 @@ edited (rule 15):
 `reference/` is `exclude`d from the packaged crate. `spec/` is not: a package
 that cannot run its own tests is the worse trade.
 
+### The workspace
+
+The library is the workspace root package, and stays at the repository root
+rather than moving under `crates/`. `scripts/check-standalone.sh`,
+`.github/scripts/release.sh` and the table above all address this manifest and
+this `src/` by path; moving the crate repoints three things to buy nothing.
+
+Members are hosts. A binding that carries the library across an ABI -- the
+WebAssembly build for browsers first -- is a host in the sense `src/lib.rs`
+means, so it gets a crate under `crates/` rather than a feature here.
+`default-members = ["."]` holds a bare `cargo build`, `cargo test` and
+`cargo clippy --all-targets` to the library alone, so no member joins the
+standalone, MSRV or conformance lanes by accident. Build one explicitly with
+`-p`.
+
 ## Testing conventions
 
 Integration tests live in `tests/`, one file per pipeline stage
