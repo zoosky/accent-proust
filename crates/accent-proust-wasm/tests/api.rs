@@ -101,14 +101,50 @@ fn validate_reports_upstream_error_ids() {
 fn validate_carries_a_location() {
     let errors = validate("{% callout %}\n{% /callout %}\n");
     let location = get(&errors.get(0), "location");
-    // Zero-based, and `offset` is this crate's addition to upstream's shape.
+    // Zero-based lines. `offset` and `byteOffset` are both additions to
+    // upstream's shape; for an ASCII document they agree, which is exactly why
+    // an ASCII-only test cannot tell a correct conversion from a missing one.
+    // `positions_are_utf16_code_units_not_bytes` is the one that can.
     assert_eq!(
         json(&location),
         concat!(
-            r#"{"start":{"line":0,"character":0,"offset":0},"#,
-            r#""end":{"line":1,"character":14,"offset":28}}"#
+            r#"{"start":{"line":0,"character":0,"offset":0,"byteOffset":0},"#,
+            r#""end":{"line":1,"character":14,"offset":28,"byteOffset":28}}"#
         )
     );
+}
+
+#[wasm_bindgen_test]
+fn positions_are_utf16_code_units_not_bytes() {
+    // A CodeMirror position, a Monaco position and an LSP `character` are all
+    // counts of UTF-16 code units. The engine counts UTF-8 bytes. "ü" is two
+    // bytes and one code unit, so an unconverted offset is one too high for
+    // everything after it -- and one too high is an underline under the wrong
+    // character.
+    let errors = validate("Gr\u{fc}\u{df}e\n\n{% callout %}\n{% /callout %}\n");
+    assert_eq!(errors.length(), 1);
+
+    let start = get(&get(&errors.get(0), "location"), "start");
+    let offset = get(&start, "offset").as_f64();
+    let byte_offset = get(&start, "byteOffset").as_f64();
+
+    // "Grüße" is 5 characters and 5 code units, but 7 bytes: two of them cost
+    // an extra byte each. Then "\n\n" before the tag.
+    assert_eq!(byte_offset, Some(9.0), "the engine's own unit is bytes");
+    assert_eq!(offset, Some(7.0), "what a JavaScript editor needs");
+}
+
+#[wasm_bindgen_test]
+fn a_column_is_counted_from_the_line_start_in_code_units() {
+    // The character before the tag is on the same line this time, so the
+    // conversion has to be applied to the line start as well as to the
+    // absolute offset. Getting only the latter right leaves `character` wrong.
+    let errors = validate("# T\u{fc}tel\n\nx {% callout %}\n{% /callout %}\n");
+    let start = get(&get(&errors.get(0), "location"), "start");
+    // Line 2, and the tag begins after "x ", so column 2 in either unit --
+    // the non-ASCII character is on line 0 and must not leak into this.
+    assert_eq!(get(&start, "line").as_f64(), Some(2.0));
+    assert_eq!(get(&start, "character").as_f64(), Some(2.0));
 }
 
 #[wasm_bindgen_test]

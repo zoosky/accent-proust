@@ -7,6 +7,10 @@ doc-valid-idents = [
     "Markdoc",
     "MiniJinja",
     "AccentX",
+    # Editors the WebAssembly bindings name when explaining what a position
+    # means to them. Same reason: proper nouns, not types.
+    "CodeMirror",
+    "Monaco",
     "..",
 ]
 
