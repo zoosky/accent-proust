@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>accent-proust in the browser</title>
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>accent-proust <span class="sub">Markdoc, running in your browser</span></h1>
+      <p class="status" id="status" role="status">Loading the engine&hellip;</p>
+    </header>
+
+    <main class="panes">
+      <section class="pane" aria-labelledby="source-heading">
+        <div class="pane-head">
+          <h2 id="source-heading">Source</h2>
+          <button type="button" id="format" disabled>Format</button>
+        </div>
+        <textarea id="source" spellcheck="false" aria-labelledby="source-heading"></textarea>
+      </section>
+
+      <section class="pane" aria-labelledby="output-heading">
+        <div class="pane-head">
+          <h2 id="output-heading">Output</h2>
+          <label class="field">
+            Stylesheet
+            <select id="theme"></select>
+          </label>
+          <div class="tabs" role="tablist">
+            <button type="button" role="tab" data-tab="preview" aria-selected="true">Preview</button>
+            <button type="button" role="tab" data-tab="diagnostics" aria-selected="false">
+              Diagnostics <span class="count" id="diagnostic-count" hidden>0</span>
+            </button>
+            <button type="button" role="tab" data-tab="html" aria-selected="false">HTML</button>
+            <button type="button" role="tab" data-tab="tree" aria-selected="false">Tree</button>
+          </div>
+        </div>
+
+        <!-- `allow-same-origin` and nothing else. Scripts stay blocked, which is
+             the property that matters; a bare `sandbox` additionally gives the
+             frame an opaque origin, and Chrome then renders `srcdoc` as a blank
+             page. Verified both ways rather than assumed. -->
+        <iframe id="preview" class="tabpanel" title="Rendered output"
+                sandbox="allow-same-origin"></iframe>
+        <div id="diagnostics" class="tabpanel" hidden></div>
+        <pre id="html" class="tabpanel" hidden><code></code></pre>
+        <pre id="tree" class="tabpanel" hidden><code></code></pre>
+      </section>
+    </main>
+
+    <footer class="bar foot">
+      <p id="timing">&nbsp;</p>
+      <p>
+        The whole pipeline runs locally in WebAssembly. Nothing is sent anywhere.
+      </p>
+    </footer>
+
+    <script type="module" src="demo.js"></script>
+  </body>
+</html>

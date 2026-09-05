@@ -1,4 +1,6 @@
 /target
 
-# The npm package, built by `scripts/build-npm.sh`.
+# The npm package and the copy the demo loads, both built by
+# `scripts/build-npm.sh`.
 /crates/accent-proust-wasm/pkg
+/demo/pkg
