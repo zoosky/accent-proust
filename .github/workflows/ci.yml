@@ -92,6 +92,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: ./scripts/check-standalone.sh
 
+  # The corpus is redistribution, and `spec/UPSTREAM.md` says so in prose: "These
+  # files are never edited." Prose does not fail a build, and this one was broken
+  # within a month by a dependency bot that bumped a manifest no test reads --
+  # eight green checks on the pull request, because nothing here runs JavaScript.
+  # Ignoring `spec/**` in renovate.json aims at that one bot; this aims at the
+  # invariant, and catches a hand edit too. No toolchain and no cache: it is a
+  # blobless depth-1 fetch of two upstream paths and a diff.
+  vendored:
+    name: Vendored corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./scripts/check-vendored.sh
+
   # The conformance ratchet. Deliberately not an absolute 105/105 gate: that
   # would leave every pull request failing a required check from the day the
   # harness merged until the formatter lands, which destroys the red/green
