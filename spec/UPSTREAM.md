@@ -19,6 +19,13 @@ a newer upstream revision is a deliberate act: replace the files wholesale,
 update the revision above, and read the resulting `git diff` as the changelog it
 is.
 
+That rule binds bots too, and one cannot read it: `package.json` here declares
+`diff` and `yaml-js` for a runner this repository never invokes, which a
+dependency bot sees as an ordinary manifest to keep current. `renovate.json`
+names `spec/**` in `ignorePaths` for that reason. A bump there would be
+unreachable from every test -- nothing here runs JavaScript -- while spending
+the clean diff a refresh depends on.
+
 ## What was taken, and what was not
 
 Taken verbatim: `index.ts`, `package.json`, `package-lock.json`,

@@ -2,5 +2,22 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "description": [
+    "`spec/` is vendored redistribution, not a dependency of this crate. Its",
+    "`package.json` and `package-lock.json` are upstream Markdoc's own, taken",
+    "verbatim at the revision `spec/UPSTREAM.md` pins, and that file's first",
+    "rule is that they are never edited. Nothing here runs JavaScript -- the",
+    "conformance harness reads `tests.yaml` from Rust and nothing else -- so a",
+    "bump there is unreachable from every test and changes no behaviour, while",
+    "costing the wholesale-replace refresh procedure the clean diff it reads as",
+    "its changelog. Renovate is told to leave the directory alone.",
+    "The two node_modules globs restate `config:recommended`'s own defaults,",
+    "which setting `ignorePaths` here would otherwise replace."
+  ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "spec/**"
   ]
 }
