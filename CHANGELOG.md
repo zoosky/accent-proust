@@ -19,6 +19,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mapping to JavaScript objects lives there rather than behind a `serde`
   feature here.
 
+- **Diagnostic positions in UTF-16 code units.** A location edge from the
+  WebAssembly bindings carries `line`, `character`, `offset` and `byteOffset`,
+  and every field but the last is counted the way JavaScript counts a string
+  index. The engine measures UTF-8 bytes, an editor position is UTF-16, and the
+  two agree until an author writes a character outside ASCII -- at which point
+  an unconverted offset underlines the wrong character. Converting at the
+  boundary means no host rediscovers this.
+
 ## [0.9.0] - 2026-09-04
 
 First release. The engine is complete: source text parses to an AST, an AST

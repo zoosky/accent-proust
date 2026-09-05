@@ -48,6 +48,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 mod diagnostics;
 mod tree;
+mod utf16;
 
 /// Render a Markdoc document to HTML.
 ///
@@ -75,7 +76,8 @@ pub fn render_html(source: &str) -> String {
 pub fn validate(source: &str) -> js_sys::Array {
     let document = accent_proust::parse::parse(source);
     let config = accent_proust::builtins::config();
-    diagnostics::errors(&accent_proust::validate::validate_tree(&document, &config))
+    let errors = accent_proust::validate::validate_tree(&document, &config);
+    diagnostics::errors(source, &errors)
 }
 
 /// Transform a Markdoc document into a renderable tree.

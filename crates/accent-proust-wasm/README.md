@@ -103,12 +103,23 @@ validate("{% callout %}\n{% /callout %}\n");
 // }]
 ```
 
-`line` and `character` are **zero-based**, and `character` is a **byte** column
-rather than a UTF-16 code unit. For ASCII the two agree; for anything else,
-convert before handing the position to an editor. Each edge also carries
-`offset`, an absolute byte index, which has no counterpart in Markdoc's own
-shape and is there because an editor cannot recover it from a line and a
-column.
+Positions are counted in **UTF-16 code units** -- what JavaScript means by a
+string index, and what a CodeMirror position, a Monaco position and an LSP
+`character` all are. The engine measures UTF-8 bytes internally and the
+conversion happens before the value crosses the boundary, so a position can go
+straight into an editor with no arithmetic:
+
+```js
+const { start, end } = validate(source)[0].location;
+view.dispatch({ selection: { anchor: start.offset, head: end.offset } });
+```
+
+Each edge carries four fields. `line` is zero-based. `character` is code units
+from the start of the line. `offset` is code units from the start of the
+document, so it is usable as a position directly. `byteOffset` is the engine's
+own unit, for a host that wants to index back into the source as bytes; it is
+the only field that is not code units, and it is named so that it cannot be
+mistaken for one.
 
 ### `transform(source): RenderableTreeNode[]`
 
