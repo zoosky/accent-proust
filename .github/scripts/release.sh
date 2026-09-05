@@ -4,10 +4,12 @@
 #
 # The sibling accent-sass repository releases three crates and spends most of
 # its script on the ordering that a `path` + `version` dependency forces. This
-# repository is one crate with no workspace members, so all of that is gone.
-# What is left -- and what the script is actually for -- is the part that has
-# nothing to do with ordering: refusing to publish a tree that has not passed
-# the same gates CI runs, and refusing to publish twice.
+# repository publishes one crate: the workspace has a member, but
+# `accent-proust-wasm` sets `publish = false` and ships to npm through
+# `scripts/build-npm.sh` instead, so no ordering problem reaches here. What is
+# left -- and what the script is actually for -- is the part that has nothing
+# to do with ordering: refusing to publish a tree that has not passed the same
+# gates CI runs, and refusing to publish twice.
 #
 # Usage:
 #   .github/scripts/release.sh --dry-run      # verify only, publishes nothing

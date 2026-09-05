@@ -103,6 +103,8 @@ CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
 The test runner ships with `wasm-bindgen-cli` and its version has to match the
 `wasm-bindgen` the crate compiles against:
 `cargo install wasm-bindgen-cli --version 0.2.128 --locked`.
+`scripts/build-npm.sh` checks that match rather than letting a mismatch surface
+as broken glue at run time.
 
 Clippy runs **twice**, over both feature configurations. Code inside
 `#[cfg(feature = "...")]` is only linted when that feature is on, and a
@@ -148,7 +150,7 @@ All in `.github/workflows/ci.yml`. Every one gates.
 | `Docs` | `cargo doc --no-deps --all-features` with `-D warnings` |
 | `MSRV` | `cargo check --lib` on 1.96, over both feature configurations |
 | `Standalone (Invariant 1)` | `scripts/check-standalone.sh` |
-| `WebAssembly` | clippy, build and Node-hosted tests for `accent-proust-wasm` on `wasm32-unknown-unknown` |
+| `WebAssembly` | clippy, build and Node-hosted tests for `accent-proust-wasm` on `wasm32-unknown-unknown`, then `scripts/build-npm.sh --pack` |
 | `Vendored corpus` | `scripts/check-vendored.sh` -- `spec/` still byte-for-byte upstream's |
 | `Conformance` | runs the corpus and publishes the count to the run summary |
 
@@ -250,12 +252,34 @@ level, and CI turns warnings into errors. Where a bound is genuinely proven,
 
 ## Releasing
 
-`.github/scripts/release.sh --dry-run` runs every gate above plus the package
-checks. Drop `--dry-run` to publish.
+Two artifacts, released separately.
+
+**The crate.** `.github/scripts/release.sh --dry-run` runs every gate above plus
+the package checks. Drop `--dry-run` to publish.
 
 Bump the version in `Cargo.toml` and move `Unreleased` into a dated section in
 `CHANGELOG.md` first. The script checks both: it refuses the `0.0.0`
 placeholder, and it refuses a version the changelog does not carry.
+
+**The npm package.** `./scripts/build-npm.sh --pack` builds
+`crates/accent-proust-wasm/pkg` and dry-runs `npm pack` over it;
+`./scripts/build-npm.sh --publish` runs the checks below and ships it. The
+directory is generated and ignored, and the script is the only thing that
+writes it.
+
+Two `version` fields exist -- the library's and the member's -- and cargo does
+not make them agree, so the script does: it takes the library's, which is what
+the git tag and crates.io track, and refuses to run when the member's differs.
+Publishing additionally refuses when `CHANGELOG.md` has no section for that
+version, and when it still has entries under `Unreleased`: the crate reached
+its current version before the bindings existed, so npm would otherwise ship
+them under a heading that predates them. Last, it refuses a version the
+registry already carries, which is release.sh's tag check in its npm form.
+
+There is no wasm-opt step, which is measured rather than forgotten: over this
+artifact `wasm-opt -O3` takes 554,850 bytes to 526,162 and 213,250 gzipped to
+213,077. `lto` and `codegen-units = 1` in the `wasm-release` profile have
+already done the work.
 
 ## Session completion
 

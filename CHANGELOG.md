@@ -6,6 +6,19 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A WebAssembly build, published to npm as `accent-proust`.**
+  `crates/accent-proust-wasm` exposes `validate`, `renderHtml`, `transform` and
+  `format` to a browser or any other JavaScript host. The renderable tree it
+  returns carries Markdoc's `$$mdtype` marker, so a renderer written against
+  `@markdoc/markdoc` maps tag names onto components unchanged. Variables,
+  partials and host-defined schemas are not across the boundary yet.
+
+  Nothing in the library changed: the binding is a workspace member, and the
+  mapping to JavaScript objects lives there rather than behind a `serde`
+  feature here.
+
 ## [0.9.0] - 2026-09-04
 
 First release. The engine is complete: source text parses to an AST, an AST
