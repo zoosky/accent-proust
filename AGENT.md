@@ -90,6 +90,20 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 ./scripts/check-vendored.sh
 ```
 
+The binding crate is not in `default-members`, so none of the commands above
+reach it. Run its gates by name:
+
+```bash
+cargo clippy -p accent-proust-wasm --all-targets --target wasm32-unknown-unknown -- -D warnings
+cargo build -p accent-proust-wasm --release --target wasm32-unknown-unknown
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+  cargo test -p accent-proust-wasm --target wasm32-unknown-unknown
+```
+
+The test runner ships with `wasm-bindgen-cli` and its version has to match the
+`wasm-bindgen` the crate compiles against:
+`cargo install wasm-bindgen-cli --version 0.2.128 --locked`.
+
 Clippy runs **twice**, over both feature configurations. Code inside
 `#[cfg(feature = "...")]` is only linted when that feature is on, and a
 `#[cfg(not(feature = "..."))]` block is only compiled when it is off, so a
@@ -134,6 +148,7 @@ All in `.github/workflows/ci.yml`. Every one gates.
 | `Docs` | `cargo doc --no-deps --all-features` with `-D warnings` |
 | `MSRV` | `cargo check --lib` on 1.96, over both feature configurations |
 | `Standalone (Invariant 1)` | `scripts/check-standalone.sh` |
+| `WebAssembly` | clippy, build and Node-hosted tests for `accent-proust-wasm` on `wasm32-unknown-unknown` |
 | `Vendored corpus` | `scripts/check-vendored.sh` -- `spec/` still byte-for-byte upstream's |
 | `Conformance` | runs the corpus and publishes the count to the run summary |
 
@@ -201,6 +216,16 @@ means, so it gets a crate under `crates/` rather than a feature here.
 `cargo clippy --all-targets` to the library alone, so no member joins the
 standalone, MSRV or conformance lanes by accident. Build one explicitly with
 `-p`.
+
+| Member | What |
+|---|---|
+| `crates/accent-proust-wasm` | WebAssembly bindings for a browser or other JavaScript host. Ships to npm, not crates.io, so it sets `publish = false`. |
+
+The binding repeats the library's lint block rather than inheriting a shared
+one. `unsafe_code = "forbid"` cannot be relaxed by a member that needs it, so a
+`[workspace.lints]` block would be a decision taken for every future host; and
+the library's manifest is the one that gets published, which is a reason to
+leave it alone.
 
 ## Testing conventions
 
