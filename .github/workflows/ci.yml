@@ -92,6 +92,42 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: ./scripts/check-standalone.sh
 
+  # The binding crate, on the only target it is built for. Separate from the
+  # `Clippy` and `Test` jobs because those run `default-members`, which is the
+  # library alone: a member is never linted or tested by accident, only on
+  # purpose, and this is the purpose.
+  #
+  # The tests run in Node rather than on the host. A `js_sys::Object` has no
+  # meaning outside a JavaScript engine, so a host-side test of the same mapping
+  # would be a test of a different program. `wasm-bindgen-test-runner` has to
+  # match the `wasm-bindgen` the crate compiles against, which is why the
+  # version is pinned here and bumped with it.
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    env:
+      WASM_BINDGEN_VERSION: 0.2.128
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # `RUSTFLAGS: -D warnings` is set for the whole workflow and would other-
+      # wise apply to wasm-bindgen-cli's own dependency tree, failing the job on
+      # a warning in code this repository does not own.
+      - name: Install the test runner
+        env:
+          RUSTFLAGS: ""
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+      - run: cargo clippy -p accent-proust-wasm --all-targets --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo build -p accent-proust-wasm --release --target wasm32-unknown-unknown
+      - name: Run the bindings in Node
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+        run: cargo test -p accent-proust-wasm --target wasm32-unknown-unknown
+
   # The corpus is redistribution, and `spec/UPSTREAM.md` says so in prose: "These
   # files are never edited." Prose does not fail a build, and this one was broken
   # within a month by a dependency bot that bumped a manifest no test reads --

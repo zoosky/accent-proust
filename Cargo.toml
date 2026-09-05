@@ -13,7 +13,7 @@
 # and `cargo clippy --all-targets` to the library alone, so a member cannot
 # quietly join the standalone, MSRV or conformance lanes.
 [workspace]
-members = []
+members = ["crates/accent-proust-wasm"]
 default-members = ["."]
 
 [package]
