@@ -71,6 +71,12 @@ code:
 
 search:
   backend: simple
+  # The default is 200 characters, which indexes roughly the first paragraph
+  # and leaves the rest of a documentation page unfindable -- `wasm`,
+  # `UTF-16`, `tag-undefined` and every other term worth searching for lives
+  # further down. These pages are a few thousand words at most, so indexing
+  # them whole costs a small JSON file and makes the feature worth having.
+  content_length: 50000
   exclude:
     - "/404"
     - "/tags/*"

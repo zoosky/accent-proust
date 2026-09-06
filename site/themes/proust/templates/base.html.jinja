@@ -16,6 +16,21 @@
      because the stylesheet supports both. #}
   <meta name="color-scheme" content="dark light">
 
+  {# Applied before the stylesheet so a reader who chose light does not get a
+     frame of dark first. This is the one script here that has to be inline and
+     blocking: a deferred one runs after first paint, which is exactly the
+     flash it exists to prevent. Wrapped in try/catch because a browser with
+     site data blocked throws on `localStorage` rather than returning null, and
+     a theme preference is not worth a blank page. #}
+  <script>
+    try {
+      var t = localStorage.getItem("theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.setAttribute("data-theme", t);
+      }
+    } catch (e) {}
+  </script>
+
   {# The Accent mark, copied byte-for-byte from the design system in
      accentcms/site-brand. The link order and the `mask-icon` colour match the
      Accent docs site, so the family shares one tab icon rather than one that
@@ -45,6 +60,21 @@
         <a href="{{ url('/docs') }}" {% if page.url and '/docs' in page.url %}class="active"{% endif %}>Docs</a>
         <a class="ext hide-sm" href="https://docs.rs/accent-proust">API</a>
         <a class="ext" href="https://github.com/zoosky/accent-proust">GitHub</a>
+
+        <button type="button" class="icon-btn search-trigger" id="search-trigger"
+                aria-label="Search" aria-expanded="false" aria-controls="search-overlay">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+          <span class="label">Search</span>
+          <kbd>/</kbd>
+        </button>
+
+        {# Not `aria-pressed`: this does not turn a setting on and off, it
+           switches between two named themes. The label is rewritten by the
+           script to name the one you get next. #}
+        <button type="button" class="icon-btn theme-toggle" id="theme-toggle" aria-label="Switch theme">
+          <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><path d="M8 .8v1.8M8 13.4v1.8M15.2 8h-1.8M2.6 8H.8M13.09 2.91l-1.27 1.27M4.18 11.82l-1.27 1.27M13.09 13.09l-1.27-1.27M4.18 4.18 2.91 2.91"/></svg>
+          <svg class="icon-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1Z"/></svg>
+        </button>
       </nav>
     </div>
   </header>
@@ -52,6 +82,30 @@
   <main id="main">
     {% block body %}{% endblock %}
   </main>
+
+  {# The `acms-search-*` class names are the generated search script's
+     contract (`/_search/search.js`, produced by `accent build` from
+     `search.backend` in config.yaml). It finds every `.acms-search-form`,
+     reads `data-limit` and `data-search-backend` from it, and writes results
+     into `.acms-search-results`. The dialog around them and the styling are
+     this theme's; those three names are not ours to rename. #}
+  <div id="search-overlay" hidden role="dialog" aria-modal="true" aria-label="Search this site">
+    <div id="search-backdrop"></div>
+    <div id="search-card">
+      <div class="acms-search-form" data-search-backend="simple" data-limit="8">
+        <div class="search-field">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+          <input class="acms-search-input" type="search" placeholder="Search the documentation"
+                 aria-label="Search this site" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="acms-search-results"></div>
+      </div>
+      <p class="search-hint">
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>Esc</kbd> close</span>
+      </p>
+    </div>
+  </div>
 
   <footer class="site-footer">
     <div class="container">
@@ -106,6 +160,8 @@
       </p>
     </div>
   </footer>
+  <script src="{{ url('/_search/search.js') }}" defer></script>
+  <script src="{{ url('/theme/assets/js/chrome.js') }}" defer></script>
 </body>
 
 </html>

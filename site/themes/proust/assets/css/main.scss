@@ -67,30 +67,43 @@
   --radius-sm: 6px;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: var(--snow);
-    --bg-sunken: #ececed;
-    --surface: #ffffff;
-    --surface-2: #f7f7f9;
-    --border: #dedee3;
-    --border-strong: #c6c6cf;
+// The light palette, written once and applied twice: the theme can be chosen
+// by the operating system or by the toggle in the header, and a stylesheet
+// that spelled the values out in both places would drift between them.
+@mixin light-palette {
+  --bg: var(--snow);
+  --bg-sunken: #ececed;
+  --surface: #ffffff;
+  --surface-2: #f7f7f9;
+  --border: #dedee3;
+  --border-strong: #c6c6cf;
 
-    --text: #14161c;
-    --text-dim: #4e535f;
-    --text-faint: #7c8290;
+  --text: #14161c;
+  --text-dim: #4e535f;
+  --text-faint: #7c8290;
 
-    // Coral on white fails contrast for small text; the link colour is the one
-    // that lands on prose, so it darkens. The fills keep the brand hue.
-    --link: #0a7ea4;
-    --wash: #f2f2f5;
+  // Coral on white fails contrast for small text; the link colour is the one
+  // that lands on prose, so it darkens. The fills keep the brand hue.
+  --link: #0a7ea4;
+  --wash: #f2f2f5;
 
-    // Deliberately not lightened; see the note on --code-bg above.
-    --code-bg: #0e1016;
-    --code-border: #23262f;
-    --shadow: 0 1px 2px rgb(20 22 28 / 6%), 0 8px 24px -12px rgb(20 22 28 / 20%);
-  }
+  // Deliberately not lightened; see the note on --code-bg above.
+  --code-bg: #0e1016;
+  --code-border: #23262f;
+  --shadow: 0 1px 2px rgb(20 22 28 / 6%), 0 8px 24px -12px rgb(20 22 28 / 20%);
 }
+
+// System preference, but only while the reader has not chosen for themselves.
+// The `:not()` is what lets an explicit `data-theme="dark"` win on a machine
+// set to light -- without it the media query would keep overriding the choice.
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { @include light-palette; }
+}
+
+// An explicit choice, in both directions. `data-theme="dark"` needs no block:
+// dark is what `:root` already carries, and the `:not()` above steps aside for
+// it.
+:root[data-theme="light"] { @include light-palette; }
 
 // ---------------------------------------------------------------------------
 // Base
@@ -1281,4 +1294,230 @@ pre.tabpanel {
   }
 
   .cta-row { margin-left: auto; }
+}
+
+// ---------------------------------------------------------------------------
+// Header controls: theme toggle and search trigger
+// ---------------------------------------------------------------------------
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+
+  &:hover { color: var(--text); border-color: var(--border-strong); }
+
+  svg {
+    width: 15px;
+    height: 15px;
+    // The icons are drawn as strokes so one colour follows the button.
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+// One button, two icons, and CSS decides which is visible -- so the toggle
+// needs no JavaScript to paint itself correctly on first render, which is what
+// keeps it honest during the pre-paint theme flash fix.
+.theme-toggle {
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .theme-toggle {
+    .icon-sun { display: block; }
+    .icon-moon { display: none; }
+  }
+}
+
+:root[data-theme="light"] .theme-toggle {
+  .icon-sun { display: block; }
+  .icon-moon { display: none; }
+}
+
+:root[data-theme="dark"] .theme-toggle {
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+}
+
+.search-trigger {
+  // Wide enough to read as a field on a laptop, an icon on a phone.
+  .label { color: var(--text-faint); font-size: 0.85rem; }
+
+  kbd {
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .search-trigger .label,
+  .search-trigger kbd { display: none; }
+}
+
+// ---------------------------------------------------------------------------
+// Search overlay
+// ---------------------------------------------------------------------------
+
+// `display` on an ID selector beats the user agent's `[hidden] { display: none }`,
+// so without this pair the dialog is on screen on every page load with the
+// `hidden` attribute still set. Found by screenshotting the built page: the
+// behavioural tests all read `overlay.hidden`, which was true the whole time
+// and said nothing about what a reader could see.
+#search-overlay[hidden] { display: none; }
+
+#search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  // Not centred: a results list that grows downward from a fixed point is
+  // easier to read than one that keeps re-centring as results arrive.
+  align-content: start;
+  justify-items: center;
+  padding: clamp(3rem, 12vh, 8rem) 1rem 2rem;
+}
+
+#search-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+#search-card {
+  position: relative;
+  width: min(40rem, 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 24px 60px -20px rgb(0 0 0 / 65%);
+  overflow: hidden;
+}
+
+.acms-search-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+
+  svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: var(--text-faint);
+    stroke-width: 1.7;
+    stroke-linecap: round;
+  }
+}
+
+.acms-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+
+  &:focus { outline: none; }
+  &::placeholder { color: var(--text-faint); }
+}
+
+.acms-search-results {
+  max-height: min(28rem, 55vh);
+  overflow-y: auto;
+  padding: 0.4rem;
+
+  &:empty { display: none; }
+}
+
+// `.acms-search-*` below are the class names the generated search script
+// emits. They are its contract, not this theme's, so they are styled rather
+// than renamed.
+.acms-search-result {
+  display: block;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible,
+  &[aria-selected="true"],
+  &.is-active {
+    background: var(--surface-2);
+    outline: none;
+  }
+}
+
+.acms-search-result-title {
+  display: block;
+  font-weight: 550;
+  font-size: 0.95rem;
+}
+
+.acms-search-result-snippet {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.acms-search-highlight {
+  background: color-mix(in srgb, var(--gold) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.acms-search-empty {
+  padding: 1rem 0.9rem;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+// The script sets this while a query is in flight. Fading rather than clearing
+// keeps the list from flickering between keystrokes.
+.acms-search-stale .acms-search-results { opacity: 0.55; }
+
+.search-hint {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: 0.78rem;
+
+  kbd {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+  }
 }
