@@ -45,6 +45,31 @@ No I/O. No configuration file. No concept of a file, a theme, a template or a
 plugin. Everything host-specific arrives as data the caller passes in, or through
 the one trait the caller implements.
 
+<div class="diagram-scroll">
+
+```svgbob
+         the host                                  "accent-proust"
+
+  +----------------------+                    +----------------------+
+  | a CommonMark         |   impl Tokenizer   |                      |
+  | segmenter            +------------------->+  parse               |
+  +----------------------+      a trait       |                      |
+                                              |                      |
+  +----------------------+                    |                      |
+  | schemas: a constant, |   build a Config   |                      |
+  | YAML, a database,    +------------------->+  validate            |
+  | a sandboxed guest    |     plain data     |  transform           |
+  +----------------------+                    |                      |
+                                              |                      |
+  +----------------------+                    |                      |
+  | your elements,       |  renderable tree   |                      |
+  | your escaping,       +<-------------------+  "render_all is only"|
+  | your templates       |   from transform   |  a shortcut          |
+  +----------------------+                    +----------------------+
+```
+
+</div>
+
 This is not minimalism for its own sake. It is what makes the crate embeddable
 in a CMS, a language server and a build tool without any of the three inheriting
 the others' assumptions -- and it is enforced by a CI job rather than by
