@@ -1,0 +1,13 @@
+# Build output.
+output/
+
+# The WebAssembly engine, staged into the theme by scripts/build-site.sh. It is
+# generated from crates/accent-proust-wasm on every build for the same reason
+# the npm package is never committed: a checked-in binary is a copy that can
+# disagree with the source beside it.
+themes/proust/assets/wasm/
+
+# Accent's build caches.
+.build-manifest.json
+.media-cache/
+.diagram-cache/

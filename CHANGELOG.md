@@ -8,6 +8,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A project website, with the documentation and a live playground.** `site/`
+  is a landing page, five documentation pages -- Rust, JavaScript, the Markdoc
+  language, the architecture, and the divergences -- and a playground that runs
+  the WebAssembly engine in the reader's browser. `scripts/build-site.sh`
+  builds it and `.github/workflows/pages.yml` publishes it to GitHub Pages.
+
+  It is built with Accent CMS, the sibling generator this crate ships
+  alongside, and it is not a workspace member: nothing in `Cargo.toml` knows it
+  exists and `scripts/check-standalone.sh` is unaffected. The playground's
+  engine is compiled from `crates/accent-proust-wasm` on every build rather
+  than committed, so it can never be a stale copy of a release.
+
 - **A WebAssembly build, published to npm as `accent-proust`.**
   `crates/accent-proust-wasm` exposes `validate`, `renderHtml`, `transform` and
   `format` to a browser or any other JavaScript host. The renderable tree it

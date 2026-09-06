@@ -1,0 +1,20 @@
+name: Proust
+description: >-
+  The accent-proust project site. Accent's palette, dark first, built around a
+  live WebAssembly playground.
+version: "1.0.0"
+author: AccentX GmbH
+license: MIT
+assets:
+  css:
+    - css/main.scss
+  # The playground script is not listed here. Theme assets in this list load on
+  # every page, and this one is an ES module that instantiates a 200 KB
+  # WebAssembly engine -- the playground template pulls it in itself, so the
+  # other pages never pay for it.
+  js: []
+styling:
+  sass:
+    enabled: true
+    load_paths:
+      - css

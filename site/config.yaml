@@ -1,0 +1,95 @@
+# The website for accent-proust, built with Accent CMS -- the sibling project
+# this crate ships alongside. Dogfooding is the point: the engine that renders
+# Markdoc in the playground below is this repository, and the engine that
+# renders the pages around it is the CMS the family is named for.
+#
+# Nothing here is read by `cargo`. The site is built by `scripts/build-site.sh`
+# and by `.github/workflows/pages.yml`, and neither touches the crate, so
+# Invariant 1 -- the library stands alone, with no host anywhere in its
+# dependency tree -- is unaffected by anything in this directory.
+
+server:
+  address: "127.0.0.1"
+  # Not 4400 (the Accent starter) or 4440 (the Accent docs site): those are
+  # sibling sites that may be running while this one is, and a port collision
+  # surfaces as a confusing "address in use" rather than as what it is.
+  port: 4450
+
+content:
+  directory: "./content"
+
+theme:
+  name: "proust"
+  directory: "./themes"
+
+site:
+  name: "accent-proust"
+  # The GitHub Pages project URL. The path component is what tells `accent
+  # build` to prefix every internal link with `/accent-proust`, so a build
+  # with no flags already produces the artifact Pages wants. The workflow
+  # passes `--base-url` anyway, because a value that matters this much should
+  # not be reachable only through a default.
+  url: https://zoosky.github.io/accent-proust
+  description: >-
+    A Rust implementation of the Markdoc language: parse, validate, transform,
+    render, and format. Runs in a browser through WebAssembly.
+  language: en-US
+  meta:
+    og:locale: "en_US"
+
+build:
+  # Off deliberately. Fingerprinting rewrites asset URLs to content-hashed
+  # names, and the WebAssembly glue resolves `accent_proust_wasm_bg.wasm`
+  # relative to its own URL at runtime -- a name the build has no way to
+  # rewrite, because it lives inside a generated JavaScript string rather than
+  # in an href the template renders. Hashing the glue and not the wasm it
+  # fetches would 404 the engine. Pages sends `Cache-Control` of its own and
+  # this site is small, so the trade costs nothing here.
+  fingerprint:
+    enabled: false
+  routing:
+    error_document: /404.html
+
+markdown:
+  tables: true
+  footnotes: true
+  strikethrough: true
+  tasklists: true
+  heading_attributes: true
+  smart_punctuation: false # Code and CLI flags are quoted all over these pages.
+  gfm: true
+  definition_lists: true
+  metadata_blocks: true
+
+code:
+  theme: "base16-ocean.dark"
+
+search:
+  backend: simple
+  exclude:
+    - "/404"
+    - "/tags/*"
+
+llms:
+  enabled: true
+  description: |
+    accent-proust is a Rust implementation of the Markdoc language: parse,
+    validate, transform, render, and format. It also compiles to WebAssembly
+    and is published to npm for use in a browser. These pages cover the Rust
+    API, the JavaScript API, the Markdoc language itself, the architecture,
+    and every declared divergence from upstream Markdoc.
+  extra_links:
+    - title: "Source"
+      url: "https://github.com/zoosky/accent-proust"
+    - title: "API documentation (docs.rs)"
+      url: "https://docs.rs/accent-proust"
+    - title: "crates.io"
+      url: "https://crates.io/crates/accent-proust"
+
+diagrams:
+  render_mode: server
+
+dev:
+  hot_reload: true
+  browser_reload: true
+  debounce_ms: 50

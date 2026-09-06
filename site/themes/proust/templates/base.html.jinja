@@ -1,0 +1,100 @@
+{# The shell every page shares.
+
+   The navigation is written out rather than looped over `pages`, because half
+   of it leaves the site -- crates.io, npm, docs.rs, GitHub -- and a loop that
+   has to be pieced back together with a hand-written tail is longer than the
+   list it replaces. Four links do not need a data structure. #}
+<!DOCTYPE html>
+<html lang="{{ page.language or 'en' }}" dir="{{ page.direction or 'ltr' }}">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title and page.title != site.name %}{{ page.title }} - {% endif %}{{ site.name }}</title>
+  {# The browser paints the page background before any CSS arrives; without
+     this the first frame of a dark page is white. It names both schemes
+     because the stylesheet supports both. #}
+  <meta name="color-scheme" content="dark light">
+  {% include "partials/head_meta.html.jinja" %}
+  {% for css in theme.assets.css %}
+  <link rel="stylesheet" href="{{ url('/theme/assets/' ~ css) }}">
+  {% endfor %}
+  {% block head %}{% endblock %}
+</head>
+
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container">
+      <a class="wordmark" href="{{ url('/') }}">accent<span class="mark">-</span>proust</a>
+
+      <nav class="site-nav" aria-label="Main">
+        <a href="{{ url('/playground') }}" {% if page.url and '/playground' in page.url %}class="active"{% endif %}>Playground</a>
+        <a href="{{ url('/docs') }}" {% if page.url and '/docs' in page.url %}class="active"{% endif %}>Docs</a>
+        <a class="ext hide-sm" href="https://docs.rs/accent-proust">API</a>
+        <a class="ext" href="https://github.com/zoosky/accent-proust">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    {% block body %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="foot-grid">
+        <div>
+          <h2>accent-proust</h2>
+          <p style="margin:0;max-width:34ch">
+            A Rust implementation of the Markdoc language. MIT licensed, and a
+            compatible reimplementation derived from the MIT-licensed Markdoc
+            source.
+          </p>
+        </div>
+
+        <div>
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="{{ url('/docs') }}">Overview</a></li>
+            <li><a href="{{ url('/docs/rust') }}">Rust</a></li>
+            <li><a href="{{ url('/docs/javascript') }}">JavaScript</a></li>
+            <li><a href="{{ url('/docs/language') }}">Markdoc</a></li>
+            <li><a href="{{ url('/docs/architecture') }}">Architecture</a></li>
+            <li><a href="{{ url('/docs/divergences') }}">Divergences</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h2>Packages</h2>
+          <ul>
+            <li><a href="https://crates.io/crates/accent-proust">crates.io</a></li>
+            <li><a href="https://docs.rs/accent-proust">docs.rs</a></li>
+            <li><a href="https://www.npmjs.com/package/accent-proust">npm</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/zoosky/accent-proust">Source</a></li>
+            <li><a href="https://github.com/zoosky/accent-proust/blob/main/CHANGELOG.md">Changelog</a></li>
+            <li><a href="https://github.com/zoosky/accent-proust/blob/main/LICENSE">Licence</a></li>
+            <li><a href="https://markdoc.dev">Markdoc</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="colophon">
+        Named for the strips of paper Proust glued into his manuscript to extend
+        it -- parse, mutate, print, which is what a formatter does. Part of the
+        <a href="https://accentcms.dev">Accent CMS</a> family, and built with it:
+        these pages are rendered by Accent, and the playground is rendered by
+        the engine this site documents.
+      </p>
+    </div>
+  </footer>
+</body>
+
+</html>

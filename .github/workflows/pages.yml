@@ -1,0 +1,116 @@
+# Build the project website and publish it to GitHub Pages.
+#
+# Separate from ci.yml on purpose. Nothing here gates a pull request: the site
+# is downstream of the crate, and a broken stylesheet should not block a
+# library change. The one thing this workflow shares with CI is how it gets
+# wasm-bindgen, and that is deliberate -- the version has to match the one in
+# Cargo.lock or the generated glue and the module disagree.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    # The site is rebuilt when the site changes, when the engine it embeds
+    # changes, or when the scripts that assemble the two change. A change to
+    # `src/` reaches the playground through the wasm crate, which depends on
+    # the library by path -- so the library is in this list as well.
+    paths:
+      - "site/**"
+      - "src/**"
+      - "crates/accent-proust-wasm/**"
+      - "scripts/build-site.sh"
+      - "scripts/build-npm.sh"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and a newer commit wins. `cancel-in-progress: false`
+# because a half-finished Pages deployment is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Must match the wasm-bindgen in Cargo.lock, exactly as in ci.yml. The build
+  # script checks this and fails loudly if the two drift.
+  WASM_BINDGEN_VERSION: 0.2.128
+  # The Accent CMS release the site is built with. Pinned rather than "latest":
+  # a template that renders differently after a CMS release should be a change
+  # someone made, not a deployment nobody triggered.
+  ACCENT_VERSION: v0.25.1
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Early, because the build reads its `base_url` output: that is the URL
+      # Pages will actually serve, and its path component is what every
+      # internal link on the site is prefixed with.
+      - uses: actions/configure-pages@v5
+        id: pages
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      # The generator is a single binary from a public release. Downloading it
+      # is what keeps this dependency out of the crate: nothing in `Cargo.toml`
+      # knows the site exists, and `scripts/check-standalone.sh` stays true.
+      - name: Install Accent CMS
+        run: |
+          set -euo pipefail
+          asset="accent-${ACCENT_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          base="https://github.com/AccentCMS/accent/releases/download/${ACCENT_VERSION}"
+          curl -fsSL -O "${base}/${asset}"
+          curl -fsSL -O "${base}/checksums-${ACCENT_VERSION}.txt"
+          # Check only our own asset: the checksums file covers six platforms
+          # and `sha256sum -c` fails on every line whose file is absent.
+          grep " ${asset}\$" "checksums-${ACCENT_VERSION}.txt" | sha256sum --check -
+          tar xzf "$asset"
+          install -Dm755 "$(find . -maxdepth 2 -name accent -type f | head -1)" "$HOME/.local/bin/accent"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Show versions
+        run: |
+          accent --version
+          wasm-bindgen --version
+
+      # Builds the WebAssembly engine, stages it into the theme, and renders the
+      # site. `site.url` in site/config.yaml already carries the right prefix,
+      # so this would work with no flag at all; passing the URL Pages reports
+      # means a repository rename or a custom domain lands in the output
+      # without anyone remembering to edit the config.
+      - name: Build the site
+        run: ./scripts/build-site.sh
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url || 'https://zoosky.github.io/accent-proust' }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/output
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

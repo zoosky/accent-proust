@@ -1,0 +1,7 @@
+{# [callout type="note"] ... [/callout]
+
+   `note` (cyan), `warn` (gold) and `good` (mint). An unknown type falls back to
+   `note` rather than rendering an unstyled box, because a typo in a shortcode
+   attribute should not silently change how a paragraph reads. #}
+{% set kind = type if type in ["note", "warn", "good"] else "note" %}
+<div class="callout callout-{{ kind }}">{{ content | safe }}</div>
