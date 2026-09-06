@@ -99,6 +99,9 @@ llms:
 
 diagrams:
   render_mode: server
+  renderers:
+    mermaid:
+      theme: dark
 
 dev:
   hot_reload: true

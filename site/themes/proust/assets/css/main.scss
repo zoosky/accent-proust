@@ -1550,3 +1550,53 @@ pre.tabpanel {
     font-size: 0.72rem;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Diagrams
+// ---------------------------------------------------------------------------
+//
+// Accent renders `mermaid` fences to inline SVG at build time, with the `dark`
+// renderer theme (set in config.yaml). Static SVG cannot follow the site
+// theme, so a diagram stays dark in both -- the same call already made for
+// code blocks, and for the same reason: the colours are baked into the markup
+// where no stylesheet can reach them.
+//
+// The SVG carries a `<style>` block defining `--mermaid-*` custom properties,
+// but nothing in the shapes references them: every fill and stroke is a
+// hardcoded hex attribute. So the variables are not the way in. Presentation
+// attributes lose to any CSS rule, though, which is what the one override
+// below relies on.
+
+svg[data-diagram-type] {
+  display: block;
+  // Never `width: 100%`: that stretches a diagram narrower than the column up
+  // to fill it, which blurs nothing but does make a small diagram shout. Cap
+  // it instead, so a diagram that fits renders at its own size and only an
+  // oversized one scales down.
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+
+  // The renderer paints a full-canvas background rect in its own slate
+  // (#0F172A), which sits a shade bluer than this site's near-black. It is the
+  // only direct-child `rect` -- every node box is inside a `<g>` -- so this
+  // repaints the canvas and nothing else, and diagrams land on exactly the
+  // surface code blocks do.
+  > rect:first-of-type { fill: var(--code-bg); }
+}
+
+// The figure the prose wraps a diagram in. Matches `.prose pre`: same border,
+// same radius, same dark ground, and the same horizontal scroll for anything
+// too wide for the column.
+.prose {
+  p > svg[data-diagram-type],
+  > svg[data-diagram-type] {
+    padding: 1rem;
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius);
+    background: var(--code-bg);
+    // A wide diagram scales down rather than scrolling: unlike code, it has no
+    // reading order that breaks when it shrinks.
+    max-width: 100%;
+  }
+}

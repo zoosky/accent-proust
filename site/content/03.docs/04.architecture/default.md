@@ -15,11 +15,20 @@ description: >-
 
 ## The pipeline
 
-```text
-parse  ->  AST  ->  validate  ->  transform  ->  renderable tree  ->  render
-                                        |
-                                        +--> format -> canonical source
+```mermaid
+flowchart LR
+  src["source text"] -->|parse| ast["AST"]
+  ast -->|validate| diag["diagnostics"]
+  ast -->|transform| tree["renderable tree"]
+  tree -->|render| html["HTML"]
+  ast -->|format| canon["canonical Markdoc"]
 ```
+
+The AST is the hub, and that is the shape worth noticing: `validate`,
+`transform` and `format` each read it independently. `format` takes an AST, not
+a renderable tree, so a formatter never runs the middle of the pipeline. And
+`validate` produces diagnostics beside the tree rather than gating it -- a
+document with errors still transforms and still renders.
 
 Each stage is a pure function of its inputs, and each is a separate entry point.
 A linter stops after `validate`. An editor stops after `transform` and maps the
