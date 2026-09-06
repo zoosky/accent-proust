@@ -15,6 +15,17 @@
      this the first frame of a dark page is white. It names both schemes
      because the stylesheet supports both. #}
   <meta name="color-scheme" content="dark light">
+
+  {# The Accent mark, copied byte-for-byte from the design system in
+     accentcms/site-brand. The link order and the `mask-icon` colour match the
+     Accent docs site, so the family shares one tab icon rather than one that
+     merely looks similar. #}
+  <link rel="icon" type="image/x-icon" href="{{ url('/theme/assets/favicon.ico') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url('/theme/assets/favicon-32x32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url('/theme/assets/favicon-16x16.png') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url('/theme/assets/apple-touch-icon.png') }}">
+  <link rel="mask-icon" href="{{ url('/theme/assets/safari-pinned-tab.svg') }}" color="#FF4F3E">
+
   {% include "partials/head_meta.html.jinja" %}
   {% for css in theme.assets.css %}
   <link rel="stylesheet" href="{{ url('/theme/assets/' ~ css) }}">
