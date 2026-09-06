@@ -1,0 +1,73 @@
+{# A documentation page: sidebar, prose, and previous/next.
+
+   The sidebar is derived from the content tree rather than listed here, so
+   adding a page under `content/03.docs/` puts it in the navigation with no
+   template change.
+
+   It is built from the global `pages` and not from `page.children` or
+   `page.siblings`, for two reasons found by building it the other way first:
+   `children` is empty on any page that is not the section index, and
+   `siblings` excludes the page itself, so a sidebar built from it silently
+   omits whichever page you are reading. `pages` is every menu-visible page,
+   already ordered by `menu.order`, and filtering it preserves that order --
+   which is what the section wants.
+
+   `item.url` is used bare rather than through `url()`. Values on `pages`
+   already carry the deployment path prefix; `url()` happens to be idempotent
+   over them, but relying on that would be relying on an accident. #}
+{% extends "base.html.jinja" %}
+
+{% set docs_root = url("/docs") %}
+{# Containment rather than a prefix test: MiniJinja's `in` works on strings and
+   there is no `startswith`. `/docs` itself does not contain `/docs/`, which is
+   exactly the exclusion wanted -- the index gets its own entry below. #}
+{% set section_prefix = docs_root ~ "/" %}
+
+{% block body %}
+<div class="container docs-layout">
+  <nav class="docs-nav" aria-label="Documentation">
+    <p class="nav-title">Documentation</p>
+    <ul>
+      <li>
+        <a href="{{ docs_root }}" {% if page.url == docs_root %}class="active" aria-current="page"{% endif %}>Overview</a>
+      </li>
+      {% for item in pages %}
+      {% if section_prefix in item.url %}
+      <li>
+        <a href="{{ item.url }}" {% if item.url == page.url %}class="active" aria-current="page"{% endif %}>{{ item.title }}</a>
+      </li>
+      {% endif %}
+      {% endfor %}
+    </ul>
+
+    <p class="nav-title">Reference</p>
+    <ul>
+      <li><a href="https://docs.rs/accent-proust">Rust API (docs.rs)</a></li>
+      <li><a href="https://markdoc.dev/docs">Markdoc (upstream)</a></li>
+      <li><a href="https://github.com/zoosky/accent-proust">Source</a></li>
+    </ul>
+  </nav>
+
+  <article class="docs-main">
+    <header>
+      <h1>{{ page.title }}</h1>
+      {% if page.lead %}<p class="lead">{{ page.lead }}</p>{% endif %}
+    </header>
+
+    <div class="prose">
+      {{ page.content | safe }}
+    </div>
+
+    {% if page.prev or page.next %}
+    <nav class="page-nav" aria-label="Pagination">
+      {% if page.prev %}
+      <a class="prev" href="{{ page.prev.url }}">Previous<b>{{ page.prev.title }}</b></a>
+      {% endif %}
+      {% if page.next %}
+      <a class="next" href="{{ page.next.url }}">Next<b>{{ page.next.title }}</b></a>
+      {% endif %}
+    </nav>
+    {% endif %}
+  </article>
+</div>
+{% endblock %}

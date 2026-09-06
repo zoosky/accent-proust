@@ -1,0 +1,16 @@
+{% extends "base.html.jinja" %}
+
+{% block body %}
+<div class="container docs-layout" style="grid-template-columns: minmax(0, 1fr)">
+  <article class="docs-main">
+    <header><h1>{{ taxonomy.current_tag }}</h1></header>
+    <div class="prose">
+      <ul>
+        {% for item in taxonomy.pages %}
+        <li><a href="{{ url(item.url) }}">{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </article>
+</div>
+{% endblock %}

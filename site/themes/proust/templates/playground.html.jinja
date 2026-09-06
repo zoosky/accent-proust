@@ -1,0 +1,79 @@
+{# The playground: the repository's `demo/` grown into a page of the site.
+
+   Everything below runs in the visitor's browser. There is no endpoint behind
+   this page and the built site has no server side, so the claim in the footer
+   -- nothing is sent anywhere -- is a property of the deployment and not a
+   promise being made. #}
+{% extends "base.html.jinja" %}
+
+{% block body %}
+<div class="container pg-wrap">
+
+  <div class="pg-head">
+    <h1>{{ page.title }}</h1>
+    <p class="pg-status" id="status" role="status">Loading the engine&hellip;</p>
+  </div>
+
+  {% if page.lead %}
+  <p style="max-width:70ch;margin:-0.5rem 0 1.5rem;color:var(--text-dim)">{{ page.lead }}</p>
+  {% endif %}
+
+  <div class="panes">
+    <section class="pane" aria-labelledby="source-heading">
+      <div class="pane-head">
+        <h2 id="source-heading">Source</h2>
+        <span class="spacer"></span>
+        <button type="button" class="pill-btn" id="reset">Reset</button>
+        <button type="button" class="pill-btn" id="format" disabled>Format</button>
+      </div>
+      <textarea id="source" spellcheck="false" aria-labelledby="source-heading"></textarea>
+    </section>
+
+    <section class="pane" aria-labelledby="output-heading">
+      <div class="pane-head">
+        <h2 id="output-heading">Output</h2>
+        <label class="field">
+          Stylesheet
+          <select id="theme"></select>
+        </label>
+        <span class="spacer"></span>
+        <div class="tabs" role="tablist" aria-label="Output view">
+          <button type="button" role="tab" data-tab="preview" aria-selected="true">Preview</button>
+          <button type="button" role="tab" data-tab="diagnostics" aria-selected="false">
+            Diagnostics <span class="count" id="diagnostic-count" hidden>0</span>
+          </button>
+          <button type="button" role="tab" data-tab="html" aria-selected="false">HTML</button>
+          <button type="button" role="tab" data-tab="tree" aria-selected="false">Tree</button>
+        </div>
+      </div>
+
+      {# `allow-same-origin` and nothing else. Scripts stay blocked, which is
+         the property that matters; a bare `sandbox` additionally gives the
+         frame an opaque origin, and Chrome then renders `srcdoc` as a blank
+         page. Verified both ways rather than assumed. #}
+      <iframe id="preview" class="tabpanel" title="Rendered output"
+              sandbox="allow-same-origin"></iframe>
+      <div id="diagnostics" class="tabpanel" hidden></div>
+      <pre id="html" class="tabpanel" hidden><code></code></pre>
+      <pre id="tree" class="tabpanel" hidden><code></code></pre>
+    </section>
+  </div>
+
+  <div class="pg-foot">
+    <p id="timing">&nbsp;</p>
+    <p class="spacer">Parse, validate, transform and render all run locally in WebAssembly. Nothing is sent anywhere.</p>
+  </div>
+
+  {% if page.content %}
+  <div class="prose" style="margin-top:3rem">
+    {{ page.content | safe }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block head %}
+{# Not a theme asset: this module instantiates a WebAssembly engine, and no
+   other page on the site should pay for that. #}
+<script type="module" src="{{ url('/theme/assets/js/playground.js') }}"></script>
+{% endblock %}

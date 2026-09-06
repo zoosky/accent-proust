@@ -1,0 +1,18 @@
+{# Served under every missing URL, which is why the head-meta partial skips the
+   canonical tag here and why the page's frontmatter sets `noindex`. #}
+{% extends "base.html.jinja" %}
+
+{% block body %}
+<section class="hero">
+  <div class="container">
+    <p class="eyebrow" style="--mint: var(--coral)"><span class="dot"></span>404</p>
+    <h1 style="max-width:18ch">{{ page.title }}</h1>
+    <div class="prose" style="margin-bottom:2rem">{{ page.content | safe }}</div>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="{{ url('/') }}">Home</a>
+      <a class="btn btn-ghost" href="{{ url('/docs') }}">Docs</a>
+      <a class="btn btn-ghost" href="{{ url('/playground') }}">Playground</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,164 @@
+{# The landing page.
+
+   The prose of this page lives in frontmatter rather than in the body, because
+   a landing page is a layout with slots and not a document: the headline, the
+   five pipeline stages, the four figures and the six cards each need to land
+   in a specific place. `page.content` is still rendered, at the bottom, so the
+   page can grow a written section without a template change. #}
+{% extends "base.html.jinja" %}
+
+{% set c = page.custom %}
+
+{% block body %}
+
+<section class="hero">
+  <div class="container">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow"><span class="dot"></span>{{ c.eyebrow }}</p>
+
+        <h1>{{ c.headline }} <em>{{ c.headline_accent }}</em></h1>
+
+        <p class="hero-lead">{{ c.lead }}</p>
+
+        <div class="cta-row">
+          <a class="btn btn-primary" href="{{ url('/playground') }}">Open the playground</a>
+          <a class="btn btn-ghost" href="{{ url('/docs') }}">Read the docs</a>
+        </div>
+
+        <p style="margin-top:1.5rem">
+          <span class="install">
+            <span class="prompt">$</span>
+            <code id="install-cmd">cargo add accent-proust</code>
+            <button type="button" data-copy="install-cmd">Copy</button>
+          </span>
+        </p>
+      </div>
+
+      <div class="code-card">
+        <div class="code-card-head">
+          <span class="lamps"><span></span><span></span><span></span></span>
+          main.rs
+        </div>
+        <pre><code><span class="tok-kw">use</span> accent_proust<span class="tok-pn">::{</span>builtins<span class="tok-pn">,</span> parse<span class="tok-pn">,</span> render<span class="tok-pn">,</span> transform<span class="tok-pn">};</span>
+
+<span class="tok-kw">let</span> document <span class="tok-pn">=</span> parse<span class="tok-pn">::</span><span class="tok-fn">parse</span><span class="tok-pn">(</span><span class="tok-str">"# Title\n\nSome *text*.\n"</span><span class="tok-pn">);</span>
+<span class="tok-kw">let</span> tree <span class="tok-pn">=</span> transform<span class="tok-pn">::</span><span class="tok-fn">transform</span><span class="tok-pn">(&amp;</span>document<span class="tok-pn">,</span> <span class="tok-pn">&amp;</span>builtins<span class="tok-pn">::</span><span class="tok-fn">config</span><span class="tok-pn">());</span>
+
+<span class="tok-fn">assert_eq!</span><span class="tok-pn">(</span>
+    render<span class="tok-pn">::</span><span class="tok-fn">render_all</span><span class="tok-pn">(&amp;</span>tree<span class="tok-pn">.</span><span class="tok-fn">into_vec</span><span class="tok-pn">()),</span>
+    <span class="tok-str">"&lt;article&gt;&lt;h1&gt;Title&lt;/h1&gt;&lt;p&gt;Some &lt;em&gt;text&lt;/em&gt;.&lt;/p&gt;&lt;/article&gt;"</span><span class="tok-pn">,</span>
+<span class="tok-pn">);</span>
+
+<span class="tok-cm">// Same five stages, same output, in a browser:</span>
+<span class="tok-cm">//   import { renderHtml } from "accent-proust";</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <p class="kicker">The pipeline</p>
+      <h2>{{ c.pipeline_title }}</h2>
+      <p>{{ c.pipeline_lead }}</p>
+    </div>
+
+    <ol class="pipeline">
+      {% for stage in c.stages %}
+      <li class="stage">
+        <h3>{{ stage.name }}</h3>
+        <p>{{ stage.description }}</p>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+
+<section class="section section-sunken">
+  <div class="container">
+    <div class="section-head">
+      <p class="kicker">Conformance</p>
+      <h2>{{ c.figures_title }}</h2>
+      <p>{{ c.figures_lead }}</p>
+    </div>
+
+    <div class="figures">
+      {% for figure in c.figures %}
+      <div class="figure">
+        <span class="n n-{{ figure.tone }}">{{ figure.value }}</span>
+        <span class="l">{{ figure.label }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <p class="kicker">What you get</p>
+      <h2>{{ c.features_title }}</h2>
+      <p>{{ c.features_lead }}</p>
+    </div>
+
+    <div class="grid">
+      {% for feature in c.features %}
+      <div class="card">
+        <h3>{{ feature.title }}</h3>
+        <p>{{ feature.body | safe }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{% if page.content %}
+<section class="section section-sunken">
+  <div class="container">
+    <div class="prose">
+      {{ page.content | safe }}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="section">
+  <div class="container">
+    <div class="band">
+      <div>
+        <h2>{{ c.band_title }}</h2>
+        <p>{{ c.band_lead }}</p>
+      </div>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="{{ url('/playground') }}">Try it now</a>
+        <a class="btn btn-ghost" href="{{ url('/docs/javascript') }}">JavaScript API</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block head %}
+<script>
+  // Copy-to-clipboard for the install line. Inline because a request for
+  // twelve lines costs more than the lines do, and delegated from `document`
+  // so it can run here in the head: the listener needs no element to exist
+  // yet, which is what would otherwise force this to the end of the body.
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-copy]");
+    if (!button) return;
+    const text = document.getElementById(button.dataset.copy).textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      button.dataset.copied = "true";
+      button.textContent = "Copied";
+      setTimeout(() => {
+        button.dataset.copied = "false";
+        button.textContent = "Copy";
+      }, 1600);
+    });
+  });
+</script>
+{% endblock %}

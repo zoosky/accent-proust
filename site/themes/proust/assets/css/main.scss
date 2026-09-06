@@ -1,0 +1,1284 @@
+// The Proust theme.
+//
+// Colour comes from the Accent design system (accentcms/site-brand): Electric
+// Coral, Neon Cyan, Warm Gold, Mint, Void, Snow. Those six are the whole
+// palette; everything else here is a neutral derived from Void, so a page can
+// only ever be brand colour on grey.
+//
+// Dark is the authored direction and light is the derived one, which is the
+// opposite of the usual order and is deliberate: Void is the brand's own
+// background, and a site about a parser is read next to an editor. Every
+// colour is defined once as a custom property on `:root`; the light block
+// redefines the twelve that carry the theme and nothing else, so the two can
+// not drift into being two stylesheets.
+
+// ---------------------------------------------------------------------------
+// Tokens
+// ---------------------------------------------------------------------------
+
+:root {
+  // Brand, fixed in both themes. These are the palette; they do not invert.
+  --coral: #ff4f3e;
+  --cyan: #00d4ff;
+  --gold: #ffb347;
+  --mint: #34d399;
+  --void: #08090d;
+  --snow: #f5f5f7;
+
+  // Surfaces, from furthest back to nearest front.
+  --bg: var(--void);
+  --bg-sunken: #05060a;
+  --surface: #0e1016;
+  --surface-2: #14171f;
+  --border: #23262f;
+  --border-strong: #343846;
+
+  // Text, three weights of emphasis and no more.
+  --text: var(--snow);
+  --text-dim: #a2a7b4;
+  --text-faint: #6d7381;
+
+  --accent: var(--coral);
+  --accent-ink: #ffffff; // Text on a coral fill.
+  --link: var(--cyan);
+
+  // A wash used behind callouts and inline code. Kept as a token because the
+  // light theme needs a different one, not a lighter one.
+  --wash: #0b0d13;
+
+  // Code *blocks* are a separate token from `--wash`, and in the light theme
+  // they do not follow it. Accent highlights fenced code by writing colours
+  // inline from a fixed syntax theme (`base16-ocean.dark`), and the hero's
+  // hand-tokenised snippet uses the brand hues the same way -- both are dark-
+  // theme colours that no stylesheet here can restyle. Putting them on a light
+  // ground would be a contrast failure written into the markup. So a code
+  // block stays dark in both themes, which is a common enough convention that
+  // it reads as intent rather than as a bug.
+  --code-bg: var(--wash);
+  --code-border: var(--border);
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px -12px rgb(0 0 0 / 60%);
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --measure: 70ch;
+  --page: 1180px;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: var(--snow);
+    --bg-sunken: #ececed;
+    --surface: #ffffff;
+    --surface-2: #f7f7f9;
+    --border: #dedee3;
+    --border-strong: #c6c6cf;
+
+    --text: #14161c;
+    --text-dim: #4e535f;
+    --text-faint: #7c8290;
+
+    // Coral on white fails contrast for small text; the link colour is the one
+    // that lands on prose, so it darkens. The fills keep the brand hue.
+    --link: #0a7ea4;
+    --wash: #f2f2f5;
+
+    // Deliberately not lightened; see the note on --code-bg above.
+    --code-bg: #0e1016;
+    --code-border: #23262f;
+    --shadow: 0 1px 2px rgb(20 22 28 / 6%), 0 8px 24px -12px rgb(20 22 28 / 20%);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------------
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  // Every in-page link lands under the sticky header without this.
+  scroll-padding-top: 5.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--link);
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  text-underline-offset: 0.18em;
+
+  &:hover { text-decoration-color: currentColor; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+img, svg { max-width: 100%; }
+
+code, kbd, samp, pre { font-family: var(--mono); }
+
+.container {
+  width: 100%;
+  max-width: var(--page);
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+
+  &:focus {
+    left: 1rem;
+    top: 0.6rem;
+    z-index: 100;
+    padding: 0.5rem 0.9rem;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(150%) blur(12px);
+  border-bottom: 1px solid var(--border);
+
+  > .container {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    height: 60px;
+  }
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.1em;
+  font-family: var(--mono);
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+
+  // The hyphen is the logo. Colouring it coral is the whole mark: it reads as
+  // one word at a glance and as two on a second look, which is what the name
+  // is doing.
+  .mark { color: var(--accent); }
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  font-size: 0.9rem;
+
+  a {
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    text-decoration: none;
+
+    &:hover { color: var(--text); background: var(--surface-2); }
+    &.active { color: var(--text); background: var(--surface-2); }
+  }
+
+  .ext::after {
+    content: "\2197";
+    margin-left: 0.25em;
+    font-size: 0.8em;
+    color: var(--text-faint);
+  }
+}
+
+@media (max-width: 640px) {
+  .site-nav .hide-sm { display: none; }
+}
+
+// ---------------------------------------------------------------------------
+// Hero
+// ---------------------------------------------------------------------------
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  padding-block: clamp(3rem, 9vw, 6rem);
+
+  // A single soft coral-to-cyan wash behind the headline. One gradient, fixed
+  // position, no animation: it is a backdrop, not an effect.
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -40% -10% auto -10%;
+    height: 130%;
+    background:
+      radial-gradient(48rem 26rem at 18% 12%, color-mix(in srgb, var(--coral) 16%, transparent), transparent 62%),
+      radial-gradient(42rem 24rem at 82% 8%, color-mix(in srgb, var(--cyan) 13%, transparent), transparent 60%);
+    pointer-events: none;
+  }
+
+  > .container { position: relative; }
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.1rem;
+  padding: 0.25rem 0.7rem 0.25rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--text-dim);
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mint);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 22%, transparent);
+  }
+}
+
+.hero h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(2.4rem, 6.2vw, 4rem);
+  line-height: 1.03;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+
+  em {
+    font-style: normal;
+    background: linear-gradient(100deg, var(--coral), var(--gold) 55%, var(--cyan));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.hero-lead {
+  margin: 0 0 1.9rem;
+  max-width: 46ch;
+  font-size: clamp(1.05rem, 2vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.62rem 1.15rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 550;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+
+  &:active { transform: translateY(1px); }
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+
+  &:hover { background: color-mix(in srgb, var(--accent) 88%, #fff); }
+}
+
+.btn-ghost {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+
+  &:hover { border-color: var(--text-faint); background: var(--surface-2); }
+}
+
+// The copyable install line. A `<code>` with a button, not an input: nothing
+// here is editable and a text field would say it is.
+.install {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--wash);
+  font-family: var(--mono);
+  font-size: 0.88rem;
+
+  .prompt { color: var(--text-faint); user-select: none; }
+
+  button {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+
+    &:hover { color: var(--text); }
+    &[data-copied="true"] { color: var(--mint); border-color: var(--mint); }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Code display
+// ---------------------------------------------------------------------------
+
+.code-card {
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.code-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--code-border);
+  background: #14171f;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: #6d7381;
+
+  .lamps {
+    display: inline-flex;
+    gap: 5px;
+    margin-right: 0.35rem;
+
+    span {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--border-strong);
+    }
+    span:first-child { background: color-mix(in srgb, var(--coral) 70%, var(--border-strong)); }
+    span:nth-child(2) { background: color-mix(in srgb, var(--gold) 60%, var(--border-strong)); }
+    span:last-child { background: color-mix(in srgb, var(--mint) 60%, var(--border-strong)); }
+  }
+}
+
+.code-card pre {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  // The card is dark in both themes, so its text cannot inherit `--text`.
+  // Only the tokens carry their own colour; the punctuation and identifiers
+  // between them fall back to this.
+  color: var(--snow);
+  overflow-x: auto;
+  font-size: 0.845rem;
+  line-height: 1.6;
+}
+
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
+
+.section {
+  padding-block: clamp(3rem, 7vw, 5rem);
+
+  + .section { border-top: 1px solid var(--border); }
+}
+
+.section-sunken { background: var(--bg-sunken); }
+
+.section-head {
+  max-width: 60ch;
+  margin-bottom: 2.5rem;
+
+  h2 {
+    margin: 0 0 0.7rem;
+    font-size: clamp(1.6rem, 3.4vw, 2.15rem);
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+  }
+
+  p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 1.05rem;
+  }
+}
+
+.kicker {
+  margin: 0 0 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+// The five stages, as a row that wraps into a column on a phone. The arrow is
+// a pseudo-element on the gap, so the markup is just five items.
+.pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: stage;
+}
+
+.stage {
+  flex: 1 1 10rem;
+  position: relative;
+  padding: 1.1rem 1.1rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  counter-increment: stage;
+
+  &::before {
+    content: "0" counter(stage);
+    display: block;
+    margin-bottom: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--cyan);
+  }
+
+  h3 {
+    margin: 0 0 0.3rem;
+    font-family: var(--mono);
+    font-size: 0.98rem;
+    font-weight: 600;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.87rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+
+  // A hairline that reads as flow between the cards without any extra markup.
+  + .stage::after {
+    content: "";
+    position: absolute;
+    left: -0.6rem;
+    top: 50%;
+    width: 0.6rem;
+    height: 1px;
+    background: var(--border-strong);
+  }
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+
+.card {
+  padding: 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+
+  &:hover { border-color: var(--border-strong); }
+
+  h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.02rem;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.93rem;
+  }
+
+  p + p { margin-top: 0.7rem; }
+
+  code { font-size: 0.86em; }
+}
+
+.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+
+  h3 { color: var(--text); }
+
+  &:hover {
+    border-color: var(--accent);
+
+    h3 { color: var(--accent); }
+  }
+
+  .go {
+    display: inline-block;
+    margin-top: 0.85rem;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--link);
+  }
+}
+
+// Numbers. Deliberately not "stat cards with icons": the figures are small in
+// count and specific in meaning, so they get room and a caption each.
+.figures {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.figure {
+  padding: 1.4rem 1.2rem;
+  background: var(--surface);
+
+  .n {
+    display: block;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .n-green { color: var(--mint); }
+  .n-gold { color: var(--gold); }
+  .n-cyan { color: var(--cyan); }
+  .n-coral { color: var(--coral); }
+
+  .l {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prose (rendered markdown)
+// ---------------------------------------------------------------------------
+
+.prose {
+  max-width: var(--measure);
+  font-size: 1.0rem;
+
+  > * + * { margin-top: 1.15em; }
+
+  h2, h3, h4 {
+    margin-top: 2.2em;
+    margin-bottom: 0.6em;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    scroll-margin-top: 5rem;
+  }
+
+  h2 {
+    font-size: 1.55rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 { font-size: 1.18rem; }
+  h4 { font-size: 1.02rem; color: var(--text-dim); }
+
+  // The anchor Accent adds for `heading_attributes`, kept quiet until hover.
+  h2, h3, h4 {
+    a[href^="#"] {
+      color: var(--text-faint);
+      text-decoration: none;
+      opacity: 0;
+    }
+
+    &:hover a[href^="#"] { opacity: 1; }
+  }
+
+  p, li { color: var(--text); }
+
+  ul, ol { padding-left: 1.35rem; }
+  li + li { margin-top: 0.4em; }
+  li > ul, li > ol { margin-top: 0.4em; }
+
+  strong { font-weight: 650; }
+
+  code {
+    padding: 0.12em 0.36em;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--wash);
+    font-size: 0.875em;
+    word-break: break-word;
+  }
+
+  pre {
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius);
+    background: var(--code-bg);
+    // The highlighter writes a foreground colour on every span it emits, but
+    // not on the whitespace between them, so the block needs one of its own.
+    color: var(--snow);
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+
+    code {
+      padding: 0;
+      border: 0;
+      background: none;
+      font-size: inherit;
+    }
+  }
+
+  blockquote {
+    margin-inline: 0;
+    padding: 0.1rem 0 0.1rem 1.1rem;
+    border-left: 3px solid var(--border-strong);
+    color: var(--text-dim);
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin-block: 2.5em;
+  }
+
+  // A wide table scrolls inside itself rather than pushing the page sideways.
+  //
+  // `display: block` is what makes a table scrollable at all -- `overflow` has
+  // no effect on `display: table`. The cost is that the element stops
+  // stretching to its container, which `width: max-content` plus a
+  // `max-width` cap buys back: the table takes its natural width, and only a
+  // table too wide for the column scrolls. Written on the table itself rather
+  // than on a wrapper because Accent emits a bare `<table>` and there is no
+  // wrapper to hang it on.
+  table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+
+  th, td {
+    padding: 0.55rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: var(--surface);
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+}
+
+// Callout shortcode.
+.callout {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--cyan);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+
+  > :first-child { margin-top: 0; }
+  > :last-child { margin-bottom: 0; }
+
+  p { margin: 0; }
+  p + p { margin-top: 0.7em; }
+
+  &.callout-warn { border-left-color: var(--gold); }
+  &.callout-note { border-left-color: var(--cyan); }
+  &.callout-good { border-left-color: var(--mint); }
+}
+
+// ---------------------------------------------------------------------------
+// Docs layout
+// ---------------------------------------------------------------------------
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 3rem;
+  align-items: start;
+  padding-block: 2.75rem 5rem;
+}
+
+@media (max-width: 940px) {
+  .docs-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+.docs-nav {
+  position: sticky;
+  top: 5rem;
+  font-size: 0.9rem;
+
+  @media (max-width: 940px) {
+    position: static;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-title {
+    margin: 0 0 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  ul {
+    margin: 0 0 1.6rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  li + li { margin-top: 1px; }
+
+  a {
+    display: block;
+    padding: 0.32rem 0.7rem;
+    border-left: 2px solid transparent;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--text-dim);
+    text-decoration: none;
+
+    &:hover { color: var(--text); background: var(--surface); }
+
+    &.active {
+      color: var(--text);
+      background: var(--surface);
+      border-left-color: var(--accent);
+      font-weight: 550;
+    }
+  }
+}
+
+.docs-main {
+  min-width: 0;
+
+  > header {
+    margin-bottom: 2.25rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.9rem, 4vw, 2.5rem);
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+  }
+
+  .lead {
+    margin: 0.75rem 0 0;
+    max-width: 60ch;
+    font-size: 1.08rem;
+    color: var(--text-dim);
+  }
+}
+
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-top: 3.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.92rem;
+
+  a {
+    text-decoration: none;
+    color: var(--text-dim);
+
+    &:hover { color: var(--link); }
+
+    b {
+      display: block;
+      font-weight: 550;
+      color: var(--text);
+    }
+  }
+
+  .next { text-align: right; margin-left: auto; }
+}
+
+// ---------------------------------------------------------------------------
+// Playground
+// ---------------------------------------------------------------------------
+
+.pg-wrap {
+  padding-block: 1.75rem 3rem;
+}
+
+.pg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1.25rem;
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 3.5vw, 2.1rem);
+    letter-spacing: -0.03em;
+  }
+
+  p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.98rem;
+  }
+}
+
+.pg-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+
+  &::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+
+  &.ok::before { background: var(--mint); }
+  &.bad::before { background: var(--coral); }
+  &.bad { color: var(--coral); border-color: color-mix(in srgb, var(--coral) 45%, var(--border)); }
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  // Tall enough to be a real editor, short enough that the page still scrolls
+  // as a page on a laptop.
+  height: clamp(30rem, calc(100vh - 15rem), 46rem);
+}
+
+@media (max-width: 900px) {
+  .panes {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .pane { height: 26rem; }
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+
+  h2 {
+    margin: 0 0.35rem 0 0.25rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+}
+
+.pane-head .spacer { margin-left: auto; }
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+
+  select {
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.78rem;
+  }
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.26rem 0.55rem;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: var(--text-faint);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+
+    &:hover { color: var(--text); }
+
+    &[aria-selected="true"] {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--border);
+    }
+  }
+}
+
+.count {
+  min-width: 1.15rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--coral);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.15rem;
+  text-align: center;
+}
+
+.pill-btn {
+  padding: 0.26rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { color: var(--text); border-color: var(--text-faint); }
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
+}
+
+#source {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 0.9rem 1rem;
+  border: 0;
+  background: var(--wash);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.62;
+  resize: none;
+
+  &:focus { outline: none; }
+}
+
+.tabpanel {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  overflow: auto;
+  background: var(--wash);
+}
+
+// The preview frame is a document of its own and gets a white page under it in
+// both themes, because that is what the rendered HTML is: someone else's page.
+iframe.tabpanel {
+  width: 100%;
+  background: #fff;
+}
+
+pre.tabpanel {
+  padding: 0.9rem 1rem;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+#diagnostics {
+  padding: 0.75rem;
+
+  .ok {
+    margin: 0;
+    padding: 0.6rem;
+    color: var(--mint);
+    font-size: 0.9rem;
+  }
+}
+
+.diagnostic {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--coral);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+
+  + .diagnostic { margin-top: 0.5rem; }
+
+  &.level-warning { border-left-color: var(--gold); }
+  &.level-debug, &.level-info { border-left-color: var(--cyan); }
+
+  p { margin: 0; font-size: 0.88rem; }
+
+  .diagnostic-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+
+    code {
+      font-size: 0.82rem;
+      color: var(--coral);
+    }
+
+    .where {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--text-faint);
+    }
+  }
+}
+
+.pg-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-top: 0.9rem;
+  font-size: 0.83rem;
+  color: var(--text-faint);
+
+  #timing { margin: 0; font-family: var(--mono); }
+  p { margin: 0; }
+  .spacer { margin-left: auto; }
+}
+
+// ---------------------------------------------------------------------------
+// Footer
+// ---------------------------------------------------------------------------
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--bg-sunken);
+  padding-block: 2.5rem 3rem;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+
+  .foot-grid {
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: minmax(0, 1.4fr) repeat(auto-fit, minmax(9rem, 1fr));
+  }
+
+  // Two columns, then one. Without this the `auto-fit` above keeps subdividing
+  // and the blurb wraps to one word per line.
+  @media (max-width: 760px) {
+    .foot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 420px) {
+    .foot-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  h2 {
+    margin: 0 0 0.7rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  ul { margin: 0; padding: 0; list-style: none; }
+  li + li { margin-top: 0.35rem; }
+
+  a { color: var(--text-dim); text-decoration: none; }
+  a:hover { color: var(--link); }
+
+  .colophon {
+    margin: 2.25rem 0 0;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.83rem;
+    color: var(--text-faint);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hand-tokenised code
+// ---------------------------------------------------------------------------
+//
+// The hero's snippet is markup in the template, not a fenced block in content,
+// because it sits beside the headline rather than in the prose flow -- and a
+// template is the one place Accent's markdown highlighter does not reach. Six
+// classes, applied by hand to about ten lines. Anything longer belongs in
+// content, where the highlighter does the work.
+
+.tok {
+  &-kw { color: var(--coral); }
+  &-fn { color: var(--cyan); }
+  &-str { color: var(--mint); }
+  &-num { color: var(--gold); }
+  &-cm { color: var(--text-faint); font-style: italic; }
+  &-pn { color: var(--text-dim); }
+  &-ty { color: var(--gold); }
+}
+
+// A pair of equal columns for "here is the Rust, here is the JavaScript".
+.split {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr));
+  align-items: start;
+}
+
+.split-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+
+  h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    letter-spacing: -0.015em;
+  }
+
+  span {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-faint);
+  }
+}
+
+// The closing band. One flat surface, one sentence, two buttons.
+.band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem;
+  padding: clamp(1.75rem, 4vw, 2.75rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(30rem 14rem at 12% 0%, color-mix(in srgb, var(--coral) 12%, transparent), transparent 70%),
+    var(--surface);
+
+  h2 {
+    margin: 0 0 0.4rem;
+    font-size: clamp(1.35rem, 3vw, 1.8rem);
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    margin: 0;
+    max-width: 46ch;
+    color: var(--text-dim);
+  }
+
+  .cta-row { margin-left: auto; }
+}

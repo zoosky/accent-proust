@@ -12,6 +12,9 @@ Tags nest, take typed attributes, and are checked against a schema.
 {% /callout %}
 ```
 
+**[Documentation and a live playground](https://zoosky.github.io/accent-proust)**
+-- the engine compiled to WebAssembly, running in your browser.
+
 ## Install
 
 ```sh

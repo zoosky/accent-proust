@@ -229,6 +229,32 @@ one. `unsafe_code = "forbid"` cannot be relaxed by a member that needs it, so a
 the library's manifest is the one that gets published, which is a reason to
 leave it alone.
 
+### The website
+
+`site/` is the project website: landing page, documentation, and a playground
+that runs the WebAssembly engine in the reader's browser. It is built with
+Accent CMS -- the sibling generator this crate ships alongside -- by
+`scripts/build-site.sh`, and published by `.github/workflows/pages.yml`.
+
+It is **not a workspace member and not a Cargo target**. Nothing in `Cargo.toml`
+knows it exists, `scripts/check-standalone.sh` is unaffected by it, and a
+contributor who never touches the site never installs the CMS. That separation
+is the point: a crate whose first invariant is that it stands alone should not
+acquire a build dependency on a static site generator, however friendly.
+
+Two things there are generated and gitignored: `site/output/` and
+`site/themes/proust/assets/wasm/`. The second is the engine, staged from
+`crates/accent-proust-wasm` on every site build for the same reason the npm
+package is never committed -- a checked-in binary is a copy that can disagree
+with the source beside it. The playground is therefore always what the working
+tree compiles to, never a stale release.
+
+The prose on the site is documentation and is held to the same standard as the
+prose here: a claim about behaviour names the thing that enforces it. Where the
+site states a number -- 95 green, 16 divergences, 105 cases -- that number comes
+from `conformance-baseline.txt` or `DIVERGENCES.md` and has to be updated with
+them.
+
 ## Testing conventions
 
 Integration tests live in `tests/`, one file per pipeline stage

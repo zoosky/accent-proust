@@ -1,0 +1,23 @@
+{# Nothing on this site is tagged today. The template exists because Accent
+   routes `/tags` unconditionally, and a missing template is a build failure
+   rather than an absent page. #}
+{% extends "base.html.jinja" %}
+
+{% block body %}
+<div class="container docs-layout" style="grid-template-columns: minmax(0, 1fr)">
+  <article class="docs-main">
+    <header><h1>Tags</h1></header>
+    <div class="prose">
+      {% if taxonomy.tags %}
+      <ul>
+        {% for tag in taxonomy.tags %}
+        <li><a href="{{ url('/tags/' ~ tag.name) }}">{{ tag.name }}</a> ({{ tag.count }})</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>No tags yet.</p>
+      {% endif %}
+    </div>
+  </article>
+</div>
+{% endblock %}
