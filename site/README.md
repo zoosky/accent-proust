@@ -89,5 +89,19 @@ touches the site, the engine, or the scripts that assemble them. It downloads a
 pinned `accent` release and verifies its checksum rather than building the CMS
 from source.
 
-Pages must be enabled once, by hand: **Settings -> Pages -> Source: GitHub
+Pages must be set once, by hand: **Settings -> Pages -> Source: GitHub
 Actions**.
+
+That setting is not optional cosmetics. Left on the default "Deploy from a
+branch", GitHub *also* runs its legacy Jekyll builder over the repository root
+on every push. That build fails here and always will: Liquid parses `{% %}`
+even inside fenced code blocks, and these pages document a language whose
+syntax is `{% %}`, so Jekyll tries to execute the documentation and reports
+`Unknown tag 'callout'`. The failure is harmless -- the Actions deploy is what
+publishes, and a failed Jekyll build never overwrites it -- but it puts a red
+cross on every commit.
+
+The build also drops a `.nojekyll` in the output. That is belt and braces for a
+different case: an Actions artifact is served as uploaded, but if anything ever
+did run Jekyll over it, every path beginning with an underscore would vanish --
+and the search index lives at `_search/`.

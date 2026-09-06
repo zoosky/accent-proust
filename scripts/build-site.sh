@@ -97,6 +97,18 @@ else
   "$ACCENT" build --clean || die "accent build failed"
 fi
 
+# Tell GitHub Pages not to run the output through Jekyll. Belt and braces: a
+# Pages site published from an Actions artifact is served as uploaded, so
+# nothing should process this. But Jekyll drops every path beginning with an
+# underscore, and the search index lives at `_search/` -- so if Jekyll ever
+# does run over this directory, the failure is a search box that silently
+# returns nothing, which is the kind of bug that survives a release.
+#
+# It does not fix a legacy Pages build. That one builds the repository root,
+# not this directory, and the fix for it is to set the Pages source to GitHub
+# Actions -- see site/README.md.
+touch output/.nojekyll
+
 # The engine is the one asset whose absence is invisible until someone opens the
 # playground and reads a console. Assert it landed.
 [ -f output/theme/assets/wasm/accent_proust_wasm_bg.wasm ] \
