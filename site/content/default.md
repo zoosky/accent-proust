@@ -9,7 +9,8 @@ description: >-
   validate, transform, render, and format. It compiles to WebAssembly, so the
   same engine runs in a browser.
 
-# Everything below is read by home.html.jinja through `page.custom.*`. A
+# `lead` above is one of Accent's own page fields, so home.html.jinja reads it
+# as `page.lead`. Everything below is read through `page.custom.*`. A
 # landing page is a layout with slots rather than a document, so its copy lives
 # here as data instead of as body prose -- which also means the wording can
 # change without touching a template.

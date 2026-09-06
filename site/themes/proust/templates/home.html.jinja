@@ -19,7 +19,12 @@
 
         <h1>{{ c.headline }} <em>{{ c.headline_accent }}</em></h1>
 
-        <p class="hero-lead">{{ c.lead }}</p>
+        {# `page.lead`, not `c.lead`. `lead` is one of Accent's own page fields,
+           so a `lead:` in frontmatter never reaches `page.custom` -- it was
+           reaching this template as the empty string and rendering an empty
+           paragraph. Every other slot on this page is a custom field and does
+           use `c.`. #}
+        <p class="hero-lead">{{ page.lead }}</p>
 
         <div class="cta-row">
           <a class="btn btn-primary" href="{{ url('/playground') }}">Open the playground</a>
