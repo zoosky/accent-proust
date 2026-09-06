@@ -195,6 +195,23 @@ change what a `heading` renders as.
 
 ### What crosses the boundary
 
+```mermaid
+flowchart LR
+  subgraph js["JavaScript"]
+    data["schemas, nodes, variables"]
+    code["transform and validate hooks, RegExp, custom types, functions"]
+  end
+
+  subgraph wasm["WebAssembly"]
+    cfg["Config"]
+    stages["validate, renderHtml, transform"]
+  end
+
+  data -->|data crosses| cfg
+  cfg --> stages
+  code -->|code cannot| refused[throws, naming the path]
+```
+
 A schema is data and crosses whole: `render`, `children`, `attributes`, `slots`,
 `selfClosing`, `inline`, `description`, and on an attribute `type`, `default`,
 `required`, `matches`, `render`, `errorLevel`.
