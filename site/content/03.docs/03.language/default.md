@@ -61,11 +61,10 @@ A paragraph with an id. {% #intro %}
 shorthands over the same attribute syntax: `{% id="install" %}` is the long
 form.
 
-[callout type="warn"]
-Heading attributes in this implementation are CommonMark's `{#id}` syntax, and
-Markdoc annotations are not ported for headings. This is a declared divergence
--- see [Divergences](/docs/divergences).
-[/callout]
+> [!WARNING]
+> Heading attributes in this implementation are CommonMark's `{#id}` syntax, and
+> Markdoc annotations are not ported for headings. This is a declared divergence
+> -- see [Divergences](/docs/divergences).
 
 ## Attributes
 

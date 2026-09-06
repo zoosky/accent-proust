@@ -133,12 +133,11 @@ Those three live on `Config` alongside the schemas.
 That last row is why `Config` carries a lifetime: it borrows the partial
 documents the host parsed.
 
-[callout type="note"]
-The distinction between `variables: None` and `variables: Some(empty)` is load
-bearing. A tool that does not know the host's variables should use `None` and
-report nothing, rather than report every `$reference` in the document as
-undefined.
-[/callout]
+> [!NOTE]
+> The distinction between `variables: None` and `variables: Some(empty)` is load
+> bearing. A tool that does not know the host's variables should use `None` and
+> report nothing, rather than report every `$reference` in the document as
+> undefined.
 
 ## Bring your own tokenizer
 

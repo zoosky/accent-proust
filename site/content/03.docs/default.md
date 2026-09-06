@@ -67,11 +67,10 @@ The crate is at `0.9.0` rather than `1.0.0` because the API has had no external
 users yet. The conventions above are already promises; the shape of the Rust
 types is not, and a `0.x` number is the honest way to say so.
 
-[callout type="note"]
-The npm package and the crate share one version number. A release publishes
-both, so `accent-proust 0.10.0` on crates.io and `accent-proust@0.10.0` on npm
-are built from the same commit.
-[/callout]
+> [!NOTE]
+> The npm package and the crate share one version number. A release publishes
+> both, so `accent-proust 0.10.0` on crates.io and `accent-proust@0.10.0` on npm
+> are built from the same commit.
 
 ## Licence and provenance
 
