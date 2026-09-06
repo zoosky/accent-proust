@@ -153,7 +153,7 @@ cat > "$OUT_ABS/package.json" <<JSON
     "type": "git",
     "url": "git+https://github.com/zoosky/accent-proust.git"
   },
-  "homepage": "https://github.com/zoosky/accent-proust",
+  "homepage": "https://zoosky.github.io/accent-proust/",
   "keywords": [
     "markdoc",
     "markdown",
