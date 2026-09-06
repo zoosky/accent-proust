@@ -77,6 +77,11 @@ Colour comes from the Accent design system: Electric Coral `#FF4F3E`, Neon Cyan
 Dark is the authored direction and light is derived from it, both driven by one
 set of custom properties in `themes/proust/assets/css/main.scss`.
 
+The favicon set in `themes/proust/assets/` is the Accent mark, copied from
+`accentcms/site-brand/themes/accent-ds/assets/`. Copied rather than shared
+because the two repositories have no build-time link; if the mark changes, copy
+it again.
+
 ## Deployment
 
 `.github/workflows/pages.yml` builds and publishes on a push to `main` that
