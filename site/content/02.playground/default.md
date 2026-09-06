@@ -46,7 +46,6 @@ built-ins, and the stages become methods on it. See the
 [JavaScript API](/docs/javascript) for the shape of that object and for the
 four things which deliberately do not cross the boundary.
 
-[callout type="note"]
-Nothing you type here leaves your browser. The page is static, the engine is a
-WebAssembly module fetched once, and there is no endpoint behind any of it.
-[/callout]
+> [!NOTE]
+> Nothing you type here leaves your browser. The page is static, the engine is a
+> WebAssembly module fetched once, and there is no endpoint behind any of it.

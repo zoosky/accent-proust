@@ -208,11 +208,10 @@ constructor is a function. An array of them is a union.
 A hook is code, and code does not cross: `transform`, `validate`, a custom
 attribute type, a `RegExp` in `matches`, and host-defined `functions`.
 
-[callout type="warn"]
-**The browser is never stricter than your server, only faster.** Keep the server
-as the authority for anything a hook decides; treat what runs here as an early
-warning.
-[/callout]
+> [!WARNING]
+> **The browser is never stricter than your server, only faster.** Keep the server
+> as the authority for anything a hook decides; treat what runs here as an early
+> warning.
 
 Nothing is dropped in silence. A configuration carrying something that cannot
 cross is refused, naming the path to it:

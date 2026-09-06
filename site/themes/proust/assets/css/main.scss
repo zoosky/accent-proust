@@ -762,8 +762,15 @@ code, kbd, samp, pre { font-family: var(--mono); }
   tbody tr:last-child td { border-bottom: 0; }
 }
 
-// Callout shortcode.
-.callout {
+// GFM alerts (`> [!NOTE]`), which Accent renders to
+// `.admonition.admonition-<kind>` with a title paragraph and an ARIA role.
+//
+// These replaced a hand-written `callout` shortcode. A theme shortcode in 0.25
+// receives its body as raw markdown and there is no filter to render it, so
+// bold, code spans and links inside one came out as literal asterisks and
+// brackets. A GFM alert is parsed as markdown like any other blockquote, so
+// its body is simply correct -- and it needs no template of ours at all.
+.admonition {
   padding: 1rem 1.1rem;
   border: 1px solid var(--border);
   border-left: 3px solid var(--cyan);
@@ -775,10 +782,32 @@ code, kbd, samp, pre { font-family: var(--mono); }
 
   p { margin: 0; }
   p + p { margin-top: 0.7em; }
+}
 
-  &.callout-warn { border-left-color: var(--gold); }
-  &.callout-note { border-left-color: var(--cyan); }
-  &.callout-good { border-left-color: var(--mint); }
+.admonition-title {
+  margin-bottom: 0.35rem !important;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.admonition-tip {
+  border-left-color: var(--mint);
+  .admonition-title { color: var(--mint); }
+}
+
+.admonition-important,
+.admonition-warning {
+  border-left-color: var(--gold);
+  .admonition-title { color: var(--gold); }
+}
+
+.admonition-caution {
+  border-left-color: var(--coral);
+  .admonition-title { color: var(--coral); }
 }
 
 // ---------------------------------------------------------------------------

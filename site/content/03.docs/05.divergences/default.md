@@ -27,12 +27,11 @@ saying why emulating upstream was rejected. It is never left implicit.
 identical, because that is the part external tooling binds to. Renaming an id
 would itself be a divergence and would need an entry.
 
-[callout type="note"]
-The authoritative document is
-[`DIVERGENCES.md`](https://github.com/zoosky/accent-proust/blob/main/DIVERGENCES.md)
-in the repository, which is normative and carries the full reasoning for each
-entry. This page is a map of it.
-[/callout]
+> [!NOTE]
+> The authoritative document is
+> [`DIVERGENCES.md`](https://github.com/zoosky/accent-proust/blob/main/DIVERGENCES.md)
+> in the repository, which is normative and carries the full reasoning for each
+> entry. This page is a map of it.
 
 ## How they are counted
 
