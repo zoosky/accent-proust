@@ -63,7 +63,7 @@ places. Every disagreement that matters is enumerated in
 
 ## Versioning
 
-The crate is at `0.9.0` rather than `1.0.0` because the API has had no external
+The crate is at `0.10.0` rather than `1.0.0` because the API has had no external
 users yet. The conventions above are already promises; the shape of the Rust
 types is not, and a `0.x` number is the honest way to say so.
 
