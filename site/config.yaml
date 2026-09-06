@@ -36,6 +36,11 @@ site:
   language: en-US
   meta:
     og:locale: "en_US"
+    # Google Search Console ownership. It goes in the open `meta` map rather
+    # than in a template: anything here that is not an `og:`/`article:`/`fb:`
+    # prefix renders as `name=`, which is the shape Google asks for. The token
+    # is public by design -- it is served in the HTML of every page.
+    google-site-verification: "yS18C91qoSaQvcIS0JI33YvZ-KKx_kDXfJarTH7dqGw"
 
 build:
   # Off deliberately. Fingerprinting rewrites asset URLs to content-hashed
