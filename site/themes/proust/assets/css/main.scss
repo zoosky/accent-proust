@@ -1600,3 +1600,64 @@ svg[data-diagram-type] {
     max-width: 100%;
   }
 }
+
+// Svgbob is the other renderer in use, and it is the opposite case in both
+// respects.
+//
+// Colour first: svgbob emits its palette through a `<style>` block of class
+// selectors rather than as presentation attributes, so this stylesheet can
+// reach it. It is repainted to mermaid's dark palette rather than to the site
+// theme, so the two kinds of diagram read as siblings on one dark card instead
+// of as two unrelated pictures. Every selector below carries `svg.svgbob`
+// where the renderer's own rule says `.svgbob`, and that extra element is the
+// whole point: the renderer's `<style>` is inline in the body, so it sits
+// after this stylesheet and wins every tie on document order.
+//
+// Size second: svgbob's SVG carries no `viewBox`. Its width and height are
+// pixel counts over a fixed 8px character grid, so a `max-width` crops the
+// drawing where it would shrink a mermaid one. The card therefore moves onto a
+// wrapper the markdown source puts around the fence, and the diagram scrolls
+// inside it -- which is what `.prose pre` already does, and the honest
+// treatment anyway, since an svgbob source really is monospace text art.
+.prose .diagram-scroll {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  overflow-x: auto;
+}
+
+svg.svgbob {
+  display: block;
+  // Centres a diagram narrower than the column; resolves to zero for one wider
+  // than it, which is the case the scroll container is there for.
+  margin-inline: auto;
+
+  // #94A3B8 is the mermaid dark theme's edge stroke and #F1F5F9 its label
+  // text. Svgbob draws boxes and arrows with a single stroke, so that pair is
+  // the whole palette: structure in the dimmer of the two, content in the
+  // brighter.
+  line, path, circle, rect, polygon { stroke: #94a3b8; }
+  text {
+    fill: #f1f5f9;
+    // svgbob asks for Iosevka and falls back to whatever the browser calls
+    // `monospace`, which is not the font the code blocks around it use. The
+    // size travels with the family: svgbob places every word at its own x on
+    // an 8px grid, so a face advancing 8.4px a character -- 14px at the usual
+    // 0.6em -- widens each word by enough to swallow the space after it, and
+    // `sandboxed guest` closes up. 13.33px advances exactly 8px and puts every
+    // word back on its cell.
+    font-family: var(--mono);
+    font-size: 13.33px;
+  }
+
+  // Arrowheads and the other solid markers.
+  .filled { fill: #94a3b8; }
+
+  // The insides of boxes, and the canvas behind everything. Both are the card
+  // itself. Svgbob emits a `<rect>` only for a box it can prove rectangular
+  // and draws the rest as bare lines, so any fill other than the ground would
+  // show up on some boxes and not on others.
+  .bg_filled, .nofill { fill: var(--code-bg); }
+  rect.backdrop { fill: none; stroke: none; }
+}
