@@ -44,6 +44,10 @@ license = "MIT"
 description = "A Rust implementation of the Markdoc language: parse, validate, transform, render, and format."
 readme = "README.md"
 repository = "https://github.com/zoosky/accent-proust"
+# The project website, which carries the same documentation as docs.rs plus the
+# language reference, the divergences and a playground that runs the WebAssembly
+# build in the reader's browser. crates.io renders it beside the repository link.
+homepage = "https://zoosky.github.io/accent-proust/"
 keywords = ["markdoc", "markdown", "commonmark", "parser", "formatter"]
 categories = ["parser-implementations", "text-processing"]
 # `reference/` is upstream's TypeScript, vendored unmodified so that a porting
