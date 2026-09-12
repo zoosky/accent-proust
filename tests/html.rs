@@ -11,10 +11,17 @@
 //! passthrough, attribute lowercasing, and the two array paths that look alike
 //! and are not.
 //!
+//! [`tag_renderer`] exercises the seam with a renderer that is not HTML, and
+//! pins the property the seam's shape exists for: the depth of the tree is
+//! never on the renderer's stack.
+//!
 //! Written against the renderable tree, so it runs in the
 //! `--no-default-features` lane too: rendering needs no tokenizer.
 
-use accent_proust::render::{VOID_ELEMENTS, is_void_element, render, render_all};
+use accent_proust::render::{
+    Children, Html, TagRenderer, VOID_ELEMENTS, attribute_value, is_void_element, render,
+    render_all, render_all_with, render_with,
+};
 use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
 use indexmap::IndexMap;
 
@@ -55,6 +62,20 @@ fn number(value: f64) -> RenderableTreeNode {
 /// A string attribute value.
 fn string(value: &str) -> Scalar {
     Scalar::String(value.to_owned())
+}
+
+/// How deep the two depth tests nest. Far past anything a document produces
+/// through the transformer, which bounds its own recursion at 512.
+const DEPTH: usize = 50_000;
+
+/// `depth` `<b>` elements around one `<i>x</i>`, for the two tests that pin
+/// the walk as iterative. One fixture, so the depth they pin is one number.
+fn deep_tree(depth: usize) -> RenderableTreeNode {
+    let mut tree = node("i", &[], vec![text("x")]);
+    for _ in 0..depth {
+        tree = node("b", &[], vec![tree]);
+    }
+    tree
 }
 
 mod upstream {
@@ -420,12 +441,7 @@ mod beyond_upstream {
         // Nesting depth in a renderable tree comes from the document, which is
         // attacker-controlled. A recursive renderer aborts the process here,
         // and an abort is not something a caller can catch.
-        const DEPTH: usize = 50_000;
-
-        let mut tree = node("i", &[], vec![text("x")]);
-        for _ in 0..DEPTH {
-            tree = node("b", &[], vec![tree]);
-        }
+        let tree = deep_tree(DEPTH);
 
         let html = render(&tree);
         assert_eq!(html.matches("<b>").count(), DEPTH);
@@ -479,5 +495,263 @@ mod beyond_upstream {
         attributes.insert("bar".to_owned(), RenderableTreeNodes::Many(vec![]));
         let example = RenderableTreeNode::tag(Tag::with("foo", attributes, vec![]));
         assert_eq!(render(&example), r#"<foo bar=""></foo>"#);
+    }
+}
+
+mod tag_renderer {
+    //! The seam, exercised by something that is not the built-in.
+
+    use super::*;
+
+    /// A renderer that is not HTML: `(name key=value "text")`, with `leaf`
+    /// as its one void element.
+    struct Sexp;
+
+    impl TagRenderer for Sexp {
+        fn open(&self, out: &mut String, tag: &Tag) -> Children {
+            out.push('(');
+            out.push_str(&tag.name);
+            for (key, value) in &tag.attributes {
+                out.push(' ');
+                out.push_str(key);
+                out.push('=');
+                out.push_str(&attribute_value(value));
+            }
+            if tag.name == "leaf" {
+                out.push(')');
+                Children::Skip
+            } else {
+                Children::Render
+            }
+        }
+
+        fn close(&self, out: &mut String, _tag: &Tag) {
+            out.push(')');
+        }
+
+        fn text(&self, out: &mut String, text: &str) {
+            out.push_str(" \"");
+            out.push_str(text);
+            out.push('"');
+        }
+    }
+
+    /// The element a `heading` tag renders as, derived from its `level`.
+    fn heading_element(tag: &Tag) -> String {
+        match tag.attributes.get("level") {
+            Some(level) => format!("h{}", attribute_value(level)),
+            None => tag.name.clone(),
+        }
+    }
+
+    /// A renderer whose element names come from an attribute, so `close` has
+    /// to see the attributes too.
+    struct Leveled;
+
+    impl TagRenderer for Leveled {
+        fn open(&self, out: &mut String, tag: &Tag) -> Children {
+            out.push('<');
+            out.push_str(&heading_element(tag));
+            out.push('>');
+            Children::Render
+        }
+
+        fn close(&self, out: &mut String, tag: &Tag) {
+            out.push_str("</");
+            out.push_str(&heading_element(tag));
+            out.push('>');
+        }
+
+        fn text(&self, out: &mut String, text: &str) {
+            out.push_str(text);
+        }
+    }
+
+    #[test]
+    fn a_renderer_that_is_not_html_renders_the_same_tree() {
+        let example = node("div", &[], vec![node("p", &[], vec![text("hi")])]);
+        assert_eq!(render_with(&example, &Sexp), r#"(div(p "hi"))"#);
+    }
+
+    #[test]
+    fn render_all_with_concatenates_with_no_separator() {
+        let example = [
+            node("p", &[], vec![text("a")]),
+            node("p", &[], vec![text("b")]),
+        ];
+        assert_eq!(render_all_with(&example, &Sexp), r#"(p "a")(p "b")"#);
+    }
+
+    #[test]
+    fn html_is_the_default_renderer() {
+        // Pinned to bytes, not to `render`: `render` is `render_with(.., &Html)`
+        // by definition, so comparing the two would test nothing.
+        let example = node(
+            "td",
+            &[("colSpan", Scalar::Number(2.0)), ("title", string("a & b"))],
+            vec![text("<x>"), number(1e21), node("br", &[], vec![])],
+        );
+        let expected = r#"<td colspan="2" title="a &amp; b">&lt;x&gt;1e+21<br></td>"#;
+        assert_eq!(render_with(&example, &Html), expected);
+        assert_eq!(render(&example), expected);
+        let many = [example.clone(), text("tail")];
+        assert_eq!(render_all_with(&many, &Html), format!("{expected}tail"));
+        assert_eq!(render_all(&many), format!("{expected}tail"));
+    }
+
+    #[test]
+    fn attributes_reach_open_as_authored() {
+        // Lowercasing is `Html`'s policy, not the walk's. A renderer that
+        // wants the name as written gets it as written.
+        let example = node("td", &[("colSpan", Scalar::Number(2.0))], vec![]);
+        assert_eq!(render_with(&example, &Sexp), "(td colSpan=2)");
+    }
+
+    #[test]
+    fn attribute_value_is_upstreams_coercion() {
+        let scalar = |value: Scalar| RenderableTreeNodes::One(RenderableTreeNode::Scalar(value));
+        assert_eq!(attribute_value(&scalar(Scalar::Null)), "null");
+        assert_eq!(attribute_value(&scalar(Scalar::Number(1e21))), "1e+21");
+        assert_eq!(
+            attribute_value(&scalar(Scalar::Array(vec![
+                Scalar::Number(1.0),
+                Scalar::Null,
+                Scalar::Number(3.0),
+            ]))),
+            "1,,3"
+        );
+        assert_eq!(
+            attribute_value(&RenderableTreeNodes::One(RenderableTreeNode::tag(tag(
+                "p",
+                &[],
+                vec![]
+            )))),
+            "[object Object]"
+        );
+        // Not escaped: that is the renderer's policy, applied afterwards.
+        assert_eq!(attribute_value(&scalar(string("a & b"))), "a & b");
+    }
+
+    #[test]
+    fn skip_drops_the_children_and_the_close() {
+        let example = node("leaf", &[], vec![text("ignored"), node("p", &[], vec![])]);
+        assert_eq!(render_with(&example, &Sexp), "(leaf)");
+    }
+
+    #[test]
+    fn an_unnamed_tag_never_reaches_open() {
+        // The walk's decision. `Sexp` would print `(` for it if asked.
+        let example = node(
+            "div",
+            &[],
+            vec![node(
+                "",
+                &[("id", string("gone"))],
+                vec![text("a"), node("b", &[], vec![text("c")])],
+            )],
+        );
+        assert_eq!(render_with(&example, &Sexp), r#"(div "a"(b "c"))"#);
+    }
+
+    #[test]
+    fn a_number_child_reaches_text_already_formatted() {
+        // The default `number`: ECMAScript's spelling, handed to `text`, so
+        // a renderer that does not override it sees a string.
+        let example = node("p", &[], vec![number(1e21), number(-0.0), number(1e-7)]);
+        assert_eq!(render_with(&example, &Sexp), r#"(p "1e+21" "0" "1e-7")"#);
+    }
+
+    #[test]
+    fn null_boolean_and_object_children_reach_no_method() {
+        let example = node(
+            "p",
+            &[],
+            vec![
+                RenderableTreeNode::Scalar(Scalar::Null),
+                text("a"),
+                RenderableTreeNode::Scalar(Scalar::Boolean(true)),
+                text("b"),
+                RenderableTreeNode::Scalar(Scalar::Object(IndexMap::new())),
+            ],
+        );
+        assert_eq!(render_with(&example, &Sexp), r#"(p "a" "b")"#);
+    }
+
+    #[test]
+    fn an_array_child_reaches_text_element_by_element() {
+        let example = node(
+            "p",
+            &[],
+            vec![RenderableTreeNode::Scalar(Scalar::Array(vec![
+                Scalar::Number(1.0),
+                Scalar::String("x".to_owned()),
+            ]))],
+        );
+        assert_eq!(render_with(&example, &Sexp), r#"(p "1" "x")"#);
+    }
+
+    #[test]
+    fn close_receives_the_tag_open_saw() {
+        // The reason `close` takes a `Tag` and not a name: an element chosen
+        // from an attribute has to be chosen the same way twice.
+        let example = node(
+            "heading",
+            &[("level", Scalar::Number(2.0))],
+            vec![text("Title")],
+        );
+        assert_eq!(render_with(&example, &Leveled), "<h2>Title</h2>");
+    }
+
+    #[test]
+    fn a_renderer_is_object_safe() {
+        let renderer: &dyn TagRenderer = &Sexp;
+        let example = node("p", &[], vec![text("hi")]);
+        assert_eq!(render_with(&example, renderer), r#"(p "hi")"#);
+        assert_eq!(
+            render_all_with(std::slice::from_ref(&example), renderer),
+            r#"(p "hi")"#
+        );
+    }
+
+    /// `Sexp` with a number type: `number` is overridden to write the value.
+    struct TypedSexp;
+
+    impl TagRenderer for TypedSexp {
+        fn open(&self, out: &mut String, tag: &Tag) -> Children {
+            Sexp.open(out, tag)
+        }
+
+        fn close(&self, out: &mut String, tag: &Tag) {
+            Sexp.close(out, tag);
+        }
+
+        fn text(&self, out: &mut String, text: &str) {
+            Sexp.text(out, text);
+        }
+
+        fn number(&self, out: &mut String, value: f64) {
+            out.push(' ');
+            out.push_str(&value.to_string());
+        }
+    }
+
+    #[test]
+    fn a_renderer_with_a_number_type_overrides_number() {
+        let example = node("p", &[], vec![number(1.5), text("x"), number(2.0)]);
+        assert_eq!(render_with(&example, &Sexp), r#"(p "1.5" "x" "2")"#);
+        assert_eq!(render_with(&example, &TypedSexp), r#"(p 1.5 "x" 2)"#);
+    }
+
+    #[test]
+    fn deep_nesting_does_not_overflow_the_stack_through_a_host_renderer() {
+        // The property the seam's shape exists for. A trait that rendered
+        // children through a callback would put one host frame per level
+        // here, and this is the test that fails when someone reshapes it.
+        let tree = deep_tree(DEPTH);
+
+        let out = render_with(&tree, &Sexp);
+        assert_eq!(out.matches("(b").count(), DEPTH);
+        assert!(out.starts_with(&"(b".repeat(DEPTH)));
+        assert!(out.ends_with(&format!(r#"(i "x"){}"#, ")".repeat(DEPTH))));
     }
 }

@@ -29,8 +29,9 @@
 //! - `SchemaSource` answers "what is the schema for this tag name?". Whether
 //!   that answer comes from a file, a constant, or a sandboxed guest is the
 //!   host's business, not this crate's.
-//! - `TagRenderer` turns a validated tag plus its rendered children into
-//!   markup. Escaping, template lookup, and HTML policy live there.
+//! - [`TagRenderer`](render::TagRenderer) turns a validated tag into markup.
+//!   Escaping, void elements, and HTML policy live there; the walk over the
+//!   tree does not, which keeps the document's depth off the host's stack.
 //!
 //! That boundary is deliberate and is enforced by a CI job that builds and
 //! tests this crate with nothing else present.

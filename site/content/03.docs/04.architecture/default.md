@@ -43,7 +43,7 @@ input produce identical bytes.
 
 No I/O. No configuration file. No concept of a file, a theme, a template or a
 plugin. Everything host-specific arrives as data the caller passes in, or through
-the one trait the caller implements.
+a trait the caller implements.
 
 <div class="diagram-scroll">
 
@@ -62,9 +62,9 @@ the one trait the caller implements.
   +----------------------+                    |                      |
                                               |                      |
   +----------------------+                    |                      |
-  | your elements,       |  renderable tree   |                      |
-  | your escaping,       +<-------------------+  "render_all is only"|
-  | your templates       |   from transform   |  a shortcut          |
+  | your elements,       |  impl TagRenderer  |                      |
+  | your escaping,       +------------------->+  render              |
+  | your void list       |      a trait       |                      |
   +----------------------+                    +----------------------+
 ```
 
@@ -75,7 +75,7 @@ in a CMS, a language server and a build tool without any of the three inheriting
 the others' assumptions -- and it is enforced by a CI job rather than by
 discipline.
 
-### The one trait: `Tokenizer`
+### The two traits: `Tokenizer` and `TagRenderer`
 
 `Tokenizer` segments CommonMark. A default implementation over `pulldown-cmark`
 ships behind the `pulldown-cmark-tokenizer` feature, which is on by default and
@@ -91,20 +91,22 @@ you pin `pulldown-cmark` to a git revision, Cargo treats it as a different
 package, and you would end up rendering some documents through one copy and some
 through the other.
 
-### The two responsibilities left outside
+`TagRenderer` turns a tag into markup. `render::Html` is upstream's
+implementation and what `render_all` uses; a host that wants different
+elements, different escaping or a different void-element list implements the
+trait and calls `render_with`. The trait is `open`, `close` and `text`, and
+deliberately not "a tag and a callback for its children": the crate walks the
+tree on an explicit heap stack because nesting depth is the document's to
+choose, and a callback would put that depth back on the host's stack one frame
+per level. The host writes the markup for one tag at a time and never sees the
+recursion.
 
-The crate documentation names two more seams. Neither is a trait, and that is
-the design rather than an omission.
+### The one responsibility left outside
 
-**Where a schema comes from.** You build a `Config` and hand it over. Whether
-the schemas in it came from a constant, a YAML file, a database or a sandboxed
-guest is not something a trait could usefully abstract without also deciding how
-errors and lifetimes work for all four.
-
-**HTML policy.** `render::render_all` emits upstream's markup and is a
-convenience. A host that wants different elements, different escaping or a
-template engine walks the renderable tree itself -- a plain tree of tags and
-scalars, which is what `transform` returns for exactly this purpose.
+The crate documentation names a third seam, `SchemaSource`, for where a schema
+comes from. It is not a trait today: you build a `Config` and hand it over.
+Whether the schemas in it came from a constant, a YAML file, a database or a
+sandboxed guest is not the crate's business.
 
 ## Invariant 1: the library stands alone
 

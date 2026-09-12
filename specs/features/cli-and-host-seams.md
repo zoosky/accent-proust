@@ -338,13 +338,18 @@ pub trait TagRenderer {
     /// Write the markup that opens `tag`, and say whether children follow.
     fn open(&self, out: &mut String, tag: &Tag) -> Children;
 
-    /// Write the markup that closes the tag named `name`.
+    /// Write the markup that closes `tag`.
     ///
-    /// Called only after `open` returned [`Children::Render`].
-    fn close(&self, out: &mut String, name: &str);
+    /// Called only after `open` returned [`Children::Render`] for it.
+    fn close(&self, out: &mut String, tag: &Tag);
 
     /// Write `text` in text position, escaped to the host's policy.
     fn text(&self, out: &mut String, text: &str);
+
+    /// Write a number child. Provided: the default spells it as ECMAScript
+    /// does and hands that to `text`, which is what `Html` wants. A renderer
+    /// whose output has a number type overrides it.
+    fn number(&self, out: &mut String, value: f64) { /* text(js::number(value)) */ }
 }
 ```
 
@@ -356,6 +361,12 @@ different host makes differently, and all three are inside the one method.
 
 `text` is separate because escaping applies to scalars in text position, which
 the stack reaches without going through `open` at all.
+
+`close` takes the whole `Tag` as well, for the same reason in the other
+direction: whatever `open` derived from the attributes -- an element name
+chosen by a `level`, say -- `close` has to derive again, and it can only do
+that from the same input. A name alone would make the plain HTML case work and
+the policy case silently wrong, which is the case the seam exists for.
 
 ### Compatibility
 
@@ -369,6 +380,16 @@ Add `render_with(node, &renderer)` and `render_all_with(nodes, &renderer)`
 beside them. That mirrors how `format`/`format_with`
 (`src/format/mod.rs:203,220`) and `parse`/`parse_with` (`src/parse/mod.rs:159,
 171`) are already paired, so the naming needs no explanation.
+
+Two of `Html`'s ingredients become public alongside it, because a renderer
+that keeps upstream's escaping or coercion while changing something else has
+to be able to reach them: `escape_html_into`, the appending form of
+`escape_html`, and `attribute_value`, ECMAScript's `String(v)` over an
+attribute's subtree. The escaper does not replace `'`. That was safe while
+`Html` was its only caller, because `Html` double-quotes every value; as
+public API it is a documented condition instead -- text and double-quoted
+attributes only -- and a renderer that delimits attributes differently brings
+its own escaper.
 
 ### Depth
 
@@ -683,3 +704,9 @@ reasoning is shorter to keep than to reconstruct.
    not only where.
 4. **`--var` takes typed values**, parsed as YAML scalars by the same parser the
    configuration file uses, so the two can never disagree about what `3` is.
+5. **`escape_html_into` and `attribute_value` are public**, and `TagRenderer`
+   has a provided `number`. All three came out of implementing step 1: the
+   first two because a renderer cannot keep upstream's behaviour without
+   them, the third because a renderer with a number type should not have to
+   parse a string it was handed. `close` takes the `Tag`, for the reason
+   given under "The trait".
