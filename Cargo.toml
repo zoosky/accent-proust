@@ -13,7 +13,11 @@
 # and `cargo clippy --all-targets` to the library alone, so a member cannot
 # quietly join the standalone, MSRV or conformance lanes.
 [workspace]
-members = ["crates/accent-proust-cli", "crates/accent-proust-wasm"]
+members = [
+    "crates/accent-proust-cli",
+    "crates/accent-proust-schema-config",
+    "crates/accent-proust-wasm",
+]
 default-members = ["."]
 
 # The profile the npm package is built with. A separate profile rather than
@@ -89,8 +93,8 @@ saphyr = { version = "0.0.12", default-features = false }
 # One block for the workspace, and every member opts in with
 # `[lints] workspace = true`. Inheritance is opt-in per member, so sharing the
 # block decides nothing for a host that wants a different floor: it leaves the
-# line out. What sharing does decide is that the three crates cannot drift
-# apart by accident, which three copies of eleven lines would.
+# line out. What sharing does decide is that the members cannot drift apart
+# by accident, which a copy of eleven lines per member would.
 [lints]
 workspace = true
 

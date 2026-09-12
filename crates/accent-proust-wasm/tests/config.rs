@@ -279,6 +279,102 @@ fn a_schema_under_nodes_tag_is_refused_by_name() {
 }
 
 #[wasm_bindgen_test]
+fn a_schema_may_be_any_object_read_key_by_key() {
+    // A class instance, or `Object.create(base)`: two links in the prototype
+    // chain, which the value converter refuses for a `default` -- a `Date`
+    // flattening to `{}` is the case it exists for -- and which a schema, read
+    // one property at a time, has no reason to.
+    let base = Object::new();
+    let callout = Object::create(&base);
+    let _ = Reflect::set(&callout, &"render".into(), &"Aside".into());
+    let tags = Object::new();
+    let _ = Reflect::set(&tags, &"callout".into(), &callout);
+    let root = Object::new();
+    let _ = Reflect::set(&root, &"tags".into(), &tags);
+
+    let config = Config::new(&root.into());
+    assert!(
+        config.is_ok(),
+        "{}",
+        config.as_ref().err().map(message).unwrap_or_default()
+    );
+    let html = config
+        .map(|config| config.render_html("{% callout %}x{% /callout %}"))
+        .unwrap_or_default();
+    assert!(html.contains("<Aside"), "{html}");
+}
+
+#[wasm_bindgen_test]
+fn a_property_whose_getter_throws_is_refused_not_dropped() {
+    // `Object.keys` lists it, so the key passes; reading it throws. Absent
+    // would mean a configuration that silently lost its tags.
+    let root = Object::new();
+    let descriptor = Object::new();
+    let _ = Reflect::set(
+        &descriptor,
+        &"get".into(),
+        &js_sys::Function::new_no_args("throw new Error(\"boom\")"),
+    );
+    let _ = Reflect::set(&descriptor, &"enumerable".into(), &JsValue::TRUE);
+    let _ = Object::define_property(&root, &"tags".into(), &descriptor);
+
+    let thrown = Config::new(&root.into()).err().unwrap_or(JsValue::NULL);
+    let text = message(&thrown);
+    assert!(text.contains("config.tags"), "{text}");
+    assert!(text.contains("cannot be read"), "{text}");
+}
+
+#[wasm_bindgen_test]
+fn an_undefined_variable_is_null() {
+    // `variables: { user: session?.user }` with no session. A variable may
+    // be any value, and JavaScript's absent one is Markdoc's `null`.
+    let variables = Object::new();
+    let _ = Reflect::set(&variables, &"user".into(), &JsValue::UNDEFINED);
+    let root = Object::new();
+    let _ = Reflect::set(&root, &"variables".into(), &variables);
+
+    let config = Config::new(&root.into());
+    assert!(
+        config.is_ok(),
+        "{}",
+        config.as_ref().err().map(message).unwrap_or_default()
+    );
+    let html = config
+        .map(|config| config.render_html("{% if $user %}yes{% else /%}no{% /if %}"))
+        .unwrap_or_default();
+    assert!(html.contains("no"), "{html}");
+}
+
+#[wasm_bindgen_test]
+fn a_function_where_a_value_was_wanted_says_code_does_not_cross() {
+    // A custom attribute type, written as upstream writes one. The vocabulary
+    // says a function is not a type name; this host says why that is final.
+    let kind = Object::new();
+    let _ = Reflect::set(
+        &kind,
+        &"type".into(),
+        &js_sys::Function::new_no_args("return true"),
+    );
+    let attributes = Object::new();
+    let _ = Reflect::set(&attributes, &"level".into(), &kind);
+    let callout = Object::new();
+    let _ = Reflect::set(&callout, &"attributes".into(), &attributes);
+    let tags = Object::new();
+    let _ = Reflect::set(&tags, &"callout".into(), &callout);
+    let root = Object::new();
+    let _ = Reflect::set(&root, &"tags".into(), &tags);
+
+    let thrown = Config::new(&root.into()).err().unwrap_or(JsValue::NULL);
+    let text = message(&thrown);
+    assert!(
+        text.contains("config.tags.callout.attributes.level.type"),
+        "{text}"
+    );
+    assert!(text.contains("not a function"), "{text}");
+    assert!(text.contains("code does not cross"), "{text}");
+}
+
+#[wasm_bindgen_test]
 fn a_regexp_in_matches_explains_the_divergence() {
     let object = Object::new();
     let tags = Object::new();

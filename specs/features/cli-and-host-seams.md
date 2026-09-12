@@ -762,3 +762,14 @@ reasoning is shorter to keep than to reconstruct.
    a `path` dependency refuses to resolve the moment the library is bumped,
    which `release.sh` now guards by holding the members' versions to the
    library's instead.
+
+
+10. **The vocabulary crate walks a `Declaration` trait, not a `Value`.**
+    Converting a host's whole configuration into the library's `Value` first
+    would fail on a JavaScript function written under `validate` at the point
+    of conversion, with a message about functions; the browser host's tests
+    pin a message about hooks, at the key. Seven methods let the walk ask for
+    keys before it reads any value, and each host keeps its own reading --
+    which is what "each keeps only its own deserialisation" meant, and a
+    `Value` could not give. `Value` implements the trait too, for a
+    configuration already in the library's lattice.

@@ -24,10 +24,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "accent-proust-schema-config"
+version = "0.10.0"
+dependencies = [
+ "accent-proust",
+ "indexmap",
+]
+
+[[package]]
 name = "accent-proust-wasm"
 version = "0.10.0"
 dependencies = [
  "accent-proust",
+ "accent-proust-schema-config",
  "indexmap",
  "js-sys",
  "wasm-bindgen",
