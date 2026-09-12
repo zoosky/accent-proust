@@ -42,7 +42,7 @@ const LITERAL_FENCES_UNHOOKED_REASON: &str = "replaces the `fence` schema with o
 const NO_FRONTMATTER: &str = "DIVERGENCES.md #7 (metadata blocks are the host's)";
 const NO_FRONTMATTER_REASON: &str = "feeds a document that still carries its metadata block; the host removes \
      frontmatter before this crate sees it, and the corpus runner is not the host";
-const INDENTED_BLOCK_TAG: &str = "DIVERGENCES.md #12 (an indented block tag leaves its list item)";
+const INDENTED_BLOCK_TAG: &str = "DIVERGENCES.md #13 (an indented block tag leaves its list item)";
 const INDENTED_BLOCK_TAG_REASON: &str = "writes a block `{% if %}` two spaces in under a list item and expects it to \
      be the item's content; the segmenter runs before the container parser, so \
      the tag splits the document instead";
@@ -73,7 +73,7 @@ const ALLOW_INDENTATION_REASON: &str = "graded under `allowIndentation: true`, w
 /// One is frontmatter, which divergence 7 makes the host's rather than this
 /// crate's.
 ///
-/// One writes a block tag indented inside a list item, which divergence 12 puts
+/// One writes a block tag indented inside a list item, which divergence 13 puts
 /// out of reach: the segmenter resolves tag syntax before the container parser
 /// runs, so it has no list item to put the tag inside.
 pub const ANNOTATED: &[Annotation] = &[
