@@ -8,6 +8,26 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A command-line host, `crates/accent-proust-cli`.** One command so far:
+  `accent-proust fmt` reprints Markdoc source in canonical form, from files or
+  stdin. `--check` prints a unified diff of what would change and exits 1 if
+  anything would; `--write` rewrites in place. `fmt` formats to a fixed
+  point: `format(parse(s))` settles in one pass on everything but one shape
+  the library documents, so `fmt` reformats its own output until it stops
+  changing, and write-then-check is clean by construction. CRLF files are
+  named by `--check` and rewritten with LF. Exit codes are 0, 1 for a
+  document that would change, and 2 for a usage or read error or a document
+  that does not settle, kept apart so that CI can tell "the docs are wrong"
+  from "the tool is misconfigured". `validate`, `render`, `parse` and
+  `transform` follow, in the order `specs/features/cli-and-host-seams.md`
+  sequences them.
+
+- **One lint block for the workspace.** The library, the WebAssembly host and
+  the command-line host opt into `[workspace.lints]` instead of carrying a
+  copy each. Inheritance is opt-in per member, so sharing binds no future host
+  that leaves the line out; what it does is keep three crates from drifting
+  apart by accident.
+
 - **`TagRenderer`, the seam between the renderable tree and its markup.** The
   HTML renderer is now `render::Html` behind a trait, and `render_with` and
   `render_all_with` take any other implementation: a different escaping

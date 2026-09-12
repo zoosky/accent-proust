@@ -442,10 +442,15 @@ own.
 | `parse` | Prints the AST as JSON | No |
 | `transform` | Prints the renderable tree as JSON | Yes, for custom tags |
 
-`fmt` is the one to build first. `format(parse(s))` is idempotent and
-`parse(format(ast))` returns the same tree, both tested, which is exactly the
-contract `--check` and `--write` need. It needs no configuration at all, so it
-is useful on day one to anyone with a Markdoc file.
+`fmt` is the one to build first. `parse(format(ast))` returns the same tree,
+tested, so formatting loses nothing; and `format(parse(s))` settles in one
+pass on every document but one shape the library's own tests document (a
+paragraph beginning with a fence marker re-parses as a fence). The contract
+`--check` and `--write` need -- write, then check, is clean -- therefore has to
+be the command's, not the library's: `fmt` formats to a fixed point,
+reformatting its own output until it stops changing, and refuses a document
+that has not settled after four passes. It needs no configuration at all, so
+it is useful on day one to anyone with a Markdoc file.
 
 Flags:
 
@@ -606,13 +611,14 @@ compile once partials are shared across files. Structure `main` as: read every
 source into an owned arena, then parse the partials, then build the `Config`,
 then process. Decide this before writing the loop.
 
-**Lints are per-crate, on purpose.** There is no `[workspace.lints]`; the
-WebAssembly crate's manifest explains that a shared block "would be a decision
-taken on behalf of every future host". Copy the same block -- `missing_docs`,
-`unsafe_code = "forbid"`, clippy `pedantic`, and the four panic-freedom lints.
-Keep `unwrap_used` and `panic` denied through the pipeline and take an
-`#[allow]` with a reason comment at the `main` boundary, where exiting with a
-code is the correct behaviour rather than a lapse.
+**Lints are the workspace's, opted into.** The WebAssembly crate's manifest
+used to say a shared block "would be a decision taken on behalf of every
+future host", and that was wrong: `[workspace.lints]` is inherited only by a
+member that writes `[lints] workspace = true`, so a host that wants a
+different floor leaves the line out. Three copies of eleven lines were three
+places to drift. Every crate opts in. Keep `unwrap_used` and `panic` denied
+through the pipeline; `main` needs no allow, because `ExitCode` is a return
+value and exiting with one is not a panic.
 
 ### Gates and CI
 
@@ -742,3 +748,17 @@ reasoning is shorter to keep than to reconstruct.
    discarded one, in the README's own example; the second because a wildcard
    arm in every host's `find` turns a future variant into a silent `None`,
    and no future variant is foreseen.
+8. **The binary is `accent-proust`, from the package `accent-proust-cli`.**
+   One name across the library, the npm package and the shell, and the crate
+   name says what it is a host of. `fmt`'s two option flags are optional and
+   default to the library's `FormatOptions`, so the command line never
+   restates a default the library owns. `--ordered-list-mode` is a clap enum
+   of the CLI's, mapped onto the library's, because the library's is
+   `#[non_exhaustive]` and not clap's to name.
+9. **`fmt` formats to a fixed point, and the CLI depends on the library by
+   path alone.** Both came out of reviewing step 3. The library's formatter
+   has one documented shape that does not settle in one pass, so the
+   write-then-check contract is the command's to keep; and a `version` beside
+   a `path` dependency refuses to resolve the moment the library is bumped,
+   which `release.sh` now guards by holding the members' versions to the
+   library's instead.

@@ -1,0 +1,38 @@
+[package]
+name = "accent-proust-cli"
+version = "0.10.0"
+edition = "2024"
+license = "MIT"
+description = "The command-line host for accent-proust: format Markdoc, with validate, render and transform to follow."
+repository = "https://github.com/zoosky/accent-proust"
+# The binary is useful in the repository before it is useful on crates.io, and
+# a published binary is a name and a release cadence to own.
+publish = false
+
+# The package is named for what it hosts; the command is named for what the
+# user is running. One name across the library, the npm package and the shell.
+[[bin]]
+name = "accent-proust"
+path = "src/main.rs"
+
+[dependencies]
+# By path alone. A `version` beside it would be a second number to keep in
+# step with the library's, and with `publish = false` it would buy nothing:
+# the path is the dependency. `.github/scripts/release.sh` holds this crate's
+# own `version` to the library's instead, so `--version` cannot drift.
+accent-proust = { path = "../.." }
+clap = { version = "4", features = ["derive"] }
+# The unified diff `fmt --check` prints. A host's dependency: the library
+# needs no diff, and this is the kind of thing a host carries so that it does
+# not have to.
+similar = "2"
+
+[dev-dependencies]
+# The `--write` tests need a directory of their own, and one that is removed
+# when a failing assertion unwinds, not only at the end of a passing test.
+tempfile = "3"
+
+# The workspace's block, opted into. A member that needed a different floor
+# would leave this line out, so inheriting decides nothing on its behalf.
+[lints]
+workspace = true
