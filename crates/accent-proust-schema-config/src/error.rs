@@ -4,13 +4,14 @@
 //! differently: an unknown `validate` key is "a hook is code, and code does
 //! not cross into WebAssembly" in the browser and "a YAML file cannot hold a
 //! function" on the command line. The kind and the path are this crate's; the
-//! reason is the host's to add, and [`Error`]'s own `Display` says what is
-//! true everywhere.
+//! reason is the host's to add, through [`Error::explained`], and [`Error`]'s
+//! own `Display` says what is true everywhere.
 
 use std::fmt;
 
 use accent_proust::ast::NodeType;
 
+use crate::declaration::Shape;
 use crate::path::Path;
 
 /// A problem with a declaration, at a path.
@@ -20,13 +21,31 @@ pub struct Error {
     pub path: Path,
     /// What.
     pub kind: ErrorKind,
+    /// Why, when a host has something to add that the vocabulary does not
+    /// know -- appended to the message after a dash. `None` from this crate.
+    pub reason: Option<String>,
 }
 
 impl Error {
-    /// A problem of `kind` at `path`.
+    /// A problem of `kind` at `path`, with no reason beyond the kind.
     #[must_use]
     pub fn new(path: Path, kind: ErrorKind) -> Error {
-        Error { path, kind }
+        Error {
+            path,
+            kind,
+            reason: None,
+        }
+    }
+
+    /// The same problem, with a host's reason appended to the message.
+    ///
+    /// The seam a host uses instead of retyping the vocabulary's sentence:
+    /// the sentence stays this crate's and cannot drift from it, and the
+    /// reason stays the host's.
+    #[must_use]
+    pub fn explained(mut self, reason: impl Into<String>) -> Error {
+        self.reason = Some(reason.into());
+        self
     }
 }
 
@@ -49,8 +68,16 @@ pub enum ErrorKind {
         /// What was allowed in its place.
         expected: &'static [&'static str],
     },
-    /// The wrong shape of value: `expected` says which, as prose.
-    Expected(&'static str),
+    /// The wrong shape of value.
+    Expected {
+        /// What was wanted, as prose: "an object", "true or false".
+        what: &'static str,
+        /// What was there. A host matching on `Shape::Other("function")` can
+        /// say that code does not cross, wherever the function was written.
+        got: Shape,
+    },
+    /// A property that exists and cannot be read: a getter that throws.
+    Unreadable,
     /// A value with no Markdoc counterpart, described by the host: a function,
     /// a symbol, a date.
     NoCounterpart(String),
@@ -77,45 +104,52 @@ impl fmt::Display for Error {
                 f,
                 "{at}: unrecognised key. Expected one of {}",
                 expected.join(", ")
-            ),
-            ErrorKind::Expected(what) => write!(f, "{at}: expected {what}"),
+            )?,
+            ErrorKind::Expected { what, got } => {
+                write!(f, "{at}: expected {what}, not {}", got.describe())?;
+            }
+            ErrorKind::Unreadable => write!(f, "{at}: cannot be read")?,
             ErrorKind::NoCounterpart(what) => write!(
                 f,
                 "{at}: a {what} has no Markdoc counterpart; use a string, number, boolean, \
                  null, array or plain object"
-            ),
+            )?,
             ErrorKind::UnknownNodeType(name) => {
                 let known: Vec<&str> = NodeType::ALL.iter().map(|node| node.as_str()).collect();
                 write!(
                     f,
                     "{at}: unknown node type {name:?}; expected one of {}",
                     known.join(", ")
-                )
+                )?;
             }
             ErrorKind::TagAsNodeType => write!(
                 f,
                 "{at}: a tag is looked up by its name, never as the node type \"tag\"; declare \
                  it under \"tags\""
-            ),
+            )?,
             ErrorKind::UnknownAttributeType(name) => write!(
                 f,
                 "{at}: unknown attribute type {name:?}; expected String, Number, Boolean, \
                  Object, Array, or an array of those"
-            ),
+            )?,
             ErrorKind::UnknownErrorLevel(name) => write!(
                 f,
                 "{at}: unknown error level {name:?}; expected one of debug, info, warning, \
                  error, critical"
-            ),
+            )?,
             ErrorKind::UnrenderableTrue => {
-                write!(f, "{at}: expected an element name or false, not true")
+                write!(f, "{at}: expected an element name or false, not true")?;
             }
             ErrorKind::MatchesNotAList => write!(
                 f,
                 "{at}: expected an array of acceptable values. A regular expression is not \
                  supported: the engine carries no regular expression engine on purpose"
-            ),
+            )?,
         }
+        if let Some(reason) = &self.reason {
+            write!(f, " -- {reason}")?;
+        }
+        Ok(())
     }
 }
 

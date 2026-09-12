@@ -89,9 +89,8 @@ fn read(
         // order is what this crate preserves.
         steps.push(Step::Object(names.clone()));
         for key in names.iter().rev() {
-            let child = Reflect::get(&object, &JsValue::from_str(key)).map_err(|_| {
-                Error::new(path.child(key), ErrorKind::Expected("a readable property"))
-            })?;
+            let child = Reflect::get(&object, &JsValue::from_str(key))
+                .map_err(|_| Error::new(path.child(key), ErrorKind::Unreadable))?;
             steps.push(Step::Read(child, path.child(key)));
         }
     } else {

@@ -12,7 +12,7 @@ use accent_proust::validate::{
     MapSchemaSource, RenderPolicy, SchemaKey, SchemaMatches, SchemaSource, ValidationType,
 };
 use accent_proust_schema_config::{
-    ATTRIBUTE_KEYS, Error, ErrorKind, Path, SCHEMA_KEYS, TOP_LEVEL, declare,
+    ATTRIBUTE_KEYS, Error, ErrorKind, Path, SCHEMA_KEYS, Shape, TOP_LEVEL, declare,
 };
 
 type Outcome = Result<(), Box<dyn std::error::Error>>;
@@ -271,7 +271,13 @@ fn a_union_is_a_list_of_names_one_level_deep() -> Outcome {
     )]);
     let error = refused(&nested)?;
     assert_eq!(error.path.to_string(), "config.tags.x.attributes.a.type[0]");
-    assert!(matches!(error.kind, ErrorKind::Expected(_)));
+    assert!(matches!(
+        error.kind,
+        ErrorKind::Expected {
+            got: Shape::List,
+            ..
+        }
+    ));
     Ok(())
 }
 
@@ -310,12 +316,73 @@ fn a_schema_render_of_true_is_refused() -> Outcome {
 fn the_wrong_shape_is_named_where_it_is() -> Outcome {
     let error = refused(&obj(&[("tags", s("callout"))]))?;
     assert_eq!(error.path.to_string(), "config.tags");
-    assert_eq!(error.kind, ErrorKind::Expected("an object"));
+    assert_eq!(
+        error.kind,
+        ErrorKind::Expected {
+            what: "an object",
+            got: Shape::String
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "config.tags: expected an object, not a string"
+    );
 
     let error = refused(&s("not a config"))?;
     assert_eq!(error.path.to_string(), "config");
-    assert_eq!(error.kind, ErrorKind::Expected("an object"));
+    assert!(matches!(
+        error.kind,
+        ErrorKind::Expected {
+            what: "an object",
+            ..
+        }
+    ));
     Ok(())
+}
+
+#[test]
+fn a_non_string_error_level_is_the_wrong_shape_not_an_unknown_name() -> Outcome {
+    let root = obj(&[(
+        "tags",
+        obj(&[(
+            "x",
+            obj(&[(
+                "attributes",
+                obj(&[("a", obj(&[("errorLevel", Value::Number(3.0))]))]),
+            )]),
+        )]),
+    )]);
+    let error = refused(&root)?;
+    assert_eq!(
+        error.path.to_string(),
+        "config.tags.x.attributes.a.errorLevel"
+    );
+    assert!(matches!(
+        error.kind,
+        ErrorKind::Expected {
+            got: Shape::Number,
+            ..
+        }
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_reason_is_appended_to_the_vocabularys_sentence() {
+    let error = Error::new(
+        Path::root().child("tags").child("x").child("validate"),
+        ErrorKind::UnknownKey {
+            key: "validate".to_owned(),
+            expected: SCHEMA_KEYS,
+        },
+    )
+    .explained("a hook is code");
+    let text = error.to_string();
+    assert!(
+        text.starts_with("config.tags.x.validate: unrecognised key."),
+        "{text}"
+    );
+    assert!(text.ends_with(" -- a hook is code"), "{text}");
 }
 
 #[test]

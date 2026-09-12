@@ -34,6 +34,22 @@ pub enum Shape {
     Other(&'static str),
 }
 
+impl Shape {
+    /// The shape as prose, with its article, for "expected X, not Y".
+    #[must_use]
+    pub fn describe(self) -> String {
+        match self {
+            Shape::Null => "null".to_owned(),
+            Shape::Boolean => "a boolean".to_owned(),
+            Shape::Number => "a number".to_owned(),
+            Shape::String => "a string".to_owned(),
+            Shape::List => "a list".to_owned(),
+            Shape::Object => "an object".to_owned(),
+            Shape::Other(what) => format!("a {what}"),
+        }
+    }
+}
+
 /// A configuration value, as the host holds it.
 ///
 /// Implemented once per host. [`Value`] implements it too, so a configuration
@@ -41,6 +57,11 @@ pub enum Shape {
 /// itself -- can be declared without a detour.
 pub trait Declaration: Sized {
     /// What this value is.
+    ///
+    /// An object is anything read key by key: a plain object, a class
+    /// instance, a proxy. Whether it would survive conversion to a [`Value`]
+    /// is [`to_value`](Declaration::to_value)'s question, asked only where
+    /// the vocabulary carries a value through.
     fn shape(&self) -> Shape;
 
     /// The value as a boolean, if it is one.
@@ -55,7 +76,18 @@ pub trait Declaration: Sized {
 
     /// One property of an object, or `None` when absent. A JavaScript
     /// property that is explicitly `undefined` is absent too.
-    fn get(&self, key: &str) -> Option<Self>;
+    ///
+    /// `at` is the property's own path, for the error.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Unreadable`] when the property exists and cannot be read
+    /// -- a getter that throws, a proxy trap that refuses. Absent and
+    /// unreadable are different answers: the first is a key the author did
+    /// not write, the second is one that was written and then lost, and a
+    /// configuration that loses a block silently is the failure this crate
+    /// exists to refuse.
+    fn get(&self, key: &str, at: &Path) -> Result<Option<Self>, Error>;
 
     /// A list's elements, in order. Empty for anything else.
     fn items(&self) -> Vec<Self>;
@@ -106,11 +138,11 @@ impl Declaration for Value {
         }
     }
 
-    fn get(&self, key: &str) -> Option<Value> {
-        match self {
+    fn get(&self, key: &str, _at: &Path) -> Result<Option<Value>, Error> {
+        Ok(match self {
             Value::Hash(map) => map.get(key).cloned(),
             _ => None,
-        }
+        })
     }
 
     fn items(&self) -> Vec<Value> {

@@ -259,7 +259,7 @@ Every crate opts into the one `[workspace.lints]` block with
 `[lints] workspace = true`. This used to be three copies, on the reasoning
 that a shared block would bind every future host; it does not, because
 inheritance is opt-in per member, and a host that wants a different floor
-leaves the line out. What the shared block decides is that three crates
+leaves the line out. What the shared block decides is that the members
 cannot drift apart by accident.
 
 A member depends on the library by path alone, with no `version` beside it:

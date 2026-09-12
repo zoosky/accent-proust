@@ -22,7 +22,10 @@
 //! # What crosses, and what cannot
 //!
 //! A schema is data: a name, a list of allowed children, typed attributes, a
-//! render policy. All of that crosses.
+//! render policy. All of that crosses. So does any object read key by key -- a
+//! plain object, a class instance, a proxy -- because a schema is read that
+//! way; only a value carried through whole, an attribute's `default` or a
+//! variable, has to be a plain one, and [`crate::value`] says why.
 //!
 //! A hook is code. `transform`, `validate`, a custom attribute type and a
 //! `RegExp` in `matches` are Rust or JavaScript that has to run inside the
@@ -34,8 +37,12 @@
 //! None of that is silently dropped. A configuration carrying a key this crate
 //! cannot honour is refused, with the path to it -- a schema that half arrives
 //! is worse than one that does not, because the half that is missing is
-//! invisible until an author trips over it. The vocabulary refuses the key;
-//! [`explain`] adds why this host in particular cannot take it.
+//! invisible until an author trips over it. The vocabulary refuses the key, or
+//! the function where a value was wanted, or the pattern where a list was;
+//! [`explain`] adds why this host in particular cannot take it. A property
+//! whose getter throws is refused too, as unreadable, rather than read as
+//! absent: a block that was written and then lost is the failure above in
+//! another form.
 
 use std::sync::Arc;
 
@@ -43,8 +50,8 @@ use accent_proust::ast::Value;
 use accent_proust::builtins;
 use accent_proust::validate::{Config, MapSchemaSource};
 use accent_proust_schema_config::{Declaration, Error, ErrorKind, Path, Shape, declare};
-use js_sys::{Array, Reflect};
-use wasm_bindgen::JsValue;
+use js_sys::{Array, Object, Reflect};
+use wasm_bindgen::{JsCast, JsValue};
 
 use crate::value;
 
@@ -56,7 +63,7 @@ use crate::value;
 /// is a document a person wrote, so the path is the actionable half of the
 /// message and is never omitted.
 pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
-    let declared = declare(&Js(value.clone())).map_err(|error| explain(&error))?;
+    let declared = declare(&Js(value.clone())).map_err(explain)?;
     // Merged over the built-ins into one source, built once, and the config
     // assembled around it.
     let mut schemas = MapSchemaSource::builtin();
@@ -73,6 +80,23 @@ pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
 /// reference-count bump on the JavaScript side.
 struct Js(JsValue);
 
+impl Js {
+    /// The value as an object to read key by key, if it is one.
+    ///
+    /// Any object but an array or a function: a class instance and a proxy
+    /// both have keys and properties, and a schema is read as nothing else.
+    /// The stricter question -- would this survive as a `Value`? -- is
+    /// [`value::plain_object`]'s, asked only by [`Declaration::to_value`].
+    fn object(&self) -> Option<Object> {
+        let item = &self.0;
+        if item.is_object() && !Array::is_array(item) && !item.is_function() {
+            Some(item.clone().unchecked_into())
+        } else {
+            None
+        }
+    }
+}
+
 impl Declaration for Js {
     fn shape(&self) -> Shape {
         let item = &self.0;
@@ -86,7 +110,7 @@ impl Declaration for Js {
             Shape::String
         } else if Array::is_array(item) {
             Shape::List
-        } else if value::plain_object(item).is_some() {
+        } else if self.object().is_some() {
             Shape::Object
         } else {
             Shape::Other(value::describe(item))
@@ -102,20 +126,25 @@ impl Declaration for Js {
     }
 
     fn keys(&self) -> Vec<String> {
-        value::plain_object(&self.0)
+        self.object()
             .map(|object| value::keys(&object))
             .unwrap_or_default()
     }
 
-    fn get(&self, key: &str) -> Option<Js> {
-        let object = value::plain_object(&self.0)?;
-        let property = Reflect::get(&object, &JsValue::from_str(key)).ok()?;
+    fn get(&self, key: &str, at: &Path) -> Result<Option<Js>, Error> {
+        let Some(object) = self.object() else {
+            return Ok(None);
+        };
+        // A getter that throws, or a proxy trap that refuses: the property
+        // exists and was lost, which is not the same as absent.
+        let property = Reflect::get(&object, &JsValue::from_str(key))
+            .map_err(|_| Error::new(at.clone(), ErrorKind::Unreadable))?;
         // Explicitly `undefined` is absent, as the trait says.
-        if property.is_undefined() {
+        Ok(if property.is_undefined() {
             None
         } else {
             Some(Js(property))
-        }
+        })
     }
 
     fn items(&self) -> Vec<Js> {
@@ -133,13 +162,14 @@ impl Declaration for Js {
 
 /// The vocabulary's message, with this host's reason where it has one.
 ///
-/// Three keys are refused everywhere and for a reason that is particular to a
-/// WebAssembly boundary. The vocabulary says "unrecognised key"; this says why
-/// a browser cannot take it, so that an author porting a server-side schema
-/// learns what to leave behind rather than what to misspell.
-fn explain(error: &Error) -> String {
-    if let ErrorKind::UnknownKey { key, expected } = &error.kind {
-        let why = match key.as_str() {
+/// The vocabulary says what is true everywhere: "unrecognised key", "expected
+/// a string, not a function", "a regular expression is not supported". This
+/// says why a browser in particular cannot take it, so that an author porting
+/// a server-side schema learns what to leave behind rather than what to
+/// misspell. The sentence stays the vocabulary's; only the reason is added.
+fn explain(error: Error) -> String {
+    let why = match &error.kind {
+        ErrorKind::UnknownKey { key, .. } => match key.as_str() {
             "transform" | "validate" => Some(
                 "a hook is code, and code does not cross into WebAssembly. Declare what you \
                  can and leave the rest to the server, which sees the whole document",
@@ -153,14 +183,24 @@ fn explain(error: &Error) -> String {
                  holding both across the boundary needs a design this does not have",
             ),
             _ => None,
-        };
-        if let Some(why) = why {
-            return format!(
-                "{}: unrecognised key -- {why}. Expected one of {}",
-                error.path,
-                expected.join(", ")
-            );
+        },
+        // A function where a value was wanted: a custom attribute type, a
+        // `matches` predicate, a computed default. All code, none of it
+        // crossing.
+        ErrorKind::Expected {
+            got: Shape::Other("function"),
+            ..
+        } => Some(
+            "a function is code, and code does not cross into WebAssembly; declare what you \
+             can and leave the custom check to the server",
+        ),
+        ErrorKind::MatchesNotAList => {
+            Some("and a host pattern is code that cannot cross into WebAssembly")
         }
+        _ => None,
+    };
+    match why {
+        Some(why) => error.explained(why).to_string(),
+        None => error.to_string(),
     }
-    error.to_string()
 }

@@ -14,7 +14,7 @@
 //! [`Declaration::to_value`] whole, and the library's `Value` clones
 //! iteratively.
 
-use accent_proust::ast::{ErrorLevel, NodeType};
+use accent_proust::ast::{ErrorLevel, NodeType, Value};
 use accent_proust::validate::{
     MapSchemaSource, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot,
     ValidationType, Variables,
@@ -103,38 +103,47 @@ pub fn declare<D: Declaration>(root: &D) -> Result<Declared, Error> {
     match root.shape() {
         Shape::Null => return Ok(declared),
         Shape::Object => {}
-        _ => return Err(Error::new(at, ErrorKind::Expected("an object"))),
+        got => return Err(expected(&at, "an object", got)),
     }
     reject_unknown(root, TOP_LEVEL, &at)?;
 
-    if let Some(tags) = root.get("tags") {
-        let at = at.child("tags");
+    let tags_at = at.child("tags");
+    if let Some(tags) = root.get("tags", &tags_at)? {
+        let at = tags_at;
         object(&tags, &at)?;
         for name in tags.keys() {
             let at = at.child(&name);
-            let declaration = present(tags.get(&name), &at)?;
+            let declaration = present(tags.get(&name, &at)?, &at)?;
             declared.tags.insert(name, schema(&declaration, &at)?);
         }
     }
 
-    if let Some(nodes) = root.get("nodes") {
-        let at = at.child("nodes");
+    let nodes_at = at.child("nodes");
+    if let Some(nodes) = root.get("nodes", &nodes_at)? {
+        let at = nodes_at;
         object(&nodes, &at)?;
         for name in nodes.keys() {
             let at = at.child(&name);
             let node = node_key(&name, &at)?;
-            let declaration = present(nodes.get(&name), &at)?;
+            let declaration = present(nodes.get(&name, &at)?, &at)?;
             declared.nodes.insert(node, schema(&declaration, &at)?);
         }
     }
 
-    if let Some(variables) = root.get("variables") {
-        let at = at.child("variables");
+    let variables_at = at.child("variables");
+    if let Some(variables) = root.get("variables", &variables_at)? {
+        let at = variables_at;
         object(&variables, &at)?;
         let mut map = Variables::new();
         for name in variables.keys() {
             let at = at.child(&name);
-            let value = present(variables.get(&name), &at)?.to_value(&at)?;
+            // A variable may be any value, and an absent one -- explicitly
+            // `undefined`, in JavaScript -- is `null`, which is what a host
+            // that wrote `user: session?.user` meant by it.
+            let value = match variables.get(&name, &at)? {
+                Some(declaration) => declaration.to_value(&at)?,
+                None => Value::Null,
+            };
             map.insert(name, value);
         }
         declared.variables = Some(map);
@@ -150,19 +159,22 @@ fn schema<D: Declaration>(value: &D, at: &Path) -> Result<Schema, Error> {
 
     let mut schema = Schema::default();
 
-    if let Some(render) = value.get("render") {
-        let at = at.child("render");
-        schema.render = match render_policy(&render, &at)? {
+    let render_at = at.child("render");
+    if let Some(render) = value.get("render", &render_at)? {
+        schema.render = match render_policy(&render, &render_at)? {
             RenderPolicy::Hidden => None,
             RenderPolicy::Renamed(name) => Some(name),
             // A schema's `render` is a name or nothing; `true` has no name to
             // fall back on the way an attribute's does.
-            RenderPolicy::Named => return Err(Error::new(at, ErrorKind::UnrenderableTrue)),
+            RenderPolicy::Named => {
+                return Err(Error::new(render_at, ErrorKind::UnrenderableTrue));
+            }
         };
     }
 
-    if let Some(children) = value.get("children") {
-        let at = at.child("children");
+    let children_at = at.child("children");
+    if let Some(children) = value.get("children", &children_at)? {
+        let at = children_at;
         list(&children, &at)?;
         let mut allowed = Vec::new();
         for (index, item) in children.items().iter().enumerate() {
@@ -173,36 +185,41 @@ fn schema<D: Declaration>(value: &D, at: &Path) -> Result<Schema, Error> {
         schema.children = Some(allowed);
     }
 
-    if let Some(attributes) = value.get("attributes") {
-        let at = at.child("attributes");
+    let attributes_at = at.child("attributes");
+    if let Some(attributes) = value.get("attributes", &attributes_at)? {
+        let at = attributes_at;
         object(&attributes, &at)?;
         for name in attributes.keys() {
             let at = at.child(&name);
-            let declaration = present(attributes.get(&name), &at)?;
+            let declaration = present(attributes.get(&name, &at)?, &at)?;
             schema
                 .attributes
                 .insert(name, attribute(&declaration, &at)?);
         }
     }
 
-    if let Some(slots) = value.get("slots") {
-        let at = at.child("slots");
+    let slots_at = at.child("slots");
+    if let Some(slots) = value.get("slots", &slots_at)? {
+        let at = slots_at;
         object(&slots, &at)?;
         for name in slots.keys() {
             let at = at.child(&name);
-            let declaration = present(slots.get(&name), &at)?;
+            let declaration = present(slots.get(&name, &at)?, &at)?;
             schema.slots.insert(name, slot(&declaration, &at)?);
         }
     }
 
-    if let Some(flag) = value.get("selfClosing") {
-        schema.self_closing = boolean(&flag, &at.child("selfClosing"))?;
+    let self_closing_at = at.child("selfClosing");
+    if let Some(flag) = value.get("selfClosing", &self_closing_at)? {
+        schema.self_closing = boolean(&flag, &self_closing_at)?;
     }
-    if let Some(flag) = value.get("inline") {
-        schema.inline = Some(boolean(&flag, &at.child("inline"))?);
+    let inline_at = at.child("inline");
+    if let Some(flag) = value.get("inline", &inline_at)? {
+        schema.inline = Some(boolean(&flag, &inline_at)?);
     }
-    if let Some(text) = value.get("description") {
-        schema.description = Some(string(&text, &at.child("description"), "a string")?);
+    let description_at = at.child("description");
+    if let Some(text) = value.get("description", &description_at)? {
+        schema.description = Some(string(&text, &description_at, "a string")?);
     }
 
     Ok(schema)
@@ -215,27 +232,33 @@ fn attribute<D: Declaration>(value: &D, at: &Path) -> Result<SchemaAttribute, Er
 
     let mut attribute = SchemaAttribute::default();
 
-    if let Some(declared) = value.get("type") {
-        attribute.attribute_type = Some(attribute_type(&declared, &at.child("type"))?);
+    let type_at = at.child("type");
+    if let Some(declared) = value.get("type", &type_at)? {
+        attribute.attribute_type = Some(attribute_type(&declared, &type_at)?);
     }
-    if let Some(default) = value.get("default") {
-        let at = at.child("default");
-        attribute.default = Some(default.to_value(&at)?);
+    let default_at = at.child("default");
+    if let Some(default) = value.get("default", &default_at)? {
+        attribute.default = Some(default.to_value(&default_at)?);
     }
-    if let Some(flag) = value.get("required") {
-        attribute.required = boolean(&flag, &at.child("required"))?;
+    let required_at = at.child("required");
+    if let Some(flag) = value.get("required", &required_at)? {
+        attribute.required = boolean(&flag, &required_at)?;
     }
-    if let Some(values) = value.get("matches") {
-        attribute.matches = Some(matches(&values, &at.child("matches"))?);
+    let matches_at = at.child("matches");
+    if let Some(values) = value.get("matches", &matches_at)? {
+        attribute.matches = Some(matches(&values, &matches_at)?);
     }
-    if let Some(render) = value.get("render") {
-        attribute.render = render_policy(&render, &at.child("render"))?;
+    let render_at = at.child("render");
+    if let Some(render) = value.get("render", &render_at)? {
+        attribute.render = render_policy(&render, &render_at)?;
     }
-    if let Some(level) = value.get("errorLevel") {
-        attribute.error_level = Some(error_level(&level, &at.child("errorLevel"))?);
+    let level_at = at.child("errorLevel");
+    if let Some(level) = value.get("errorLevel", &level_at)? {
+        attribute.error_level = Some(error_level(&level, &level_at)?);
     }
-    if let Some(text) = value.get("description") {
-        attribute.description = Some(string(&text, &at.child("description"), "a string")?);
+    let description_at = at.child("description");
+    if let Some(text) = value.get("description", &description_at)? {
+        attribute.description = Some(string(&text, &description_at, "a string")?);
     }
 
     Ok(attribute)
@@ -247,11 +270,13 @@ fn slot<D: Declaration>(value: &D, at: &Path) -> Result<SchemaSlot, Error> {
     reject_unknown(value, SLOT_KEYS, at)?;
 
     let mut slot = SchemaSlot::default();
-    if let Some(render) = value.get("render") {
-        slot.render = render_policy(&render, &at.child("render"))?;
+    let render_at = at.child("render");
+    if let Some(render) = value.get("render", &render_at)? {
+        slot.render = render_policy(&render, &render_at)?;
     }
-    if let Some(flag) = value.get("required") {
-        slot.required = boolean(&flag, &at.child("required"))?;
+    let required_at = at.child("required");
+    if let Some(flag) = value.get("required", &required_at)? {
+        slot.required = boolean(&flag, &required_at)?;
     }
     Ok(slot)
 }
@@ -277,9 +302,10 @@ fn attribute_type<D: Declaration>(value: &D, at: &Path) -> Result<ValidationType
     }
     match value.as_str() {
         Some(name) => type_name(&name, at),
-        None => Err(Error::new(
-            at.clone(),
-            ErrorKind::Expected("an attribute type name as a string, or an array of them"),
+        None => Err(expected(
+            at,
+            "an attribute type name as a string, or an array of them",
+            value.shape(),
         )),
     }
 }
@@ -321,17 +347,15 @@ fn render_policy<D: Declaration>(value: &D, at: &Path) -> Result<RenderPolicy, E
             RenderPolicy::Hidden
         });
     }
-    value.as_str().map(RenderPolicy::Renamed).ok_or_else(|| {
-        Error::new(
-            at.clone(),
-            ErrorKind::Expected("true, false, or a name to render under"),
-        )
-    })
+    value
+        .as_str()
+        .map(RenderPolicy::Renamed)
+        .ok_or_else(|| expected(at, "true, false, or a name to render under", value.shape()))
 }
 
 /// Convert an error level by its upstream spelling.
 fn error_level<D: Declaration>(value: &D, at: &Path) -> Result<ErrorLevel, Error> {
-    let name = value.as_str().unwrap_or_default();
+    let name = string(value, at, "an error level name")?;
     match name.as_str() {
         "debug" => Ok(ErrorLevel::Debug),
         "info" => Ok(ErrorLevel::Info),
@@ -364,27 +388,30 @@ fn node_key(name: &str, at: &Path) -> Result<NodeType, Error> {
 
 // --- Reading, with the path attached ----------------------------------------
 
+/// The wrong shape at `at`.
+fn expected(at: &Path, what: &'static str, got: Shape) -> Error {
+    Error::new(at.clone(), ErrorKind::Expected { what, got })
+}
+
 /// A property that `keys` listed but `get` did not return: explicitly
 /// `undefined`, in JavaScript. Refused as the object it was meant to be.
 fn present<D: Declaration>(value: Option<D>, at: &Path) -> Result<D, Error> {
-    value.ok_or_else(|| Error::new(at.clone(), ErrorKind::Expected("an object")))
+    value.ok_or_else(|| expected(at, "an object", Shape::Null))
 }
 
 /// Refuse anything that is not an object.
 fn object<D: Declaration>(value: &D, at: &Path) -> Result<(), Error> {
-    if value.shape() == Shape::Object {
-        Ok(())
-    } else {
-        Err(Error::new(at.clone(), ErrorKind::Expected("an object")))
+    match value.shape() {
+        Shape::Object => Ok(()),
+        got => Err(expected(at, "an object", got)),
     }
 }
 
 /// Refuse anything that is not a list.
 fn list<D: Declaration>(value: &D, at: &Path) -> Result<(), Error> {
-    if value.shape() == Shape::List {
-        Ok(())
-    } else {
-        Err(Error::new(at.clone(), ErrorKind::Expected("an array")))
+    match value.shape() {
+        Shape::List => Ok(()),
+        got => Err(expected(at, "an array", got)),
     }
 }
 
@@ -392,14 +419,14 @@ fn list<D: Declaration>(value: &D, at: &Path) -> Result<(), Error> {
 fn boolean<D: Declaration>(value: &D, at: &Path) -> Result<bool, Error> {
     value
         .as_bool()
-        .ok_or_else(|| Error::new(at.clone(), ErrorKind::Expected("true or false")))
+        .ok_or_else(|| expected(at, "true or false", value.shape()))
 }
 
 /// The value as a string, with `what` saying which string was wanted.
 fn string<D: Declaration>(value: &D, at: &Path, what: &'static str) -> Result<String, Error> {
     value
         .as_str()
-        .ok_or_else(|| Error::new(at.clone(), ErrorKind::Expected(what)))
+        .ok_or_else(|| expected(at, what, value.shape()))
 }
 
 /// Refuse a key the vocabulary does not have at this level, naming it.

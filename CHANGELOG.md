@@ -18,6 +18,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   key, with the host's reason, not as an unconvertible function. Errors carry
   a path and a kind, and the host adds the reason that is its own.
 
+  One input the WebAssembly host used to accept is refused now: a `type`
+  written as a list inside a list. Upstream's own type never nests, and the
+  old walker's recursion there was as deep as the document chose. A schema
+  object of any kind -- a class instance, a proxy -- is still read key by
+  key, and a property whose getter throws is refused as unreadable rather
+  than read as absent.
+
 - **A command-line host, `crates/accent-proust-cli`.** One command so far:
   `accent-proust fmt` reprints Markdoc source in canonical form, from files or
   stdin. `--check` prints a unified diff of what would change and exits 1 if
