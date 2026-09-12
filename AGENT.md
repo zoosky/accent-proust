@@ -119,6 +119,13 @@ The test runner ships with `wasm-bindgen-cli` and its version has to match the
 `scripts/build-npm.sh` checks that match rather than letting a mismatch surface
 as broken glue at run time.
 
+The command-line host is a member for the same reason, and its gates are:
+
+```bash
+cargo clippy -p accent-proust-cli --all-targets -- -D warnings
+cargo test -p accent-proust-cli
+```
+
 Clippy runs **twice**, over both feature configurations. Code inside
 `#[cfg(feature = "...")]` is only linted when that feature is on, and a
 `#[cfg(not(feature = "..."))]` block is only compiled when it is off, so a
@@ -164,6 +171,7 @@ All in `.github/workflows/ci.yml`. Every one gates.
 | `MSRV` | `cargo check --lib` on 1.96, over both feature configurations |
 | `Standalone (Invariant 1)` | `scripts/check-standalone.sh` |
 | `WebAssembly` | clippy, build and Node-hosted tests for `accent-proust-wasm` on `wasm32-unknown-unknown`, then `scripts/build-npm.sh --pack` |
+| `CLI` | clippy over every target and the integration tests for `accent-proust-cli`, which drive the built binary |
 | `Vendored corpus` | `scripts/check-vendored.sh` -- `spec/` still byte-for-byte upstream's |
 | `Conformance` | runs the corpus and publishes the count to the run summary |
 

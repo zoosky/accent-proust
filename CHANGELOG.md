@@ -8,6 +8,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A command-line host, `crates/accent-proust-cli`.** One command so far:
+  `accent-proust fmt` reprints Markdoc source in canonical form, from files or
+  stdin. `--check` prints a unified diff of what would change and exits 1 if
+  anything would; `--write` rewrites in place. `format(parse(s))` is
+  idempotent and `parse(format(ast))` round-trips, which is the contract those
+  two flags need and why `fmt` is the command to ship first. Exit codes are 0,
+  1 for a document that would change, and 2 for a usage or read error, kept
+  apart so that CI can tell "the docs are wrong" from "the tool is
+  misconfigured". `validate`, `render`, `parse` and `transform` follow, in the
+  order `specs/features/cli-and-host-seams.md` sequences them.
+
 - **`TagRenderer`, the seam between the renderable tree and its markup.** The
   HTML renderer is now `render::Html` behind a trait, and `render_with` and
   `render_all_with` take any other implementation: a different escaping

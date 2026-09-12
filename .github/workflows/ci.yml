@@ -134,6 +134,22 @@ jobs:
       - name: Build the npm package
         run: ./scripts/build-npm.sh --pack
 
+  # The command-line host. Not in `default-members`, so none of the jobs above
+  # reach it; this is its whole gate. The same shape as `Test` plus clippy over
+  # every target, because the integration tests drive the built binary and are
+  # the part most worth linting.
+  cli:
+    name: CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p accent-proust-cli --all-targets -- -D warnings
+      - run: cargo test -p accent-proust-cli
+
   # The corpus is redistribution, and `spec/UPSTREAM.md` says so in prose: "These
   # files are never edited." Prose does not fail a build, and this one was broken
   # within a month by a dependency bot that bumped a manifest no test reads --

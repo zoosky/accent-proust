@@ -742,3 +742,10 @@ reasoning is shorter to keep than to reconstruct.
    discarded one, in the README's own example; the second because a wildcard
    arm in every host's `find` turns a future variant into a silent `None`,
    and no future variant is foreseen.
+8. **The binary is `accent-proust`, from the package `accent-proust-cli`.**
+   One name across the library, the npm package and the shell, and the crate
+   name says what it is a host of. `fmt`'s two option flags are optional and
+   default to the library's `FormatOptions`, so the command line never
+   restates a default the library owns. `--ordered-list-mode` is a clap enum
+   of the CLI's, mapped onto the library's, because the library's is
+   `#[non_exhaustive]` and not clap's to name.

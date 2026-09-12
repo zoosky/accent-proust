@@ -1,0 +1,42 @@
+[package]
+name = "accent-proust-cli"
+version = "0.10.0"
+edition = "2024"
+license = "MIT"
+description = "The command-line host for accent-proust: format Markdoc, with validate, render and transform to follow."
+repository = "https://github.com/zoosky/accent-proust"
+# The binary is useful in the repository before it is useful on crates.io, and
+# a published binary is a name and a release cadence to own.
+publish = false
+
+# The package is named for what it hosts; the command is named for what the
+# user is running. One name across the library, the npm package and the shell.
+[[bin]]
+name = "accent-proust"
+path = "src/main.rs"
+
+[dependencies]
+accent-proust = { path = "../..", version = "0.10.0" }
+clap = { version = "4", features = ["derive"] }
+# The unified diff `fmt --check` prints. A host's dependency: the library
+# needs no diff, and this is the kind of thing a host carries so that it does
+# not have to.
+similar = "2"
+
+# Repeated rather than inherited from the workspace, for the reason the
+# WebAssembly crate's manifest gives: a shared block would be a decision taken
+# on behalf of every future host. The floor is the same because the promise
+# is: this binary hands arbitrary documents to the parser, and a panic in a
+# tool a CI pipeline runs is a red build with no diagnostic. `main` is where
+# exiting with a code is the correct behaviour, and it takes no allow because
+# it needs none: `ExitCode` is a return value.
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+panic = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+indexing_slicing = "warn"
