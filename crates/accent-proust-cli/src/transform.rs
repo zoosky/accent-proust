@@ -14,7 +14,7 @@ use accent_proust::transform::transform;
 use clap::Args;
 
 use crate::exit::{Exit, emit, report};
-use crate::host::{HostArgs, Sources};
+use crate::host::{HostArgs, configured, load};
 use crate::input::{InputArgs, read};
 use crate::json;
 
@@ -31,19 +31,11 @@ pub struct TransformArgs {
 /// Run `transform`.
 #[must_use]
 pub fn run(args: &TransformArgs) -> ExitCode {
-    let sources = match Sources::read(&args.host) {
-        Ok(sources) => sources,
-        Err(message) => {
-            report("transform", &message);
-            return Exit::Failure.code();
-        }
+    let Some(sources) = load("transform", &args.host) else {
+        return Exit::Failure.code();
     };
-    let config = match crate::host::config(&args.host, &sources) {
-        Ok(config) => config,
-        Err(message) => {
-            report("transform", &message);
-            return Exit::Failure.code();
-        }
+    let Some(config) = configured("transform", &args.host, &sources) else {
+        return Exit::Failure.code();
     };
 
     let tokenizer = PulldownTokenizer::new();

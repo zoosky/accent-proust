@@ -14,7 +14,7 @@ use accent_proust::transform::transform;
 use clap::Args;
 
 use crate::exit::{Exit, emit, report};
-use crate::host::{HostArgs, Sources};
+use crate::host::{HostArgs, configured, load};
 use crate::input::{InputArgs, read};
 
 /// Arguments to `render`.
@@ -30,19 +30,11 @@ pub struct RenderArgs {
 /// Run `render`.
 #[must_use]
 pub fn run(args: &RenderArgs) -> ExitCode {
-    let sources = match Sources::read(&args.host) {
-        Ok(sources) => sources,
-        Err(message) => {
-            report("render", &message);
-            return Exit::Failure.code();
-        }
+    let Some(sources) = load("render", &args.host) else {
+        return Exit::Failure.code();
     };
-    let config = match crate::host::config(&args.host, &sources) {
-        Ok(config) => config,
-        Err(message) => {
-            report("render", &message);
-            return Exit::Failure.code();
-        }
+    let Some(config) = configured("render", &args.host, &sources) else {
+        return Exit::Failure.code();
     };
 
     let tokenizer = PulldownTokenizer::new();

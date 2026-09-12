@@ -3,10 +3,16 @@
 //! The library carries no serde, and the shapes a Markdoc consumer expects
 //! cannot come from a derive anyway: a tag is an object with `$$mdtype`, an
 //! annotation is `{ type, name, value }`, a location's `file` is present only
-//! when set. So the encoders are written out, in the field order upstream
-//! declares, and match what the WebAssembly bindings return for the same
-//! tree -- columns and offsets in bytes rather than UTF-16 units, because a
-//! terminal is not JavaScript.
+//! when set, and a node's `tag` is absent rather than `null` when it has
+//! none. So the encoders are written out, in the order upstream's classes
+//! declare their fields, and they produce what `JSON.stringify` produces
+//! over upstream's objects: numbers in ECMAScript's spelling, through the
+//! library's own coercion, and strings with JSON's escapes.
+//!
+//! Positions are the WebAssembly bindings' shape exactly -- `line`,
+//! `character` and `offset` in UTF-16 code units, `byteOffset` in the
+//! library's bytes -- computed from the source the way the bindings compute
+//! them, so a consumer written against either host reads the other.
 //!
 //! # Why the walks are iterative
 //!
@@ -20,10 +26,42 @@
 
 use std::fmt::Write as _;
 
-use accent_proust::ast::{Location, Node, PathSegment, ValidationError, Value};
+use accent_proust::ast::{Location, Node, PathSegment, Position, ValidationError, Value};
 use accent_proust::grammar::Attribute;
+use accent_proust::render::attribute_value;
 use accent_proust::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
 use accent_proust::validate::ValidateError;
+
+/// Byte offsets into a source, as UTF-16 code-unit offsets.
+///
+/// Built once per document: one entry per byte, so a position converts by
+/// one lookup rather than by counting from the start of the source for every
+/// node in it.
+pub struct Utf16Index {
+    at: Vec<usize>,
+}
+
+impl Utf16Index {
+    /// Index `source`.
+    #[must_use]
+    pub fn new(source: &str) -> Utf16Index {
+        let mut at = Vec::with_capacity(source.len() + 1);
+        let mut units = 0;
+        for ch in source.chars() {
+            for _ in 0..ch.len_utf8() {
+                at.push(units);
+            }
+            units += ch.len_utf16();
+        }
+        at.push(units);
+        Utf16Index { at }
+    }
+
+    /// The code-unit offset of a byte offset. Past the end clamps to the end.
+    fn at(&self, byte: usize) -> usize {
+        self.at.get(byte).or(self.at.last()).copied().unwrap_or(0)
+    }
+}
 
 /// One unit of writing.
 enum Step<'a> {
@@ -31,9 +69,9 @@ enum Step<'a> {
     Text(&'static str),
     /// A string, escaped.
     Str(&'a str),
-    /// A number, or `null` when it is not finite.
+    /// A number, in ECMAScript's spelling, or `null` when it is not finite.
     Num(f64),
-    /// A count: a line number, a byte offset.
+    /// A count: a line number.
     Count(usize),
     /// `true` or `false`.
     Bool(bool),
@@ -53,9 +91,10 @@ enum Step<'a> {
     Error(&'a ValidationError<'a>),
 }
 
-/// Write a syntax tree.
-pub fn node(out: &mut String, root: &Node<'_>) {
-    run(out, vec![Step::Node(root)]);
+/// Write a syntax tree parsed from `source`, whose positions are converted
+/// through it.
+pub fn node(out: &mut String, source: &str, root: &Node<'_>) {
+    run(out, &Utf16Index::new(source), vec![Step::Node(root)]);
 }
 
 /// Write a renderable tree's nodes as one array, which is what the
@@ -71,19 +110,22 @@ pub fn renderable(out: &mut String, nodes: &[RenderableTreeNode]) {
             .map(|node| vec![Step::Renderable(node)])
             .collect(),
     );
-    run(out, steps);
+    // A renderable tree carries no locations, so nothing here consults the
+    // index; it exists because the walker has one signature.
+    run(out, &Utf16Index::new(""), steps);
 }
 
 /// Write one input's validation errors: `{"file": label, "errors": [...]}`.
-pub fn diagnostics(out: &mut String, label: &str, errors: &[ValidateError<'_>]) {
+pub fn diagnostics(out: &mut String, label: &str, source: &str, errors: &[ValidateError<'_>]) {
+    let index = Utf16Index::new(source);
     out.push_str("{\"file\":");
     string(out, label);
     out.push_str(",\"errors\":[");
-    for (index, found) in errors.iter().enumerate() {
-        if index > 0 {
+    for (position, found) in errors.iter().enumerate() {
+        if position > 0 {
             out.push(',');
         }
-        validate_error(out, found);
+        validate_error(out, &index, found);
     }
     out.push_str("]}");
 }
@@ -92,7 +134,7 @@ pub fn diagnostics(out: &mut String, label: &str, errors: &[ValidateError<'_>]) 
 ///
 /// The worklist is a stack in pop order: what is pushed last is written
 /// first, which is how every container schedules itself.
-fn run(out: &mut String, mut steps: Vec<Step<'_>>) {
+fn run(out: &mut String, index: &Utf16Index, mut steps: Vec<Step<'_>>) {
     while let Some(step) = steps.pop() {
         match step {
             Step::Text(text) => out.push_str(text),
@@ -118,8 +160,8 @@ fn run(out: &mut String, mut steps: Vec<Step<'_>>) {
                 ),
                 _ => steps.push(Step::Text("null")),
             },
-            Step::Location(spot) => location(out, spot),
-            Step::Error(found) => validation_error(out, found),
+            Step::Location(spot) => location(out, index, spot),
+            Step::Error(found) => validation_error(out, index, found),
         }
     }
 }
@@ -173,7 +215,8 @@ fn push_value<'a>(steps: &mut Vec<Step<'a>>, value: &'a Value) {
                 .map(|(key, item)| vec![Step::Str(key), Step::Text(":"), Step::Value(item)])
                 .collect(),
         ),
-        // Upstream's own shapes for the two values that are not data.
+        // Upstream's own shapes for the two values that are not data, in
+        // their classes' field order.
         Value::Function(function) => {
             steps.push(Step::Text("}"));
             push_seq(
@@ -282,9 +325,48 @@ fn push_tag<'a>(steps: &mut Vec<Step<'a>>, tag: &'a Tag) {
     steps.push(Step::Text("{\"$$mdtype\":\"Tag\",\"name\":"));
 }
 
-/// Schedule a syntax-tree node, every field, in upstream's order.
+/// Schedule a syntax-tree node, every field, in the order upstream's `Node`
+/// class declares them (`ast/node.ts`): `$$mdtype`, `attributes`, `slots`,
+/// `children`, `errors`, `lines`, `type`, `tag`, `annotations`, `inline`,
+/// `location`. `tag` and `location` are optional there, and `JSON.stringify`
+/// omits an undefined property, so both are omitted rather than `null`.
 fn push_node<'a>(steps: &mut Vec<Step<'a>>, node: &'a Node<'a>) {
     steps.push(Step::Text("}"));
+
+    if let Some(spot) = &node.location {
+        steps.push(Step::Location(spot));
+        steps.push(Step::Text(",\"location\":"));
+    }
+
+    steps.push(Step::Bool(node.inline));
+    steps.push(Step::Text(",\"inline\":"));
+
+    push_seq(
+        steps,
+        "[",
+        "]",
+        node.annotations.iter().map(annotation).collect(),
+    );
+    steps.push(Step::Text(",\"annotations\":"));
+
+    if let Some(tag) = &node.tag {
+        steps.push(Step::Str(tag));
+        steps.push(Step::Text(",\"tag\":"));
+    }
+
+    steps.push(Step::Str(node.node_type.as_str()));
+    steps.push(Step::Text(",\"type\":"));
+
+    push_seq(
+        steps,
+        "[",
+        "]",
+        node.lines
+            .iter()
+            .map(|line| vec![Step::Count(*line)])
+            .collect(),
+    );
+    steps.push(Step::Text(",\"lines\":"));
 
     push_seq(
         steps,
@@ -301,29 +383,12 @@ fn push_node<'a>(steps: &mut Vec<Step<'a>>, node: &'a Node<'a>) {
         steps,
         "[",
         "]",
-        node.annotations.iter().map(annotation).collect(),
-    );
-    steps.push(Step::Text(",\"annotations\":"));
-
-    steps.push(Step::Bool(node.inline));
-    steps.push(Step::Text(",\"inline\":"));
-
-    match &node.location {
-        Some(spot) => steps.push(Step::Location(spot)),
-        None => steps.push(Step::Text("null")),
-    }
-    steps.push(Step::Text(",\"location\":"));
-
-    push_seq(
-        steps,
-        "[",
-        "]",
-        node.lines
+        node.children
             .iter()
-            .map(|line| vec![Step::Count(*line)])
+            .map(|child| vec![Step::Node(child)])
             .collect(),
     );
-    steps.push(Step::Text(",\"lines\":"));
+    steps.push(Step::Text(",\"children\":"));
 
     push_seq(
         steps,
@@ -338,17 +403,6 @@ fn push_node<'a>(steps: &mut Vec<Step<'a>>, node: &'a Node<'a>) {
 
     push_seq(
         steps,
-        "[",
-        "]",
-        node.children
-            .iter()
-            .map(|child| vec![Step::Node(child)])
-            .collect(),
-    );
-    steps.push(Step::Text(",\"children\":"));
-
-    push_seq(
-        steps,
         "{",
         "}",
         node.attributes
@@ -356,16 +410,7 @@ fn push_node<'a>(steps: &mut Vec<Step<'a>>, node: &'a Node<'a>) {
             .map(|(key, value)| vec![Step::Str(key), Step::Text(":"), Step::Value(value)])
             .collect(),
     );
-    steps.push(Step::Text(",\"attributes\":"));
-
-    match &node.tag {
-        Some(tag) => steps.push(Step::Str(tag)),
-        None => steps.push(Step::Text("null")),
-    }
-    steps.push(Step::Text(",\"tag\":"));
-
-    steps.push(Step::Str(node.node_type.as_str()));
-    steps.push(Step::Text("{\"$$mdtype\":\"Node\",\"type\":"));
+    steps.push(Step::Text("{\"$$mdtype\":\"Node\",\"attributes\":"));
 }
 
 /// An annotation in upstream's shape: `{ type, name, value }`, with the
@@ -390,12 +435,12 @@ fn annotation(attribute: &Attribute) -> Vec<Step<'_>> {
 
 /// A validate error in the bindings' shape: `type`, `lines`, `location` when
 /// known, and the nested `error`.
-fn validate_error(out: &mut String, found: &ValidateError<'_>) {
+fn validate_error(out: &mut String, index: &Utf16Index, found: &ValidateError<'_>) {
     out.push_str("{\"type\":");
     string(out, found.node_type.as_str());
     out.push_str(",\"lines\":[");
-    for (index, line) in found.lines.iter().enumerate() {
-        if index > 0 {
+    for (position, line) in found.lines.iter().enumerate() {
+        if position > 0 {
             out.push(',');
         }
         let _ = write!(out, "{line}");
@@ -403,15 +448,15 @@ fn validate_error(out: &mut String, found: &ValidateError<'_>) {
     out.push(']');
     if let Some(spot) = &found.location {
         out.push_str(",\"location\":");
-        location(out, spot);
+        location(out, index, spot);
     }
     out.push_str(",\"error\":");
-    validation_error(out, &found.error);
+    validation_error(out, index, &found.error);
     out.push('}');
 }
 
 /// The inner error: `id`, `level`, `message`, and `location` when known.
-fn validation_error(out: &mut String, found: &ValidationError<'_>) {
+fn validation_error(out: &mut String, index: &Utf16Index, found: &ValidationError<'_>) {
     out.push_str("{\"id\":");
     string(out, found.id);
     out.push_str(",\"level\":");
@@ -420,41 +465,56 @@ fn validation_error(out: &mut String, found: &ValidationError<'_>) {
     string(out, &found.message);
     if let Some(spot) = &found.location {
         out.push_str(",\"location\":");
-        location(out, spot);
+        location(out, index, spot);
     }
     out.push('}');
 }
 
-/// A location: `file` only when the caller set one, then `start` and `end`
-/// as `line`, `column` and `offset`, all in bytes and zero-based as the
-/// library counts them.
-fn location(out: &mut String, spot: &Location<'_>) {
+/// A location: `file` only when the caller set one, then `start` and `end`.
+fn location(out: &mut String, index: &Utf16Index, spot: &Location<'_>) {
     out.push('{');
     if let Some(file) = spot.file {
         out.push_str("\"file\":");
         string(out, file);
         out.push(',');
     }
+    out.push_str("\"start\":");
+    position(out, index, &spot.start);
+    out.push_str(",\"end\":");
+    position(out, index, &spot.end);
+    out.push('}');
+}
+
+/// One edge of a location, as the bindings write it: `line` zero-based,
+/// `character` and `offset` in UTF-16 code units, `byteOffset` in bytes.
+///
+/// `column` is a byte count from the start of the line, so the line's own
+/// start is converted too: the difference of two absolute code-unit offsets
+/// is the column in code units, and subtracting the byte column from the byte
+/// offset is how the line start is found.
+fn position(out: &mut String, index: &Utf16Index, edge: &Position) {
+    let offset = index.at(edge.offset);
+    let line_start = index.at(edge.offset.saturating_sub(edge.column));
     let _ = write!(
         out,
-        "\"start\":{{\"line\":{},\"column\":{},\"offset\":{}}},\"end\":{{\"line\":{},\"column\":{},\"offset\":{}}}}}",
-        spot.start.line,
-        spot.start.column,
-        spot.start.offset,
-        spot.end.line,
-        spot.end.column,
-        spot.end.offset
+        "{{\"line\":{},\"character\":{},\"offset\":{offset},\"byteOffset\":{}}}",
+        edge.line,
+        offset.saturating_sub(line_start),
+        edge.offset
     );
 }
 
-/// A JSON string: the two characters JSON requires escaped, the controls it
-/// forbids, and nothing else -- UTF-8 is JSON as it stands.
+/// A JSON string with `JSON.stringify`'s escapes: the two characters JSON
+/// requires, the five controls it names, `\u00xx` for the rest, and nothing
+/// else -- UTF-8 is JSON as it stands.
 fn string(out: &mut String, text: &str) {
     out.push('"');
     for ch in text.chars() {
         match ch {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
@@ -467,12 +527,14 @@ fn string(out: &mut String, text: &str) {
     out.push('"');
 }
 
-/// A JSON number. Rust's `Display` for `f64` is the shortest round-trip
-/// decimal with no exponent, which is JSON; a value JSON cannot spell -- an
-/// infinity, `NaN` -- is `null`, as `JSON.stringify` has it.
+/// A JSON number, spelled as ECMAScript spells it: `1e21` is `1e+21`, `-0`
+/// is `0`, and a value JSON cannot hold -- an infinity, `NaN` -- is `null`,
+/// as `JSON.stringify` has it. The spelling is the library's own coercion,
+/// so this and upstream agree on every value.
 fn num(out: &mut String, number: f64) {
     if number.is_finite() {
-        let _ = write!(out, "{number}");
+        let value = RenderableTreeNodes::One(RenderableTreeNode::Scalar(Scalar::Number(number)));
+        out.push_str(&attribute_value(&value));
     } else {
         out.push_str("null");
     }

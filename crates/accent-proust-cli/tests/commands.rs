@@ -350,10 +350,12 @@ fn parse_prints_the_document_node() -> Outcome {
     let output = run(&["parse"], Some("# Title\n"))?;
     assert_eq!(output.status.code(), Some(0), "{}", text(output.stderr)?);
     let json = text(output.stdout)?;
+    // Upstream's field order: `attributes` first after the marker.
     assert!(
-        json.starts_with("{\"$$mdtype\":\"Node\",\"type\":\"document\""),
+        json.starts_with("{\"$$mdtype\":\"Node\",\"attributes\":{"),
         "{json}"
     );
+    assert!(json.contains("\"type\":\"document\""), "{json}");
     assert!(json.contains("\"type\":\"heading\""), "{json}");
     assert!(json.contains("\"attributes\":{\"level\":1}"), "{json}");
     assert!(
@@ -369,5 +371,183 @@ fn parse_escapes_what_json_must() -> Outcome {
     assert_eq!(output.status.code(), Some(0));
     let json = text(output.stdout)?;
     assert!(json.contains("say \\\"hi\\\"\\\\"), "{json}");
+    Ok(())
+}
+
+// --- what the review of this step found unpinned ----------------------------
+
+/// A directory of this test's own, removed when dropped.
+fn scratch() -> Result<tempfile::TempDir, Box<dyn Error>> {
+    Ok(tempfile::Builder::new()
+        .prefix("accent-proust-cli-")
+        .tempdir()?)
+}
+
+#[test]
+fn a_non_text_file_beside_the_partials_is_passed_over() -> Outcome {
+    // An image in the partials directory is not a partial and not an error;
+    // a document that named it would be told so where it did.
+    let dir = scratch()?;
+    std::fs::write(dir.path().join("header.md"), "# Welcome\n")?;
+    std::fs::write(dir.path().join("logo.png"), [0xFF, 0xFE, 0x00, 0x80])?;
+    let page = dir.path().join("page.md");
+    std::fs::write(&page, "{% partial file=\"header.md\" /%}\n")?;
+
+    let output = run(
+        &[
+            "render",
+            "--partials",
+            &dir.path().to_string_lossy(),
+            &page.to_string_lossy(),
+        ],
+        None,
+    )?;
+    assert_eq!(output.status.code(), Some(0), "{}", text(output.stderr)?);
+    assert!(text(output.stdout)?.contains("<h1>Welcome</h1>"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_directory_symlink_under_partials_is_not_followed() -> Outcome {
+    // A link back up the tree would otherwise be walked until the file
+    // system gave up. A link to a file is still read.
+    let dir = scratch()?;
+    let partials = dir.path().join("partials");
+    std::fs::create_dir_all(partials.join("sub"))?;
+    std::fs::write(partials.join("header.md"), "# Welcome\n")?;
+    std::os::unix::fs::symlink("..", partials.join("sub").join("loop"))?;
+    std::os::unix::fs::symlink("../header.md", partials.join("sub").join("again.md"))?;
+    let page = dir.path().join("page.md");
+    std::fs::write(
+        &page,
+        "{% partial file=\"header.md\" /%}\n{% partial file=\"sub/again.md\" /%}\n",
+    )?;
+
+    let output = run(
+        &[
+            "render",
+            "--partials",
+            &partials.to_string_lossy(),
+            &page.to_string_lossy(),
+        ],
+        None,
+    )?;
+    assert_eq!(output.status.code(), Some(0), "{}", text(output.stderr)?);
+    assert_eq!(text(output.stdout)?.matches("<h1>Welcome</h1>").count(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_numeric_yaml_key_is_its_text() -> Outcome {
+    // `2024:` is the key `2024`, as it would be as a JavaScript object key,
+    // and the grammar admits a tag by that name.
+    let dir = scratch()?;
+    let config = dir.path().join("config.yaml");
+    std::fs::write(&config, "tags:\n  2024:\n    render: b\n")?;
+    let page = dir.path().join("page.md");
+    std::fs::write(&page, "{% 2024 %}x{% /2024 %}\n")?;
+
+    let output = run(
+        &[
+            "render",
+            "--config",
+            &config.to_string_lossy(),
+            &page.to_string_lossy(),
+        ],
+        None,
+    )?;
+    assert_eq!(output.status.code(), Some(0), "{}", text(output.stderr)?);
+    let html = text(output.stdout)?;
+    assert!(html.contains("<b>"), "{html}");
+    Ok(())
+}
+
+#[test]
+fn a_second_yaml_document_is_refused_rather_than_dropped() -> Outcome {
+    let dir = scratch()?;
+    let config = dir.path().join("config.yaml");
+    std::fs::write(
+        &config,
+        "tags:\n  callout:\n    render: aside\n---\ntags:\n  other:\n    render: div\n",
+    )?;
+    let output = run(
+        &[
+            "validate",
+            "--config",
+            &config.to_string_lossy(),
+            &fixture("callout.md"),
+        ],
+        None,
+    )?;
+    assert_eq!(output.status.code(), Some(2));
+    assert!(text(output.stderr)?.contains("one YAML document"));
+    Ok(())
+}
+
+#[test]
+fn an_empty_var_name_is_refused() -> Outcome {
+    // What `--var $NAME=3` becomes when `NAME` is unset in the shell.
+    let output = run(&["render", "--var", "=3", &fixture("vars.md")], None)?;
+    assert_eq!(output.status.code(), Some(2));
+    assert!(text(output.stderr)?.contains("NAME=VALUE"));
+    Ok(())
+}
+
+#[test]
+fn parse_spells_numbers_as_ecmascript_and_omits_absent_fields() -> Outcome {
+    let output = run(
+        &["parse"],
+        Some("{% x n=1000000000000000000000 m=0.0000001 %}{% /x %}\n"),
+    )?;
+    assert_eq!(output.status.code(), Some(0), "{}", text(output.stderr)?);
+    let json = text(output.stdout)?;
+    // `JSON.stringify(Markdoc.parse(source))`: field order, spelling, and no
+    // `tag: null` on a node that has no tag.
+    assert!(
+        json.starts_with("{\"$$mdtype\":\"Node\",\"attributes\":{"),
+        "{json}"
+    );
+    assert!(json.contains("\"n\":1e+21"), "{json}");
+    assert!(json.contains("\"m\":1e-7"), "{json}");
+    assert!(json.contains("\"tag\":\"x\""), "{json}");
+    assert!(!json.contains("\"tag\":null"), "{json}");
+    assert!(!json.contains("\"location\":null"), "{json}");
+    Ok(())
+}
+
+#[test]
+fn parse_escapes_controls_as_json_stringify_does() -> Outcome {
+    let output = run(&["parse"], Some("a\u{8}b\u{1}c\n"))?;
+    assert_eq!(output.status.code(), Some(0));
+    let json = text(output.stdout)?;
+    assert!(json.contains("a\\bb\\u0001c"), "{json}");
+    Ok(())
+}
+
+#[test]
+fn validate_json_positions_are_the_bindings_in_utf16_units() -> Outcome {
+    // `éé` is two characters, two code units, and four bytes.
+    let output = run(
+        &["validate", "--format", "json", "--file", "p.md"],
+        Some("éé{% nope %}x{% /nope %}\n"),
+    )?;
+    assert_eq!(output.status.code(), Some(1));
+    let json = text(output.stdout)?;
+    assert!(
+        json.contains("\"start\":{\"line\":0,\"character\":2,\"offset\":2,\"byteOffset\":4}"),
+        "{json}"
+    );
+    Ok(())
+}
+
+#[test]
+fn validate_human_column_counts_characters() -> Outcome {
+    let output = run(
+        &["validate", "--file", "p.md"],
+        Some("éé{% nope %}x{% /nope %}\n"),
+    )?;
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(output.stdout)?.starts_with("p.md:1:3: critical[tag-undefined]"));
     Ok(())
 }

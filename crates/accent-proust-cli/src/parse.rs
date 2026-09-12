@@ -40,7 +40,7 @@ pub fn run(args: &ParseArgs) -> ExitCode {
         };
         let options = ParseOptions::new().file(&input.label).location(true);
         let document = parse_with(&input.source, &tokenizer, &options);
-        json::node(&mut out, &document);
+        json::node(&mut out, &input.source, &document);
         out.push('\n');
     }
 

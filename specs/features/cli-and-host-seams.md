@@ -778,8 +778,14 @@ reasoning is shorter to keep than to reconstruct.
     one JSON value per input, one per line, rather than one array for the
     run: it composes with `jq` and with anything that reads a line at a time.
     `validate --format json` does the same, one object per input carrying
-    `file` and `errors`, in the shape the WebAssembly bindings return but
-    with columns and offsets in bytes, because a terminal is not JavaScript.
+    `file` and `errors`, in the shape the WebAssembly bindings return --
+    positions included, `character` and `offset` in UTF-16 code units and
+    `byteOffset` in bytes, computed from the source as the bindings compute
+    them, so a consumer written against either host reads the other. The
+    human format counts its column in characters, as an editor does. `parse`
+    prints what `JSON.stringify(Markdoc.parse(source))` gives, byte for
+    byte: upstream's field order, `tag` and `location` omitted when absent,
+    numbers in ECMAScript's spelling through the library's own coercion.
     `validate` exits 1 only on `error` or `critical`; a `warning` is printed
     and passes, because the library's `error_level` exists to ship a rule
     that is surfaced but not yet enforced, and a command that failed on it

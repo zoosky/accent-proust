@@ -25,9 +25,10 @@ target/release/accent-proust --help
 | `parse` | Prints the syntax tree as JSON | No |
 
 Every command reads the files named on its command line, or stdin when none
-is named; `--file LABEL` is what stdin is called in diagnostics. A file that
-cannot be read is reported and the run goes on, so one bad path does not hide
-the rest.
+is named. `validate`, `render`, `transform` and `parse` take `--file LABEL`
+for what stdin is called in diagnostics; `fmt` has no diagnostics to label
+it in. A file that cannot be read is reported and the run goes on, so one
+bad path does not hide the rest.
 
 ### `fmt`
 
@@ -69,11 +70,14 @@ accent-proust validate --config schema.yaml --format json docs/page.md
 ```
 
 One line per error, `path:line:column: level[id]: message`, lines and columns
-counted from one. `--format json` prints one object per input, one per line,
-carrying `file` and its `errors` in the shape the WebAssembly bindings return
--- columns and offsets in bytes, because a terminal is not JavaScript. Error
-ids are upstream Markdoc's, so tooling written against its codes reads either
-format unchanged.
+counted from one and the column in characters, as an editor shows it.
+`--format json` prints one object per input, one per line, carrying `file`
+and its `errors` in the shape the WebAssembly bindings return, positions
+included: `line`, `character` and `offset` in UTF-16 code units and
+`byteOffset` in bytes, exactly as the bindings write them, so a consumer
+written against either host reads the other. Error ids are upstream
+Markdoc's, so tooling written against its codes reads either format
+unchanged.
 
 Exit 1 means an error at level `error` or `critical`. A `warning`, `info` or
 `debug` is printed and does not fail the run: that is how a schema ships a
@@ -82,12 +86,15 @@ rule it wants surfaced but not enforced yet.
 ### `render`, `transform`, `parse`
 
 `render` prints HTML, inputs concatenated in order. `transform` prints the
-renderable tree as JSON, one value per input, one per line -- a tag is an
-object carrying `$$mdtype: "Tag"`, `name`, `attributes` and `children`, as
-upstream's renderers expect. `parse` prints the syntax tree the same way,
-every node with its type, attributes, children, lines, location and the
-errors the parser itself reported, and reads no configuration because parsing
-needs none.
+renderable tree as JSON, one array per input, one per line -- a tag is an
+object carrying `$$mdtype: "Tag"`, `name`, `attributes` and `children`, in
+that order, as upstream's renderers expect and as `JSON.stringify` writes
+upstream's own. `parse` prints the syntax tree the same way, every node in
+the field order of upstream's `Node` class, with numbers in ECMAScript's
+spelling and `tag` and `location` omitted rather than `null` when a node has
+none -- so the output is what `JSON.stringify(Markdoc.parse(source))` gives,
+byte for byte, with positions in the bindings' shape. It reads no
+configuration because parsing needs none.
 
 ## Configuration
 
@@ -99,8 +106,9 @@ accent-proust render \
   docs/page.md
 ```
 
-`--config` is a YAML or JSON file declaring `tags`, `nodes` and `variables`,
-in the vocabulary [`accent-proust-schema-config`](../accent-proust-schema-config)
+`--config` is a YAML or JSON file -- one document; a second after `---` is
+refused rather than dropped -- declaring `tags`, `nodes` and `variables`, in
+the vocabulary [`accent-proust-schema-config`](../accent-proust-schema-config)
 defines and the WebAssembly bindings read too:
 
 ```yaml
@@ -124,9 +132,12 @@ never a hook-level check, so it is never stricter than a Rust host, only more
 convenient.** A schema whose real enforcement lives in a hook passes here and
 fails there.
 
-`--partials DIR` reads every file under the directory, at any depth, and
-`{% partial file="sections/intro.md" /%}` finds it by that path. This is the
-thing the browser cannot do, and the reason a command-line host exists.
+`--partials DIR` reads every UTF-8 text file under the directory, at any
+depth, and `{% partial file="sections/intro.md" /%}` finds it by that path.
+A file that is not text -- an image beside the partials -- is passed over,
+and a document that names it is told so where it does. A symbolic link to a
+file is read; one to a directory is not followed. This is the thing the
+browser cannot do, and the reason a command-line host exists.
 
 `--var NAME=VALUE` declares a variable, and overrides one the file declared.
 `VALUE` is read as YAML by the same reader as the file, so the two can never
