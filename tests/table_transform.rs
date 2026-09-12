@@ -120,7 +120,7 @@ fn does_not_produce_errors_for_valid_conditional_rows() {
 }
 
 /// Upstream's "does not produce errors for valid conditionals within a cell",
-/// inverted by `DIVERGENCES.md` entry 12.
+/// inverted by `DIVERGENCES.md` entry 13.
 ///
 /// The conditional is written two spaces in under `* Cell 2`, which upstream
 /// reads as that cell's content because its block-tag rule runs after the
