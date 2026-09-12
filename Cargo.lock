@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "accent-proust"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "indexmap",
  "proptest",
@@ -15,7 +15,7 @@ dependencies = [
 
 [[package]]
 name = "accent-proust-cli"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "accent-proust",
  "accent-proust-schema-config",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "accent-proust-schema-config"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "accent-proust",
  "indexmap",
@@ -36,7 +36,7 @@ dependencies = [
 
 [[package]]
 name = "accent-proust-wasm"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "accent-proust",
  "accent-proust-schema-config",
