@@ -101,12 +101,14 @@ features:
       answers where a schema comes from, and <code>TagRenderer</code> owns
       escaping and HTML policy. The crate does no I/O and reads no
       configuration.
-  - title: The same engine in a browser
+  - title: The same engine in a browser, and in a shell
     body: >-
       A WebAssembly binding publishes <code>validate</code>,
       <code>renderHtml</code>, <code>transform</code> and <code>format</code>
-      to npm. Diagnostic positions arrive in UTF-16 code units, so an editor
-      underlines the right character without converting anything.
+      to npm, with diagnostic positions in UTF-16 code units. The
+      <code>accent-proust</code> command formats, validates and renders from
+      the shell, reads the same schema file, and exits 1 when a document is
+      wrong: a documentation repository's CI gate.
   - title: Panic-freedom as a lint, not a habit
     body: >-
       <code>unsafe_code</code> is forbidden and

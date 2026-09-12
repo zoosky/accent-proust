@@ -8,8 +8,8 @@ menu:
   order: 3
 description: >-
   Documentation for accent-proust: the Rust API, the JavaScript and WebAssembly
-  bindings, the Markdoc language, the architecture, and every declared
-  divergence from upstream Markdoc.
+  bindings, the command line, the Markdoc language, the architecture, and
+  every declared divergence from upstream Markdoc.
 ---
 
 `accent-proust` implements the [Markdoc](https://markdoc.dev) language in Rust.
@@ -32,8 +32,9 @@ Pick by where your code runs.
 
 | You are writing | Read |
 |---|---|
-| A Rust program, a CLI, a static site generator | [Rust](/docs/rust) |
+| A Rust program, a static site generator | [Rust](/docs/rust) |
 | A browser editor, a preview pane, a Node tool | [JavaScript](/docs/javascript) |
+| A CI pipeline, a shell script, or nothing at all yet | [Command line](/docs/cli) |
 | Markdoc documents, or a schema for them | [The Markdoc language](/docs/language) |
 | A host that replaces part of the engine | [Architecture](/docs/architecture) |
 | Something that must match upstream exactly | [Divergences](/docs/divergences) |

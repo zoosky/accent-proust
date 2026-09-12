@@ -193,6 +193,11 @@ keystroke needs. Call `config.free()` when you are done with it.
 `nodes` takes the same shape as `tags`, keyed by Markdoc node type, so you can
 change what a `heading` renders as.
 
+The vocabulary -- which keys a declaration may carry, and what each means -- is
+[`accent-proust-schema-config`](https://github.com/zoosky/accent-proust/tree/main/crates/accent-proust-schema-config),
+shared with the [command line](/docs/cli): a schema file written for one host is read by the
+other unchanged.
+
 ### What crosses the boundary
 
 ```mermaid
@@ -218,7 +223,14 @@ A schema is data and crosses whole: `render`, `children`, `attributes`, `slots`,
 
 Attribute types are written as the strings `"String"`, `"Number"`, `"Boolean"`,
 `"Object"`, `"Array"`. Markdoc uses the JavaScript constructors, and a
-constructor is a function. An array of them is a union.
+constructor is a function. An array of them is a union, one level deep: a
+list inside the list is refused.
+
+A schema object is read key by key, so a class instance or a proxy works as
+well as an object literal. Only a value carried through whole -- an attribute's
+`default`, a variable -- has to be a plain object, because a `Date` or a `Map`
+would flatten to `{}` on the way. An explicitly `undefined` variable is
+`null`, which is what `user: session?.user` means by it.
 
 ### What does not
 
@@ -239,7 +251,9 @@ expected String, Number, Boolean, Object, Array, or an array of those
 ```
 
 A schema that half arrives is worse than one that does not, because the missing
-half is invisible until an author trips over it.
+half is invisible until an author trips over it. For the same reason a property
+whose getter throws is refused as unreadable rather than read as absent: a
+block that was written and then lost is that failure in another form.
 
 ## Not supported yet
 

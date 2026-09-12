@@ -7,7 +7,7 @@ lead: >-
   complete.
 menu:
   visible: true
-  order: 5
+  order: 6
 description: >-
   Every deliberate difference between accent-proust and upstream Markdoc
   v0.5.9, grouped by cause: the CommonMark engine, deliberate limits, API
