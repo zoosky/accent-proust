@@ -338,10 +338,10 @@ pub trait TagRenderer {
     /// Write the markup that opens `tag`, and say whether children follow.
     fn open(&self, out: &mut String, tag: &Tag) -> Children;
 
-    /// Write the markup that closes the tag named `name`.
+    /// Write the markup that closes `tag`.
     ///
-    /// Called only after `open` returned [`Children::Render`].
-    fn close(&self, out: &mut String, name: &str);
+    /// Called only after `open` returned [`Children::Render`] for it.
+    fn close(&self, out: &mut String, tag: &Tag);
 
     /// Write `text` in text position, escaped to the host's policy.
     fn text(&self, out: &mut String, text: &str);
@@ -356,6 +356,12 @@ different host makes differently, and all three are inside the one method.
 
 `text` is separate because escaping applies to scalars in text position, which
 the stack reaches without going through `open` at all.
+
+`close` takes the whole `Tag` as well, for the same reason in the other
+direction: whatever `open` derived from the attributes -- an element name
+chosen by a `level`, say -- `close` has to derive again, and it can only do
+that from the same input. A name alone would make the plain HTML case work and
+the policy case silently wrong, which is the case the seam exists for.
 
 ### Compatibility
 

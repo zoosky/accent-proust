@@ -78,8 +78,21 @@ pub fn escape_html(input: &str) -> Cow<'_, str> {
 /// Append the escaped form of `input` to `out`.
 ///
 /// The renderer builds one string for a whole document, so it appends rather
-/// than allocating a `Cow` per text node.
-pub(crate) fn escape_html_into(out: &mut String, input: &str) {
+/// than allocating a `Cow` per text node. Public for the same reason: a
+/// [`TagRenderer`](super::TagRenderer) writes into the document's one string,
+/// and a host keeping upstream's escaping while changing something else should
+/// not have to pay an allocation per text node to do it.
+///
+/// # Examples
+///
+/// ```
+/// use accent_proust::render::escape_html_into;
+///
+/// let mut out = String::from("<p>");
+/// escape_html_into(&mut out, "a < b");
+/// assert_eq!(out, "<p>a &lt; b");
+/// ```
+pub fn escape_html_into(out: &mut String, input: &str) {
     for ch in input.chars() {
         match ch {
             '&' => out.push_str("&amp;"),
