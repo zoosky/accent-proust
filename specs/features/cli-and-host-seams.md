@@ -97,8 +97,10 @@ it as a free function to mirror upstream's `transformer.findSchema`.
 ### The trait
 
 ```rust
-/// What a lookup is keyed by: a tag by name, a node by type.
-#[non_exhaustive]
+/// What a lookup is keyed by: a tag by name, a node by type. Exhaustive: the
+/// one public enum that is, because its variants are the two ways a node is
+/// looked up rather than a list that grows with Markdoc, and an implementor
+/// should stop compiling if that ever changed rather than silently miss.
 pub enum SchemaKey<'a> {
     Tag(&'a str),
     Node(NodeType),
@@ -268,27 +270,36 @@ After:
 ```rust
 let mut schemas = MapSchemaSource::builtin();
 schemas.insert_tag("callout", schema);
-
-let mut config = builtins::config();
-config.schemas = Arc::new(schemas);
+let config = builtins::config_with(Arc::new(schemas));
 ```
 
 Three lines instead of two, and one concept more. That is the price of the
 single mechanism, and it is worth paying once rather than documenting a
 precedence rule forever -- but it lands in the first example every new reader
-meets, in the README, the crate docs and the site. Provide a shorthand so the
-common case stays two lines:
+meets, in the README, the crate docs and the site, so the entry point has to
+be the cheap one:
 
 ```rust
+/// `config()` with the caller's source: the built-in functions added, and the
+/// built-in schemas built exactly once, by whoever called `builtin()`.
+pub fn builtins::config_with(schemas: Arc<dyn SchemaSource + Send + Sync>) -> Config;
+
 impl Config<'_> {
-    /// Replace the schema source. Chainable, for the registering case.
+    /// Replace the schema source on a config already held.
     pub fn with_schemas(self, schemas: Arc<dyn SchemaSource + Send + Sync>) -> Self;
 }
 ```
 
-`Arc::get_mut` is not the shorthand to reach for. It fails whenever the source
-is already shared, which is exactly when a caller would want it, so it would
-work in the doctest and fail in the host.
+`builtins::config().with_schemas(..)` is the shape to avoid, and the first
+implementation shipped it: `config()` builds the built-in source, and the
+caller then builds it again and throws the first away -- the rebuild the
+`builtins` module exists to prevent. `config_with` is the entry point for that
+reason; `with_schemas` stays for the host that swaps a source on a config it
+did not construct.
+
+`Arc::get_mut` is not a shorthand to reach for either. It fails whenever the
+source is already shared, which is exactly when a caller would want it, so it
+would work in the doctest and fail in the host.
 
 #### What this costs the WebAssembly host
 
@@ -725,3 +736,9 @@ reasoning is shorter to keep than to reconstruct.
    lives in one place, the second because the two hosts that merge
    declarations want `extend`, not a loop of inserts. `node_types` joins
    `tag_names` as a provided method, since `Debug` printed both.
+7. **`builtins::config_with` is the registering entry point**, and
+   `SchemaKey` is exhaustive. Both came out of reviewing step 2. The first
+   because `config().with_schemas(..)` built the built-in source twice and
+   discarded one, in the README's own example; the second because a wildcard
+   arm in every host's `find` turns a future variant into a silent `None`,
+   and no future variant is foreseen.

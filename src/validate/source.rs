@@ -14,8 +14,14 @@ use crate::validate::schema::Schema;
 /// [`for_node`](SchemaKey::for_node). A tag node is never looked up by its
 /// type, even though `tag` is one: the tag's name is the key, and a source
 /// that defines no schema for that name has defined nothing for the node.
+///
+/// Exhaustive, unlike the other public enums in this crate. Those grow with
+/// Markdoc; this one has the two variants a node can be looked up by, and no
+/// third is foreseen. An implementation of [`SchemaSource`] matches both, so
+/// that if a third way ever did appear it would fail to compile in every
+/// implementation rather than silently answer `None` -- a schema that never
+/// applies is the failure hardest to see from outside.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum SchemaKey<'a> {
     /// A tag, by the name written in `{% name %}`.
     Tag(&'a str),
@@ -41,13 +47,19 @@ impl<'a> SchemaKey<'a> {
 /// [`Config::schemas`](crate::validate::Config::schemas) holds whatever
 /// answers it. [`MapSchemaSource`] is the answer a host assembles by hand;
 /// a host with schemas somewhere else -- computed from a component registry,
-/// looked up in a sandboxed guest -- implements the trait and hands the
+/// populated from a sandboxed guest -- implements the trait and hands the
 /// config that instead. The crate never learns which.
 ///
 /// # Three properties, each deliberate
 ///
-/// **It is object-safe.** `Config` holds an `Arc<dyn SchemaSource>`, so no
-/// generic parameter reaches `Config` or anything holding one.
+/// **It is object-safe.** `Config` holds an
+/// `Arc<dyn SchemaSource + Send + Sync>`, so no generic parameter reaches
+/// `Config` or anything holding one. The bound is the field's, and an
+/// implementation meets it by being thread-safe and owning what it borrows
+/// from: `Send + Sync + 'static`. A source over `Rc` state, or one borrowing
+/// a registry, compiles as an implementation and is refused at
+/// [`with_schemas`](crate::validate::Config::with_schemas) -- own the
+/// registry, or share it behind an `Arc`.
 ///
 /// **It is synchronous**, for the reason `DIVERGENCES.md` entry 3 gives for
 /// schema hooks: the crate performs no I/O, so an async signature would have
@@ -62,14 +74,12 @@ impl<'a> SchemaKey<'a> {
 ///
 /// # Implementing it
 ///
-/// [`find`](SchemaSource::find) is the whole contract. [`SchemaKey`] is
-/// `#[non_exhaustive]`, as every public enum here is, so an implementation
-/// matches it with a wildcard arm that answers `None`; a key it does not
-/// know is a schema it does not have, which is the right answer.
-///
-/// The two provided methods serve diagnostics only. Override them if the
-/// source can enumerate what it holds; leave them if it cannot, and
-/// `Config`'s `Debug` output says so rather than claiming an empty registry.
+/// [`find`](SchemaSource::find) is the whole contract, and [`SchemaKey`] is
+/// exhaustive, so an implementation matches its two variants and the compiler
+/// holds it to both. The two provided methods serve diagnostics only.
+/// Override them if the source can enumerate what it holds; leave them if it
+/// cannot, and `Config`'s `Debug` output says so rather than claiming an
+/// empty registry.
 ///
 /// # Examples
 ///
@@ -87,12 +97,12 @@ impl<'a> SchemaKey<'a> {
 ///     fn find(&self, key: SchemaKey<'_>) -> Option<&Schema> {
 ///         match key {
 ///             SchemaKey::Tag("callout") => Some(&self.0),
-///             _ => None,
+///             SchemaKey::Tag(_) | SchemaKey::Node(_) => None,
 ///         }
 ///     }
 /// }
 ///
-/// let config = builtins::config().with_schemas(Arc::new(OneTag(Schema::new().render("aside"))));
+/// let config = builtins::config_with(Arc::new(OneTag(Schema::new().render("aside"))));
 /// assert!(config.schemas.find(SchemaKey::Tag("callout")).is_some());
 /// assert!(config.schemas.find(SchemaKey::Tag("if")).is_none());
 /// ```
@@ -131,7 +141,9 @@ pub trait SchemaSource {
 /// every schema itself.
 ///
 /// The maps are reachable directly, because they are the whole content and
-/// hiding them would only add a method per operation. Fill one, then share it:
+/// hiding them would only add a method per operation. Fill one, then hand it
+/// to [`builtins::config_with`](crate::builtins::config_with), which builds
+/// the built-in schemas exactly once:
 ///
 /// ```
 /// use std::sync::Arc;
@@ -142,7 +154,7 @@ pub trait SchemaSource {
 /// let mut schemas = MapSchemaSource::builtin();
 /// schemas.insert_tag("callout", Schema::new().render("aside"));
 ///
-/// let config = builtins::config().with_schemas(Arc::new(schemas));
+/// let config = builtins::config_with(Arc::new(schemas));
 /// assert!(config.schemas.find(SchemaKey::Tag("callout")).is_some());
 /// assert!(config.schemas.find(SchemaKey::Tag("if")).is_some());
 /// ```
@@ -223,13 +235,15 @@ impl SchemaSource for MapSchemaSource {
 }
 
 impl std::fmt::Debug for MapSchemaSource {
-    /// The names registered. A `Schema` carries hooks, which have no useful
-    /// rendering, so the derived form is unavailable; the keys are what a
-    /// reader chasing a `tag-undefined` wants anyway.
+    /// The names registered, through the same two methods `Config`'s `Debug`
+    /// reads, so the two renderings of one source cannot drift. A `Schema`
+    /// carries hooks, which have no useful rendering, so the derived form is
+    /// unavailable; the keys are what a reader chasing a `tag-undefined`
+    /// wants anyway.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MapSchemaSource")
-            .field("nodes", &self.nodes.keys().collect::<Vec<_>>())
-            .field("tags", &self.tags.keys().collect::<Vec<_>>())
+            .field("nodes", &self.node_types())
+            .field("tags", &self.tag_names())
             .finish()
     }
 }
@@ -283,6 +297,15 @@ mod tests {
 
         assert_eq!(Opaque.tag_names(), None);
         assert_eq!(Opaque.node_types(), None);
+    }
+
+    #[test]
+    fn debug_reads_the_same_names_the_trait_reports() {
+        let mut schemas = MapSchemaSource::new();
+        schemas.insert_tag("callout", Schema::new());
+        let debug = format!("{schemas:?}");
+        assert!(debug.contains(r#"tags: Some(["callout"])"#), "{debug}");
+        assert!(debug.contains("nodes: Some([])"), "{debug}");
     }
 
     #[test]

@@ -250,6 +250,35 @@ fn an_unknown_node_type_lists_what_is_known() {
 }
 
 #[wasm_bindgen_test]
+fn children_may_name_tag_because_upstreams_schemas_do() {
+    // Upstream's `document` schema lists `'tag'` among its children, so a host
+    // porting an ordinary schema writes it. It must not be told `tag` is
+    // unknown -- which it was, while the known names came from the built-in
+    // node map, which has no entry for `tag` on purpose.
+    let result = Config::new(&json(
+        r#"{ "tags": { "section": { "children": ["paragraph", "tag"] } } }"#,
+    ));
+    assert!(
+        result.is_ok(),
+        "{}",
+        result.as_ref().err().map(message).unwrap_or_default()
+    );
+}
+
+#[wasm_bindgen_test]
+fn a_schema_under_nodes_tag_is_refused_by_name() {
+    // A tag is looked up by its name, so a schema registered under the node
+    // type `tag` would never apply. Refused, and the message says where it
+    // belongs.
+    let thrown = Config::new(&json(r#"{ "nodes": { "tag": {} } }"#))
+        .err()
+        .unwrap_or(JsValue::NULL);
+    let text = message(&thrown);
+    assert!(text.contains("looked up by its name"), "{text}");
+    assert!(text.contains("\"tags\""), "{text}");
+}
+
+#[wasm_bindgen_test]
 fn a_regexp_in_matches_explains_the_divergence() {
     let object = Object::new();
     let tags = Object::new();

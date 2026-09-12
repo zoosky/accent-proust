@@ -51,7 +51,11 @@
 //!
 //! - **Public enums are `#[non_exhaustive]`.** Markdoc gained node types across
 //!   its 0.5.x line; spelling them exhaustively would turn each new one into a
-//!   breaking release.
+//!   breaking release. The one exception is
+//!   [`SchemaKey`](validate::SchemaKey): its two variants are the two ways a
+//!   node is looked up, not a list that grows with Markdoc, and a source that
+//!   implements [`SchemaSource`](validate::SchemaSource) should stop compiling
+//!   if a third appeared rather than silently answer `None`.
 //! - **Validation errors are data, not failures.** The validator returns a
 //!   `Vec` of them. `Result::Err` is reserved for internal invariants.
 //! - **Output is deterministic.** Attribute order is authored order, never hash

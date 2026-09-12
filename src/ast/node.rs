@@ -144,6 +144,47 @@ impl NodeType {
         }
     }
 
+    /// Every node type, in the order [`as_str`](NodeType::as_str) lists them.
+    ///
+    /// For a host that reads node names from text and wants to say what it
+    /// expected: the "expected one of" in its error is this list, joined. One
+    /// list here rather than a copy per host, because a copy is a second list
+    /// to keep in step with the enum. A variant added to the enum fails
+    /// `as_str` to compile until it gains an arm, and this sits beside it; the
+    /// test pins that every entry round-trips through `as_str` and
+    /// [`from_name`](NodeType::from_name) and that none repeats, not that none
+    /// is missing, so add to both.
+    pub const ALL: [NodeType; 28] = [
+        NodeType::Blockquote,
+        NodeType::Code,
+        NodeType::Comment,
+        NodeType::Document,
+        NodeType::Em,
+        NodeType::Error,
+        NodeType::Fence,
+        NodeType::Hardbreak,
+        NodeType::Heading,
+        NodeType::Hr,
+        NodeType::Image,
+        NodeType::Inline,
+        NodeType::Item,
+        NodeType::Link,
+        NodeType::List,
+        NodeType::Node,
+        NodeType::Paragraph,
+        NodeType::S,
+        NodeType::Softbreak,
+        NodeType::Strong,
+        NodeType::Table,
+        NodeType::Tag,
+        NodeType::Tbody,
+        NodeType::Td,
+        NodeType::Text,
+        NodeType::Th,
+        NodeType::Thead,
+        NodeType::Tr,
+    ];
+
     /// The node type upstream spells `name`, or [`None`].
     ///
     /// The inverse of [`NodeType::as_str`]. A host keys its `nodes` schema map
@@ -897,5 +938,19 @@ mod tests {
         assert_eq!(NodeType::Fence.as_str(), "fence");
         assert_eq!(NodeType::Hardbreak.to_string(), "hardbreak");
         assert_eq!(NodeType::default(), NodeType::Node);
+    }
+}
+
+#[cfg(test)]
+mod node_type_list {
+    use super::NodeType;
+
+    #[test]
+    fn all_round_trips_through_its_names_and_repeats_none() {
+        let mut seen = std::collections::HashSet::new();
+        for node_type in NodeType::ALL {
+            assert_eq!(NodeType::from_name(node_type.as_str()), Some(node_type));
+            assert!(seen.insert(node_type), "{node_type} is listed twice");
+        }
     }
 }

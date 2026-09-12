@@ -41,7 +41,7 @@ fn main() {
             },
         ),
     );
-    let config = builtins::config().with_schemas(Arc::new(schemas));
+    let config = builtins::config_with(Arc::new(schemas));
 
     let document = parse::parse("{% callout type=\"note\" %}\nBody\n{% /callout %}\n");
     assert!(validate::validate_tree(&document, &config).is_empty());
