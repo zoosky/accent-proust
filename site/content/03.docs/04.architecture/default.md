@@ -56,9 +56,9 @@ a trait the caller implements.
   +----------------------+      a trait       |                      |
                                               |                      |
   +----------------------+                    |                      |
-  | schemas: a constant, |   build a Config   |                      |
+  | schemas: a constant, |  impl SchemaSource |                      |
   | YAML, a database,    +------------------->+  validate            |
-  | a sandboxed guest    |     plain data     |  transform           |
+  | a sandboxed guest    |      a trait       |  transform           |
   +----------------------+                    |                      |
                                               |                      |
   +----------------------+                    |                      |
@@ -75,7 +75,7 @@ in a CMS, a language server and a build tool without any of the three inheriting
 the others' assumptions -- and it is enforced by a CI job rather than by
 discipline.
 
-### The two traits: `Tokenizer` and `TagRenderer`
+### The three traits: `Tokenizer`, `TagRenderer` and `SchemaSource`
 
 `Tokenizer` segments CommonMark. A default implementation over `pulldown-cmark`
 ships behind the `pulldown-cmark-tokenizer` feature, which is on by default and
@@ -101,12 +101,15 @@ choose, and a callback would put that depth back on the host's stack one frame
 per level. The host writes the markup for one tag at a time and never sees the
 recursion.
 
-### The one responsibility left outside
-
-The crate documentation names a third seam, `SchemaSource`, for where a schema
-comes from. It is not a trait today: you build a `Config` and hand it over.
-Whether the schemas in it came from a constant, a YAML file, a database or a
-sandboxed guest is not the crate's business.
+`SchemaSource` answers "what is the schema for this tag or node type?", and
+`Config` holds one implementation of it as the only place schemas come from.
+`MapSchemaSource` is the implementation a host fills by hand -- two maps, with
+`builtin()` starting them at Markdoc's own vocabulary -- and a host whose
+schemas live somewhere else implements the trait instead. Whether they came
+from a constant, a YAML file, a database or a sandboxed guest is the
+implementation's business, and the crate never learns. The trait returns a
+borrow, which rules out loading a schema on first request by design: a host
+populates its source, then hands it over.
 
 ## Invariant 1: the library stands alone
 

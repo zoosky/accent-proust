@@ -26,9 +26,11 @@
 //!   pulldown-cmark ships behind the `pulldown-cmark-tokenizer` feature, so a
 //!   host that already owns a CommonMark parser can supply its own rather than
 //!   compile a second one.
-//! - `SchemaSource` answers "what is the schema for this tag name?". Whether
-//!   that answer comes from a file, a constant, or a sandboxed guest is the
-//!   host's business, not this crate's.
+//! - [`SchemaSource`](validate::SchemaSource) answers "what is the schema for
+//!   this tag name?". Whether that answer comes from a file, a constant, or a
+//!   sandboxed guest is the host's business, not this crate's;
+//!   [`MapSchemaSource`](validate::MapSchemaSource) is the answer for a host
+//!   that assembles it by hand.
 //! - [`TagRenderer`](render::TagRenderer) turns a validated tag into markup.
 //!   Escaping, void elements, and HTML policy live there; the walk over the
 //!   tree does not, which keeps the document's depth off the host's stack.

@@ -37,6 +37,8 @@ use accent_proust::validate::{
 };
 
 use crate::corpus::Case;
+use accent_proust::validate::MapSchemaSource;
+
 use crate::value::Value;
 
 /// Build the config a case is graded against.
@@ -55,10 +57,11 @@ pub fn build(case: &Case) -> Result<Config<'_>, String> {
         return Err(format!("config must be a mapping, got {}", source.kind()));
     };
 
+    let mut schemas = MapSchemaSource::builtin();
     for (key, value) in entries {
         match key.as_str() {
-            "tags" => config.tags_mut().extend(tags(value)?),
-            "nodes" => config.nodes_mut().extend(nodes(value)?),
+            "tags" => schemas.tags_mut().extend(tags(value)?),
+            "nodes" => schemas.nodes_mut().extend(nodes(value)?),
             "variables" => config.variables = Some(variables(value)?),
             "partials" => config.partials = std::sync::Arc::new(partials(value)?),
             other => {
@@ -70,6 +73,7 @@ pub fn build(case: &Case) -> Result<Config<'_>, String> {
             }
         }
     }
+    config.schemas = std::sync::Arc::new(schemas);
     Ok(config)
 }
 

@@ -27,9 +27,12 @@
 //! is worse than one that does not, because the half that is missing is
 //! invisible until an author trips over it.
 
+use std::sync::Arc;
+
 use accent_proust::ast::{ErrorLevel, NodeType};
 use accent_proust::validate::{
-    Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot, ValidationType,
+    Config, MapSchemaSource, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot,
+    ValidationType,
 };
 use indexmap::IndexMap;
 use js_sys::{Array, Object, Reflect};
@@ -83,12 +86,14 @@ pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
     let object = as_object(value, &at)?;
     reject_unknown(&object, TOP_LEVEL, &at)?;
 
-    let names = node_names(&config);
+    // Merged over the built-ins into one source, shared once at the end.
+    let mut schemas = MapSchemaSource::builtin();
+    let names = node_names(&schemas);
 
     if let Some(tags) = property(&object, "tags", &at)? {
         let at = at.child("tags");
         let source = as_object(&tags, &at)?;
-        let map = config.tags_mut();
+        let map = schemas.tags_mut();
         for name in value::keys(&source) {
             let at = at.child(&name);
             let declaration = property(&source, &name, &at)?.unwrap_or(JsValue::UNDEFINED);
@@ -99,7 +104,7 @@ pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
     if let Some(nodes) = property(&object, "nodes", &at)? {
         let at = at.child("nodes");
         let source = as_object(&nodes, &at)?;
-        let map = config.nodes_mut();
+        let map = schemas.nodes_mut();
         for name in value::keys(&source) {
             let at = at.child(&name);
             let node = node_type(&names, &name, &at)?;
@@ -114,6 +119,7 @@ pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
         config.variables = Some(value::variables(&source, &at)?);
     }
 
+    config.schemas = Arc::new(schemas);
     Ok(config)
 }
 
@@ -122,9 +128,9 @@ pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
 /// `NodeType` has no string parser, and writing one here would be a second list
 /// to keep in step with the library's. The built-in node schemas are keyed by
 /// every type a host can name, so they are the list.
-fn node_names(config: &Config<'static>) -> IndexMap<&'static str, NodeType> {
-    config
-        .nodes
+fn node_names(schemas: &MapSchemaSource) -> IndexMap<&'static str, NodeType> {
+    schemas
+        .nodes()
         .keys()
         .map(|node| (node.as_str(), *node))
         .collect()

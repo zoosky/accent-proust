@@ -27,6 +27,35 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   replace `'`, which was safe while only `Html` used it and is now a
   documented condition: text and double-quoted attributes only.
 
+### Changed
+
+- **Breaking: `Config` holds a `SchemaSource` instead of two maps.** `nodes`,
+  `tags`, `nodes_mut()` and `tags_mut()` are gone. `config.schemas` is an
+  `Arc<dyn SchemaSource + Send + Sync>`, `MapSchemaSource` is the
+  implementation that holds what the two maps held, and `Config::with_schemas`
+  hands one over. `builtins::config()` is unchanged. Registering a tag on top
+  of it was
+
+  ```rust
+  let mut config = builtins::config();
+  config.tags_mut().insert("callout".to_string(), schema);
+  ```
+
+  and is now
+
+  ```rust
+  let mut schemas = MapSchemaSource::builtin();
+  schemas.insert_tag("callout", schema);
+  let config = builtins::config().with_schemas(Arc::new(schemas));
+  ```
+
+  One mechanism rather than a source consulted ahead of the maps, so there is
+  no precedence rule to document. `SchemaSource::find` returns a borrow, which
+  rules out loading a schema on first request by design: a host populates its
+  source before handing it over. `Config`'s `Debug` still prints the
+  registered names, through the trait's provided `tag_names` and
+  `node_types`, and prints `None` for a source that cannot enumerate.
+
 ## [0.10.0] - 2026-09-06
 
 ### Added

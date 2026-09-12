@@ -13,13 +13,17 @@
 //! disallowed outright rather than merely declared.
 //!
 //! This crate owns the schema *shape*. It does not own schema *content*: where
-//! a schema comes from is the host's decision, reached through `SchemaSource`.
+//! a schema comes from is the host's decision, reached through
+//! [`SchemaSource`]. [`MapSchemaSource`] is the implementation for a host that
+//! assembles schemas by hand, and [`Config::schemas`] holds whichever one the
+//! host hands over.
 
 mod attribute_type;
 mod config;
 pub mod nodes;
 mod schema;
 pub mod schema_types;
+mod source;
 mod validator;
 
 pub use attribute_type::{AttributeType, ValidationType, type_to_string};
@@ -28,6 +32,7 @@ pub use schema::{
     AttributeValidateHook, FunctionTransformHook, FunctionValidateHook, MatchPattern, MatchesHook,
     RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot, TransformHook, ValidateHook,
 };
+pub use source::{MapSchemaSource, SchemaKey, SchemaSource};
 pub use validator::{
     TypeCheck, ValidateError, global_attributes, validate_tree, validate_type, validator,
     walk_with_parents,

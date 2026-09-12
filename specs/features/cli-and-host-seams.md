@@ -188,9 +188,13 @@ impl MapSchemaSource {
     pub fn insert_tag(&mut self, name: impl Into<String>, schema: Schema) -> &mut Self;
     pub fn insert_node(&mut self, node_type: NodeType, schema: Schema) -> &mut Self;
 
-    /// The names registered, for diagnostics.
-    pub fn tag_names(&self) -> impl Iterator<Item = &str>;
-    pub fn node_types(&self) -> impl Iterator<Item = NodeType>;
+    /// The maps themselves. They are the whole content, so hiding them would
+    /// only add a method per operation; a host merging many declarations
+    /// reaches for `tags_mut().extend(..)`.
+    pub fn tags(&self) -> &IndexMap<String, Schema>;
+    pub fn tags_mut(&mut self) -> &mut IndexMap<String, Schema>;
+    pub fn nodes(&self) -> &IndexMap<NodeType, Schema>;
+    pub fn nodes_mut(&mut self) -> &mut IndexMap<NodeType, Schema>;
 }
 
 impl SchemaSource for MapSchemaSource {
@@ -225,11 +229,16 @@ pub trait SchemaSource {
     /// answer for a source that computes schemas on demand, and is why this
     /// returns an option rather than an empty iterator.
     fn tag_names(&self) -> Option<Vec<&str>> { None }
+
+    /// The node types, likewise. `Debug` printed both before, so both stay.
+    fn node_types(&self) -> Option<Vec<NodeType>> { None }
 }
 ```
 
-`MapSchemaSource` overrides it; `Config::fmt` prints what it gets and
-`"<opaque>"` otherwise. A provided method, so no implementor is forced to care.
+`MapSchemaSource` overrides both; `Config::fmt` prints what it gets, and a
+source that cannot enumerate prints as `None` -- which is the truth, and
+different from an empty list. Provided methods, so no implementor is forced to
+care.
 
 #### Migration
 
@@ -710,3 +719,9 @@ reasoning is shorter to keep than to reconstruct.
    them, the third because a renderer with a number type should not have to
    parse a string it was handed. `close` takes the `Tag`, for the reason
    given under "The trait".
+6. **`SchemaKey::for_node` chooses the key**, and `MapSchemaSource` exposes
+   its maps rather than iterators over their names. Both came out of step 2:
+   the first so that `find_schema` is one line and the branch on `node.tag`
+   lives in one place, the second because the two hosts that merge
+   declarations want `extend`, not a loop of inserts. `node_types` joins
+   `tag_names` as a provided method, since `Debug` printed both.

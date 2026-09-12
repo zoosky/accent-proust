@@ -51,11 +51,13 @@ A tag needs a schema before it validates or renders. `render` names the element
 to emit; declared attributes reach the output, undeclared ones are an error.
 
 ```rust
-use accent_proust::validate::{self, Schema, SchemaAttribute, ValidationType};
+use std::sync::Arc;
 
-let mut config = builtins::config();
-config.tags_mut().insert(
-    "callout".to_string(),
+use accent_proust::validate::{self, MapSchemaSource, Schema, SchemaAttribute, ValidationType};
+
+let mut schemas = MapSchemaSource::builtin();
+schemas.insert_tag(
+    "callout",
     Schema::new().render("div").attribute(
         "type",
         SchemaAttribute {
@@ -65,6 +67,7 @@ config.tags_mut().insert(
         },
     ),
 );
+let config = builtins::config().with_schemas(Arc::new(schemas));
 
 let document = parse::parse("{% callout type=\"note\" %}\nBody\n{% /callout %}\n");
 assert!(validate::validate_tree(&document, &config).is_empty());
@@ -76,10 +79,11 @@ assert_eq!(
 );
 ```
 
-`tags_mut()` is copy-on-write. `Config` shares its four maps behind an `Arc`, so
-registering a schema registry once and cloning the config per document is cheap
--- which is the shape a static site generator wants, since it scopes the same
-config a few thousand times.
+The source is shared, not copied. `Config` holds its schemas, functions and
+partials behind an `Arc`, so filling a `MapSchemaSource` once and cloning the
+config per document is cheap -- which is the shape a static site generator
+wants, since it scopes the same config a few thousand times. `with_schemas`
+takes the `Arc` so that one registry can back many configs.
 
 ## Read the errors
 
@@ -179,12 +183,14 @@ supported rather than tolerated.
 ## What the crate will not do for you
 
 No I/O, no configuration file, no concept of a theme, a template or a plugin.
-Two responsibilities in particular are the host's, reached in two different
-ways:
+Two responsibilities in particular are the host's, each behind a trait:
 
-**Where a schema comes from.** You build a `Config`. Whether the schemas in it
-came from a constant, a YAML file, a database or a sandboxed guest is not the
-crate's business, and no trait pretends to abstract it.
+**Where a schema comes from.** `validate::SchemaSource`. `MapSchemaSource` is
+the implementation you fill by hand, as above; a host whose schemas live
+somewhere else -- a component registry, a sandboxed guest -- implements the
+trait and hands `Config` the result. Whether they came from a constant, a
+YAML file or a database is the implementation's business, and the crate never
+reads a file to find out.
 
 **HTML policy.** `render::render_all` emits upstream's markup through
 `render::Html`, one implementation of `render::TagRenderer`. A host that wants

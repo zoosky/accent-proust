@@ -7,8 +7,8 @@
 //! Doing that per call would rebuild three maps for every document, so
 //! [`config`] builds them once and the caller overrides what it wants. The
 //! result is the same, reached at construction instead of at use:
-//! `builtins::config()` then `config.tags_mut().insert("if", mine)` leaves a
-//! config in which the caller's `if` wins, exactly as passing one to
+//! `MapSchemaSource::builtin()` then `schemas.insert_tag("if", mine)` leaves a
+//! source in which the caller's `if` wins, exactly as passing one to
 //! `Markdoc.transform` does.
 //!
 //! [`Config::new`] stays empty, which is the honest starting point for a host
@@ -22,9 +22,13 @@
 //! [`validate::nodes`](crate::validate::nodes) is `schema.ts`,
 //! [`tags`](crate::tags) is `src/tags/`, and [`functions`](crate::functions) is
 //! `src/functions/`. This module only assembles them, which is all `index.ts`
-//! does.
+//! does -- the nodes and tags through
+//! [`MapSchemaSource::builtin`](crate::validate::MapSchemaSource::builtin), so
+//! that a host starting from the same vocabulary has one place to get it.
 
-use crate::validate::Config;
+use std::sync::Arc;
+
+use crate::validate::{Config, MapSchemaSource};
 
 /// A configuration carrying the built-in nodes, tags and functions.
 ///
@@ -32,15 +36,15 @@ use crate::validate::Config;
 /// none.
 ///
 /// ```
+/// use accent_proust::validate::SchemaKey;
+///
 /// let config = accent_proust::builtins::config();
-/// assert!(config.tags.contains_key("if"));
+/// assert!(config.schemas.find(SchemaKey::Tag("if")).is_some());
 /// assert!(config.functions.contains_key("equals"));
 /// ```
 #[must_use]
 pub fn config<'a>() -> Config<'a> {
-    let mut config = Config::new();
-    config.nodes = std::sync::Arc::new(crate::validate::nodes::builtin());
-    config.tags = std::sync::Arc::new(crate::tags::builtin());
-    config.functions = std::sync::Arc::new(crate::functions::builtin());
+    let mut config = Config::new().with_schemas(Arc::new(MapSchemaSource::builtin()));
+    config.functions = Arc::new(crate::functions::builtin());
     config
 }
