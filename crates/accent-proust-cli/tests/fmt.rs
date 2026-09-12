@@ -7,9 +7,11 @@
 
 use std::error::Error;
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+
+use tempfile::TempDir;
 
 /// A tag opening with the spacing the formatter normalises.
 const MESSY: &str = "{% callout   type=\"note\"  %}\nBody\n{% /callout %}\n";
@@ -32,9 +34,15 @@ fn run(args: &[&str], stdin: Option<&str>) -> Result<Output, Box<dyn Error>> {
         .stderr(Stdio::piped())
         .spawn()?;
     // Taken either way, so a command that does read stdin sees EOF: the pipe
-    // drops at the end of the `if let` whether or not the pattern matched.
+    // drops at the end of the `if let` whether or not the pattern matched. A
+    // command that exits without reading closes the other end first, and the
+    // write then fails with a broken pipe that says nothing about the command.
     if let (Some(mut pipe), Some(input)) = (child.stdin.take(), stdin) {
-        pipe.write_all(input.as_bytes())?;
+        match pipe.write_all(input.as_bytes()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::BrokenPipe => {}
+            Err(error) => return Err(error.into()),
+        }
     }
     Ok(child.wait_with_output()?)
 }
@@ -44,11 +52,12 @@ fn text(bytes: Vec<u8>) -> Result<String, Box<dyn Error>> {
     Ok(String::from_utf8(bytes)?)
 }
 
-/// A directory of this test's own, for `--write`.
-fn scratch(name: &str) -> Result<PathBuf, Box<dyn Error>> {
-    let dir = std::env::temp_dir().join(format!("accent-proust-cli-{}-{name}", std::process::id()));
-    fs::create_dir_all(&dir)?;
-    Ok(dir)
+/// A directory of this test's own, for `--write`. Removed when dropped, so a
+/// failing assertion leaves nothing behind.
+fn scratch() -> Result<TempDir, Box<dyn Error>> {
+    Ok(tempfile::Builder::new()
+        .prefix("accent-proust-cli-")
+        .tempdir()?)
 }
 
 #[test]
@@ -116,8 +125,8 @@ fn stdin_is_labelled_in_a_check_diff() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn write_rewrites_in_place_and_settles() -> Result<(), Box<dyn Error>> {
-    let dir = scratch("write")?;
-    let page = dir.join("page.md");
+    let dir = scratch()?;
+    let page = dir.path().join("page.md");
     fs::write(&page, MESSY)?;
     let path = page.to_string_lossy().into_owned();
 
@@ -132,8 +141,6 @@ fn write_rewrites_in_place_and_settles() -> Result<(), Box<dyn Error>> {
     let output = run(&["fmt", "--write", &path], None)?;
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(fs::read_to_string(&page)?, CLEAN);
-
-    fs::remove_dir_all(&dir)?;
     Ok(())
 }
 
@@ -141,22 +148,58 @@ fn write_rewrites_in_place_and_settles() -> Result<(), Box<dyn Error>> {
 fn write_reports_the_file_it_cannot_write_and_goes_on() -> Result<(), Box<dyn Error>> {
     // A directory cannot be read as a file: the report names it, the exit code
     // is 2, and the other file was still formatted.
-    let dir = scratch("write-failure")?;
-    let page = dir.join("page.md");
+    let dir = scratch()?;
+    let page = dir.path().join("page.md");
     fs::write(&page, MESSY)?;
     let output = run(
         &[
             "fmt",
             "--write",
-            &dir.to_string_lossy(),
+            &dir.path().to_string_lossy(),
             &page.to_string_lossy(),
         ],
         None,
     )?;
     assert_eq!(output.status.code(), Some(2));
-    assert!(text(output.stderr)?.contains(&dir.to_string_lossy().into_owned()));
+    assert!(text(output.stderr)?.contains(&dir.path().to_string_lossy().into_owned()));
     assert_eq!(fs::read_to_string(&page)?, CLEAN);
-    fs::remove_dir_all(&dir)?;
+    Ok(())
+}
+
+#[test]
+fn a_document_the_formatter_does_not_settle_in_one_pass_is_brought_to_rest()
+-> Result<(), Box<dyn Error>> {
+    // The shape the library documents as unstable: a paragraph beginning with
+    // a fence marker reprints as itself and re-parses as a fence, so one pass
+    // of `format(parse(s))` is not a fixed point. `fmt` keeps going until it
+    // is, and write-then-check is clean.
+    let dir = scratch()?;
+    let page = dir.path().join("fence.md");
+    fs::write(&page, "{% #id %}```")?;
+    let path = page.to_string_lossy().into_owned();
+
+    let output = run(&["fmt", "--write", &path], None)?;
+    assert_eq!(output.status.code(), Some(0), "{}", text(output.stderr)?);
+    let output = run(&["fmt", "--check", &path], None)?;
+    assert_eq!(output.status.code(), Some(0), "{}", text(output.stdout)?);
+    Ok(())
+}
+
+#[test]
+fn crlf_endings_are_named_in_check_and_rewritten_as_lf() -> Result<(), Box<dyn Error>> {
+    let crlf = CLEAN.replace('\n', "\r\n");
+
+    // Canonical but for its endings: `--check` says so by name, not with a
+    // diff in which every line is removed and added back looking identical.
+    let output = run(&["fmt", "--check"], Some(&crlf))?;
+    assert_eq!(output.status.code(), Some(1));
+    let report = text(output.stdout)?;
+    assert!(report.contains("CRLF"), "{report}");
+    assert!(!report.contains("--- a/"), "{report}");
+
+    let output = run(&["fmt"], Some(&crlf))?;
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(text(output.stdout)?, CLEAN);
     Ok(())
 }
 

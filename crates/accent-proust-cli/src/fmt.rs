@@ -35,6 +35,7 @@
 //! by name -- not by a diff in which every line is removed and added back
 //! looking identical -- and rewritten with LF by `--write`.
 
+use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -275,10 +276,11 @@ fn check(label: &str, source: &str, canonical: &Canonical) -> Outcome {
     let normalised = source.replace("\r\n", "\n");
     let mut text = String::new();
     if normalised.len() != source.len() {
-        text.push_str(&format!("{label}: CRLF line endings; fmt writes LF\n"));
+        // Writing to a `String` cannot fail; the `Result` is the trait's.
+        let _ = writeln!(text, "{label}: CRLF line endings; fmt writes LF");
     }
     if canonical.text != normalised {
-        let diff = similar::TextDiff::from_lines(&normalised, &canonical.text);
+        let diff = similar::TextDiff::from_lines(normalised.as_str(), canonical.text.as_str());
         text.push_str(
             &diff
                 .unified_diff()
