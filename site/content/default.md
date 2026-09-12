@@ -15,7 +15,7 @@ description: >-
 # here as data instead of as body prose -- which also means the wording can
 # change without touching a template.
 
-eyebrow: "v0.10.0 - MIT - forbid(unsafe_code)"
+eyebrow: "v0.11.0 - MIT - forbid(unsafe_code)"
 headline: "Markdoc,"
 headline_accent: "in Rust."
 lead: >-
