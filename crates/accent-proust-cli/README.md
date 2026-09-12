@@ -4,8 +4,8 @@ The command-line host for [accent-proust](https://github.com/zoosky/accent-prous
 a Rust implementation of the [Markdoc](https://markdoc.dev) language.
 
 The library reads no files and decides no policy; a host does. This is the
-second host beside the WebAssembly bindings, and it ships one command at a
-time as `specs/features/cli-and-host-seams.md` sequences them.
+second host beside the WebAssembly bindings, with one command per stage the
+library exposes.
 
 ## Build
 
@@ -14,10 +14,25 @@ cargo build -p accent-proust-cli --release
 target/release/accent-proust --help
 ```
 
-## `fmt`
+## Commands
 
-Reprints Markdoc source in canonical form. Spacing inside a tag is normalised;
-your own spellings are left alone, so `__bold__` stays `__bold__`.
+| Command | Does | Needs configuration |
+|---|---|---|
+| `fmt` | Reprints Markdoc source in canonical form | No |
+| `validate` | Reports what a schema says is wrong | For tags of your own |
+| `render` | Prints HTML | For tags of your own |
+| `transform` | Prints the renderable tree as JSON | For tags of your own |
+| `parse` | Prints the syntax tree as JSON | No |
+
+Every command reads the files named on its command line, or stdin when none
+is named; `--file LABEL` is what stdin is called in diagnostics. A file that
+cannot be read is reported and the run goes on, so one bad path does not hide
+the rest.
+
+### `fmt`
+
+Spacing inside a tag is normalised; your own spellings are left alone, so
+`__bold__` stays `__bold__`.
 
 ```sh
 accent-proust fmt docs/*.md            # formatted source to stdout
@@ -46,13 +61,93 @@ Two options, both defaulting to the library's:
 | `--max-tag-opening-width COLUMNS` | The width past which a block tag's opening breaks across lines. Default 80 |
 | `--ordered-list-mode repeat\|increment` | Whether a numbered list reprints its numbers. Default `repeat` |
 
+### `validate`
+
+```sh
+accent-proust validate --config schema.yaml docs/**/*.md
+accent-proust validate --config schema.yaml --format json docs/page.md
+```
+
+One line per error, `path:line:column: level[id]: message`, lines and columns
+counted from one. `--format json` prints one object per input, one per line,
+carrying `file` and its `errors` in the shape the WebAssembly bindings return
+-- columns and offsets in bytes, because a terminal is not JavaScript. Error
+ids are upstream Markdoc's, so tooling written against its codes reads either
+format unchanged.
+
+Exit 1 means an error at level `error` or `critical`. A `warning`, `info` or
+`debug` is printed and does not fail the run: that is how a schema ships a
+rule it wants surfaced but not enforced yet.
+
+### `render`, `transform`, `parse`
+
+`render` prints HTML, inputs concatenated in order. `transform` prints the
+renderable tree as JSON, one value per input, one per line -- a tag is an
+object carrying `$$mdtype: "Tag"`, `name`, `attributes` and `children`, as
+upstream's renderers expect. `parse` prints the syntax tree the same way,
+every node with its type, attributes, children, lines, location and the
+errors the parser itself reported, and reads no configuration because parsing
+needs none.
+
+## Configuration
+
+```sh
+accent-proust render \
+  --config schema.yaml \
+  --partials docs/partials \
+  --var version=3 --var channel=stable \
+  docs/page.md
+```
+
+`--config` is a YAML or JSON file declaring `tags`, `nodes` and `variables`,
+in the vocabulary [`accent-proust-schema-config`](../accent-proust-schema-config)
+defines and the WebAssembly bindings read too:
+
+```yaml
+tags:
+  callout:
+    render: aside
+    attributes:
+      type:
+        type: String
+        required: true
+        matches: [note, warning]
+variables:
+  channel: stable
+```
+
+An unknown key is refused with the path to it, `config.tags.callout.validate`
+and not "invalid schema". A hook cannot be written in a file: `transform` and
+`validate` are code, and the reason a configuration file is refused says to
+keep the hook in a Rust host. **The command line sees what a tag declares and
+never a hook-level check, so it is never stricter than a Rust host, only more
+convenient.** A schema whose real enforcement lives in a hook passes here and
+fails there.
+
+`--partials DIR` reads every file under the directory, at any depth, and
+`{% partial file="sections/intro.md" /%}` finds it by that path. This is the
+thing the browser cannot do, and the reason a command-line host exists.
+
+`--var NAME=VALUE` declares a variable, and overrides one the file declared.
+`VALUE` is read as YAML by the same reader as the file, so the two can never
+disagree about what `3` is:
+
+| Written | Becomes |
+|---|---|
+| `--var count=3` | the number 3 |
+| `--var debug=true` | the boolean true |
+| `--var name=production` | the string `production` |
+| `--var missing=null`, `--var missing=` | null |
+| `--var 'version="3"'` | the string `3` |
+| `--var 'tags=[a, b]'` | a list of two strings |
+
 ## Exit codes
 
 | Code | Means |
 |---|---|
 | 0 | Success; for `--check`, nothing would change |
-| 1 | `--check` found a file that would change |
-| 2 | A usage error, a file that could not be read or written, or a document the formatter does not settle on |
+| 1 | A document has a problem: `fmt --check` found a file that would change, `validate` found an error |
+| 2 | A usage error, a file that could not be read or written, a configuration that does not declare, or a document the formatter does not settle on |
 
 1 and 2 are kept apart so that CI can tell "the docs are wrong" from "the tool
 is misconfigured". They are different alerts.

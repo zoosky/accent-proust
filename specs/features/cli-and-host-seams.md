@@ -773,3 +773,19 @@ reasoning is shorter to keep than to reconstruct.
     which is what "each keeps only its own deserialisation" meant, and a
     `Value` could not give. `Value` implements the trait too, for a
     configuration already in the library's lattice.
+
+11. **The command-line host's output shapes.** `transform` and `parse` print
+    one JSON value per input, one per line, rather than one array for the
+    run: it composes with `jq` and with anything that reads a line at a time.
+    `validate --format json` does the same, one object per input carrying
+    `file` and `errors`, in the shape the WebAssembly bindings return but
+    with columns and offsets in bytes, because a terminal is not JavaScript.
+    `validate` exits 1 only on `error` or `critical`; a `warning` is printed
+    and passes, because the library's `error_level` exists to ship a rule
+    that is surfaced but not yet enforced, and a command that failed on it
+    would take the option away. `--file` names stdin in diagnostics; a file
+    is named by its path as given. Partials are keyed by their path relative
+    to `--partials`, with `/` separators, at any depth. A `--var` is read as
+    YAML by the file's own reader, and its errors are reported at
+    `config.variables.NAME`, which is where the variable is whichever way it
+    arrived.

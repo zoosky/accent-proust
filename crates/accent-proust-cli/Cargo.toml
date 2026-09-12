@@ -21,7 +21,18 @@ path = "src/main.rs"
 # the path is the dependency. `.github/scripts/release.sh` holds this crate's
 # own `version` to the library's instead, so `--version` cannot drift.
 accent-proust = { path = "../.." }
+# The schema vocabulary a configuration file is read through, shared with the
+# WebAssembly host so that the two cannot drift apart.
+accent-proust-schema-config = { path = "../accent-proust-schema-config" }
 clap = { version = "4", features = ["derive"] }
+# The maps a configuration fills are the library's, so the version is the
+# library's.
+indexmap = "2"
+# The YAML reader, which reads JSON too. The one the library's conformance
+# harness already uses: pure Rust, no serde. Default features off for the
+# reason the harness gives -- `encoding` sniffs non-UTF-8 input, and a
+# configuration file is UTF-8.
+saphyr = { version = "0.0.12", default-features = false }
 # The unified diff `fmt --check` prints. A host's dependency: the library
 # needs no diff, and this is the kind of thing a host carries so that it does
 # not have to.

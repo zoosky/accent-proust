@@ -25,19 +25,28 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   key, and a property whose getter throws is refused as unreadable rather
   than read as absent.
 
-- **A command-line host, `crates/accent-proust-cli`.** One command so far:
-  `accent-proust fmt` reprints Markdoc source in canonical form, from files or
-  stdin. `--check` prints a unified diff of what would change and exits 1 if
-  anything would; `--write` rewrites in place. `fmt` formats to a fixed
-  point: `format(parse(s))` settles in one pass on everything but one shape
-  the library documents, so `fmt` reformats its own output until it stops
-  changing, and write-then-check is clean by construction. CRLF files are
-  named by `--check` and rewritten with LF. Exit codes are 0, 1 for a
-  document that would change, and 2 for a usage or read error or a document
-  that does not settle, kept apart so that CI can tell "the docs are wrong"
-  from "the tool is misconfigured". `validate`, `render`, `parse` and
-  `transform` follow, in the order `specs/features/cli-and-host-seams.md`
-  sequences them.
+- **A command-line host, `crates/accent-proust-cli`.** A binary named
+  `accent-proust`, with one command per stage. `fmt` reprints Markdoc source
+  in canonical form, from files or stdin; `--check` prints a unified diff of
+  what would change and exits 1 if anything would, `--write` rewrites in
+  place. `fmt` formats to a fixed point: `format(parse(s))` settles in one
+  pass on everything but one shape the library documents, so `fmt` reformats
+  its own output until it stops changing, and write-then-check is clean by
+  construction. CRLF files are named by `--check` and rewritten with LF.
+
+  `validate` reports what a schema says is wrong, one line per error as
+  `path:line:column: level[id]: message`, or with `--format json` one object
+  per input in the shape the WebAssembly bindings return; it exits 1 on an
+  error at level `error` or `critical` and prints the rest. `render` prints
+  HTML; `transform` and `parse` print the renderable tree and the syntax
+  tree as JSON, one value per input, one per line. All three read a
+  configuration: `--config`, a YAML or JSON file in the shared vocabulary;
+  `--partials`, a directory whose files `{% partial %}` finds by relative
+  path -- the thing the browser cannot do; and `--var NAME=VALUE`, with the
+  value read as YAML so that `count=3` is the number and `--var` and
+  `--config` can never disagree. Exit codes are 0, 1 for a document with a
+  problem, and 2 for a usage, read or configuration error, kept apart so that
+  CI can tell "the docs are wrong" from "the tool is misconfigured".
 
 - **One lint block for the workspace.** The library, the WebAssembly host and
   the command-line host opt into `[workspace.lints]` instead of carrying a
