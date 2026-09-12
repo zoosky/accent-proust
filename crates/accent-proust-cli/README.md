@@ -26,10 +26,18 @@ accent-proust fmt --write docs/*.md    # rewrite in place
 cat page.md | accent-proust fmt        # stdin to stdout
 ```
 
-`format(parse(s))` is idempotent and `parse(format(ast))` returns the same
-tree -- both tested in the library -- which is the contract `--check` and
-`--write` need. `--check` writes nothing and prints a diff rather than a list,
-because a CI log reader wants to know what is wrong, not only where.
+`parse(format(ast))` returns the same tree, tested in the library, so
+formatting loses nothing. `format(parse(s))` settles in one pass on every
+document but one shape the library documents -- a paragraph beginning with a
+fence marker re-parses as a fence -- so `fmt` reformats its own output until
+it stops changing, and refuses with exit 2 if four passes are not enough. That
+is the contract `--check` and `--write` need: write, then check, is clean.
+`--check` writes nothing and prints a diff rather than a list, because a CI log
+reader wants to know what is wrong, not only where.
+
+`fmt` writes LF line endings. A CRLF file is reported by `--check` as changed,
+by name rather than as a diff of every line, and rewritten with LF by
+`--write`.
 
 Two options, both defaulting to the library's:
 
@@ -44,7 +52,7 @@ Two options, both defaulting to the library's:
 |---|---|
 | 0 | Success; for `--check`, nothing would change |
 | 1 | `--check` found a file that would change |
-| 2 | A usage error, or a file that could not be read or written |
+| 2 | A usage error, a file that could not be read or written, or a document the formatter does not settle on |
 
 1 and 2 are kept apart so that CI can tell "the docs are wrong" from "the tool
 is misconfigured". They are different alerts.

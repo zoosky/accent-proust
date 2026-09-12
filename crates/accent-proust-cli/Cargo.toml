@@ -16,27 +16,23 @@ name = "accent-proust"
 path = "src/main.rs"
 
 [dependencies]
-accent-proust = { path = "../..", version = "0.10.0" }
+# By path alone. A `version` beside it would be a second number to keep in
+# step with the library's, and with `publish = false` it would buy nothing:
+# the path is the dependency. `.github/scripts/release.sh` holds this crate's
+# own `version` to the library's instead, so `--version` cannot drift.
+accent-proust = { path = "../.." }
 clap = { version = "4", features = ["derive"] }
 # The unified diff `fmt --check` prints. A host's dependency: the library
 # needs no diff, and this is the kind of thing a host carries so that it does
 # not have to.
 similar = "2"
 
-# Repeated rather than inherited from the workspace, for the reason the
-# WebAssembly crate's manifest gives: a shared block would be a decision taken
-# on behalf of every future host. The floor is the same because the promise
-# is: this binary hands arbitrary documents to the parser, and a panic in a
-# tool a CI pipeline runs is a red build with no diagnostic. `main` is where
-# exiting with a code is the correct behaviour, and it takes no allow because
-# it needs none: `ExitCode` is a return value.
-[lints.rust]
-missing_docs = "warn"
-unsafe_code = "forbid"
+[dev-dependencies]
+# The `--write` tests need a directory of their own, and one that is removed
+# when a failing assertion unwinds, not only at the end of a passing test.
+tempfile = "3"
 
-[lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-panic = "warn"
-unwrap_used = "warn"
-expect_used = "warn"
-indexing_slicing = "warn"
+# The workspace's block, opted into. A member that needed a different floor
+# would leave this line out, so inheriting decides nothing on its behalf.
+[lints]
+workspace = true

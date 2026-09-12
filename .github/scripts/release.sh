@@ -61,6 +61,18 @@ version=$(awk '/^\[package\]/{p=1} p&&/^version[[:space:]]*=/{print;exit}' Cargo
 [ -n "$version" ] || die "no version in Cargo.toml"
 echo "  version:  $version"
 
+# Every member's own version follows the library's, and nothing else holds
+# them together: a member depends on the library by path, so cargo resolves it
+# at any version, and the drift would surface only as a binary reporting the
+# wrong `--version`. `scripts/build-npm.sh` makes this check for the npm
+# package at its own release time; this makes it for every member at this one.
+for member in crates/*/Cargo.toml; do
+  member_version=$(awk '/^\[package\]/{p=1} p&&/^version[[:space:]]*=/{print;exit}' "$member" | cut -d'"' -f2)
+  [ "$member_version" = "$version" ] \
+    || die "$member is at version ${member_version:-<none>}; every member follows the library's $version"
+done
+echo "  members:  at $version"
+
 # 0.0.0 is the placeholder this crate was created with, not a release. Publishing
 # it would burn the only version number that cannot later be corrected.
 [ "$version" != "0.0.0" ] || soft "version is still the 0.0.0 placeholder; bump it before publishing"

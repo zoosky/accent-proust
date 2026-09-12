@@ -86,17 +86,28 @@ proptest = "1"
 # `rust-version` above remains the promise it says it is.
 saphyr = { version = "0.0.12", default-features = false }
 
-[lints.rust]
+# One block for the workspace, and every member opts in with
+# `[lints] workspace = true`. Inheritance is opt-in per member, so sharing the
+# block decides nothing for a host that wants a different floor: it leaves the
+# line out. What sharing does decide is that the three crates cannot drift
+# apart by accident, which three copies of eleven lines would.
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 # Panic-freedom is a published promise, not a review habit: this is an open
 # parser fed arbitrary text, so its attack surface is part of its API. These
 # four are the static form of that promise. Where a bound is genuinely proven,
 # `#[allow]` it with a comment saying why -- an allow with a reason is the
 # intended escape hatch, an allow without one is the thing being prevented.
+# A host inherits the same four because the promise is the same: it hands
+# arbitrary documents to the parser, and a panic in a tool is a red build
+# with no diagnostic.
 panic = "warn"
 unwrap_used = "warn"
 expect_used = "warn"

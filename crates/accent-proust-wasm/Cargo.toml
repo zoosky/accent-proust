@@ -26,19 +26,11 @@ wasm-bindgen = "0.2"
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 
-# Repeated rather than inherited from the workspace. `unsafe_code = "forbid"`
-# cannot be relaxed by a member that needs it, so a shared block would be a
-# decision taken on behalf of every future host; and the library's manifest is
-# the one that gets published, which is a reason to leave it alone. The floor is
-# the same because the promise is: this crate hands arbitrary documents to a
-# parser and a trap in wasm poisons the instance rather than unwinding.
-[lints.rust]
-missing_docs = "warn"
-unsafe_code = "forbid"
-
-[lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-panic = "warn"
-unwrap_used = "warn"
-expect_used = "warn"
-indexing_slicing = "warn"
+# The workspace's block, opted into. This used to be a copy, on the reasoning
+# that a shared block would bind every future host; it does not, because
+# inheritance is opt-in per member, and a copy only meant three places for the
+# same eleven lines to drift. The floor is the right one here because the
+# promise is the same: this crate hands arbitrary documents to a parser, and a
+# trap in wasm poisons the instance rather than unwinding.
+[lints]
+workspace = true

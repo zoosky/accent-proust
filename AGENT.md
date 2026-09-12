@@ -243,12 +243,20 @@ standalone, MSRV or conformance lanes by accident. Build one explicitly with
 | Member | What |
 |---|---|
 | `crates/accent-proust-wasm` | WebAssembly bindings for a browser or other JavaScript host. Ships to npm, not crates.io, so it sets `publish = false`. |
+| `crates/accent-proust-cli` | The command-line host, a binary named `accent-proust`. `publish = false` until it has a release cadence of its own. |
 
-The binding repeats the library's lint block rather than inheriting a shared
-one. `unsafe_code = "forbid"` cannot be relaxed by a member that needs it, so a
-`[workspace.lints]` block would be a decision taken for every future host; and
-the library's manifest is the one that gets published, which is a reason to
-leave it alone.
+Every crate opts into the one `[workspace.lints]` block with
+`[lints] workspace = true`. This used to be three copies, on the reasoning
+that a shared block would bind every future host; it does not, because
+inheritance is opt-in per member, and a host that wants a different floor
+leaves the line out. What the shared block decides is that three crates
+cannot drift apart by accident.
+
+A member depends on the library by path alone, with no `version` beside it:
+with `publish = false` the version would buy nothing and would refuse to
+resolve the moment the library was bumped. Each member's own `version` still
+follows the library's, and `.github/scripts/release.sh` refuses a release
+where one does not.
 
 ### The website
 
@@ -304,9 +312,10 @@ Two artifacts, released separately.
 **The crate.** `.github/scripts/release.sh --dry-run` runs every gate above plus
 the package checks. Drop `--dry-run` to publish.
 
-Bump the version in `Cargo.toml` and move `Unreleased` into a dated section in
-`CHANGELOG.md` first. The script checks both: it refuses the `0.0.0`
-placeholder, and it refuses a version the changelog does not carry.
+Bump the version in `Cargo.toml` and in each member's `Cargo.toml`, and move
+`Unreleased` into a dated section in `CHANGELOG.md` first. The script checks
+all of it: it refuses the `0.0.0` placeholder, a member whose version is not
+the library's, and a version the changelog does not carry.
 
 **The npm package.** `./scripts/build-npm.sh --pack` builds
 `crates/accent-proust-wasm/pkg` and dry-runs `npm pack` over it;

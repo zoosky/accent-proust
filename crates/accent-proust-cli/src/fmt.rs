@@ -1,11 +1,16 @@
 //! `accent-proust fmt`: reprint Markdoc source in canonical form.
 //!
 //! The first command, and the one that needs no configuration. `format` is a
-//! pure function of the parse; `format(parse(s))` is idempotent and
-//! `parse(format(ast))` returns the same tree, both tested in the library.
-//! That is exactly the contract `--check` and `--write` need: a formatter that
-//! could change a document's meaning, or that never settled, could not be run
-//! in CI.
+//! pure function of the parse, and `parse(format(ast))` returns the same tree,
+//! tested in the library. `format(parse(s))` settles in one pass on every
+//! document but one shape the library documents rather than hides
+//! (`tests/formatter.rs`, "the escape set is upstream's three starters"): a
+//! paragraph that begins with a fence marker reprints as itself and re-parses
+//! as a fence, so the second pass differs from the first. A formatter a CI
+//! pipeline runs has to settle whatever the shape, so this one reformats its
+//! own output until it stops changing -- one extra pass to confirm, on every
+//! document -- and refuses with exit 2 if [`MAX_PASSES`] are not enough. That
+//! is the contract `--check` and `--write` need: write, then check, is clean.
 //!
 //! # Three modes
 //!
@@ -22,6 +27,13 @@
 //!
 //! With no paths the source is stdin, labelled `<stdin>` in a diff. `--write`
 //! then has nowhere to write back to and is refused.
+//!
+//! # Line endings
+//!
+//! The formatter writes `\n`. A CRLF file is read with its endings normalised
+//! first, so the tag grammar never sees a `\r`; it is then reported as changed
+//! by name -- not by a diff in which every line is removed and added back
+//! looking identical -- and rewritten with LF by `--write`.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -30,6 +42,13 @@ use std::process::ExitCode;
 use accent_proust::format::{FormatOptions, OrderedListMode, format_with};
 use accent_proust::parse;
 use clap::{Args, ValueEnum};
+
+/// Passes after which a document that is still changing is given up on.
+///
+/// The known unstable shape settles on the second pass, and a third confirms
+/// it. Four is room for one more the library has not documented yet, which is
+/// a bug to report rather than a document to keep chasing.
+const MAX_PASSES: usize = 4;
 
 /// Arguments to `fmt`.
 #[derive(Args, Debug)]
@@ -77,6 +96,31 @@ impl From<ListMode> for OrderedListMode {
     }
 }
 
+/// What the command does with a canonical document. Decided once, from the
+/// flags, so that each input asks one question rather than two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    /// Print it.
+    Print,
+    /// Say whether it differs, and how.
+    Check,
+    /// Put it back where the source came from.
+    Write,
+}
+
+impl Mode {
+    /// The mode the flags ask for. clap has already refused both at once.
+    fn of(args: &FmtArgs) -> Mode {
+        if args.check {
+            Mode::Check
+        } else if args.write {
+            Mode::Write
+        } else {
+            Mode::Print
+        }
+    }
+}
+
 /// What happened to one input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Outcome {
@@ -84,10 +128,18 @@ enum Outcome {
     Unchanged,
     /// Would change, or did.
     Changed,
-    /// Could not be read, written or printed. Reported on stderr as it
-    /// happened; the run goes on to the next input so that one bad path does
-    /// not hide the rest.
+    /// Could not be read, settled, written or printed. Reported on stderr as
+    /// it happened; the run goes on to the next input so that one bad path
+    /// does not hide the rest.
     Failed,
+}
+
+/// A document brought to rest.
+struct Canonical {
+    /// The settled text, LF-terminated.
+    text: String,
+    /// Whether it differs from the source as read, line endings included.
+    changed: bool,
 }
 
 /// Run `fmt`.
@@ -98,40 +150,16 @@ enum Outcome {
 #[must_use]
 pub fn run(args: &FmtArgs) -> ExitCode {
     let options = options(args);
-
-    if args.paths.is_empty() {
-        if args.write {
-            report(
-                "<stdin>",
-                "--write needs a file; stdin has nowhere to be written back to",
-            );
-            return ExitCode::from(2);
-        }
-        let outcome = match io::read_to_string(io::stdin()) {
-            Ok(source) => one(args, &options, "<stdin>", &source, None),
-            Err(error) => {
-                report("<stdin>", &error.to_string());
-                Outcome::Failed
-            }
-        };
-        return code(&[outcome], args.check);
-    }
-
-    let outcomes: Vec<Outcome> = args
-        .paths
-        .iter()
-        .map(|path| {
-            let label = path.display().to_string();
-            match std::fs::read_to_string(path) {
-                Ok(source) => one(args, &options, &label, &source, Some(path)),
-                Err(error) => {
-                    report(&label, &error.to_string());
-                    Outcome::Failed
-                }
-            }
-        })
-        .collect();
-    code(&outcomes, args.check)
+    let mode = Mode::of(args);
+    let outcomes: Vec<Outcome> = if args.paths.is_empty() {
+        vec![from_stdin(mode, &options)]
+    } else {
+        args.paths
+            .iter()
+            .map(|path| from_file(mode, &options, path))
+            .collect()
+    };
+    code(&outcomes, mode)
 }
 
 /// The library's defaults, with only what the command line said applied.
@@ -150,57 +178,83 @@ fn options(args: &FmtArgs) -> FormatOptions {
     options
 }
 
-/// Format one input and do what the mode asks with the result.
-///
-/// `path` is `None` for stdin, which only `--write` cares about, and it is
-/// refused before this is reached.
-fn one(
-    args: &FmtArgs,
-    options: &FormatOptions,
-    label: &str,
-    source: &str,
-    path: Option<&Path>,
-) -> Outcome {
-    let formatted = format_with(&parse::parse(source), options);
-    let changed = formatted != source;
-
-    if args.check {
-        if !changed {
-            return Outcome::Unchanged;
-        }
-        let diff = similar::TextDiff::from_lines(source, &formatted);
-        let text = diff
-            .unified_diff()
-            .header(&format!("a/{label}"), &format!("b/{label}"))
-            .to_string();
-        return match io::stdout().lock().write_all(text.as_bytes()) {
-            Ok(()) => Outcome::Changed,
-            Err(error) => {
-                report("stdout", &error.to_string());
-                Outcome::Failed
-            }
-        };
+/// Format stdin. `--write` is refused here, because there is nothing to
+/// write back to, and so the file-only mode never reaches the code below.
+fn from_stdin(mode: Mode, options: &FormatOptions) -> Outcome {
+    const LABEL: &str = "<stdin>";
+    if mode == Mode::Write {
+        report(
+            LABEL,
+            "--write needs a file; stdin has nowhere to be written back to",
+        );
+        return Outcome::Failed;
     }
-
-    if args.write {
-        if !changed {
-            return Outcome::Unchanged;
-        }
-        let Some(path) = path else {
-            report(label, "nothing to write to");
+    let source = match io::read_to_string(io::stdin()) {
+        Ok(source) => source,
+        Err(error) => {
+            report(LABEL, &error.to_string());
             return Outcome::Failed;
-        };
-        return match std::fs::write(path, &formatted) {
-            Ok(()) => Outcome::Changed,
-            Err(error) => {
-                report(label, &error.to_string());
-                Outcome::Failed
-            }
-        };
+        }
+    };
+    let Some(canonical) = settle(LABEL, &source, options) else {
+        return Outcome::Failed;
+    };
+    if mode == Mode::Check {
+        check(LABEL, &source, &canonical)
+    } else {
+        print(&canonical)
     }
+}
 
-    match io::stdout().lock().write_all(formatted.as_bytes()) {
-        Ok(()) if changed => Outcome::Changed,
+/// Format one file, in whichever mode.
+fn from_file(mode: Mode, options: &FormatOptions, path: &Path) -> Outcome {
+    let label = path.display().to_string();
+    let source = match std::fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) => {
+            report(&label, &error.to_string());
+            return Outcome::Failed;
+        }
+    };
+    let Some(canonical) = settle(&label, &source, options) else {
+        return Outcome::Failed;
+    };
+    match mode {
+        Mode::Print => print(&canonical),
+        Mode::Check => check(&label, &source, &canonical),
+        Mode::Write => write(&label, path, &canonical),
+    }
+}
+
+/// Format `source` until it stops changing, or give up.
+///
+/// `None` has been reported: the document is still changing after
+/// [`MAX_PASSES`], which is a formatter bug and not a document to keep
+/// chasing.
+fn settle(label: &str, source: &str, options: &FormatOptions) -> Option<Canonical> {
+    let normalised = source.replace("\r\n", "\n");
+    let mut text = format_with(&parse::parse(&normalised), options);
+    for _ in 1..MAX_PASSES {
+        let again = format_with(&parse::parse(&text), options);
+        if again == text {
+            let changed = text != source;
+            return Some(Canonical { text, changed });
+        }
+        text = again;
+    }
+    report(
+        label,
+        &format!(
+            "still changing after {MAX_PASSES} passes; the formatter does not settle on this document"
+        ),
+    );
+    None
+}
+
+/// Write the canonical text to stdout.
+fn print(canonical: &Canonical) -> Outcome {
+    match io::stdout().lock().write_all(canonical.text.as_bytes()) {
+        Ok(()) if canonical.changed => Outcome::Changed,
         Ok(()) => Outcome::Unchanged,
         Err(error) => {
             report("stdout", &error.to_string());
@@ -209,11 +263,58 @@ fn one(
     }
 }
 
-/// The exit code for a set of outcomes. See [`run`].
-fn code(outcomes: &[Outcome], check: bool) -> ExitCode {
+/// Say what would change, on stdout.
+///
+/// CRLF endings are named rather than diffed. The diff is over the normalised
+/// source, so a CRLF file that also needs reformatting shows the reformatting
+/// and not every line of the file.
+fn check(label: &str, source: &str, canonical: &Canonical) -> Outcome {
+    if !canonical.changed {
+        return Outcome::Unchanged;
+    }
+    let normalised = source.replace("\r\n", "\n");
+    let mut text = String::new();
+    if normalised.len() != source.len() {
+        text.push_str(&format!("{label}: CRLF line endings; fmt writes LF\n"));
+    }
+    if canonical.text != normalised {
+        let diff = similar::TextDiff::from_lines(&normalised, &canonical.text);
+        text.push_str(
+            &diff
+                .unified_diff()
+                .header(&format!("a/{label}"), &format!("b/{label}"))
+                .to_string(),
+        );
+    }
+    match io::stdout().lock().write_all(text.as_bytes()) {
+        Ok(()) => Outcome::Changed,
+        Err(error) => {
+            report("stdout", &error.to_string());
+            Outcome::Failed
+        }
+    }
+}
+
+/// Put the canonical text back in `path`, if it differs.
+fn write(label: &str, path: &Path, canonical: &Canonical) -> Outcome {
+    if !canonical.changed {
+        return Outcome::Unchanged;
+    }
+    match std::fs::write(path, &canonical.text) {
+        Ok(()) => Outcome::Changed,
+        Err(error) => {
+            report(label, &error.to_string());
+            Outcome::Failed
+        }
+    }
+}
+
+/// The exit code for a set of outcomes. See [`run`]. The one place the policy
+/// lives; clap's own usage errors exit 2 on their own.
+fn code(outcomes: &[Outcome], mode: Mode) -> ExitCode {
     if outcomes.contains(&Outcome::Failed) {
         ExitCode::from(2)
-    } else if check && outcomes.contains(&Outcome::Changed) {
+    } else if mode == Mode::Check && outcomes.contains(&Outcome::Changed) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
