@@ -19,7 +19,9 @@
 //! is the split the seam makes:
 //!
 //! 1. A string or a number is escaped and emitted. Nothing else is. The walk
-//!    picks them out and hands them to [`TagRenderer::text`], which escapes.
+//!    picks them out: a string goes to [`TagRenderer::text`], which escapes,
+//!    and a number to [`TagRenderer::number`], whose default spells it as
+//!    ECMAScript does and passes that to `text`.
 //! 2. An array is rendered element by element and concatenated. This is checked
 //!    *before* the tag check, so a [`Scalar::Array`] child renders its
 //!    elements: `[1, 2, 3]` as a child is `123`, while the same array as an
@@ -134,7 +136,7 @@ impl TagRenderer for Html {
             // `[a-zA-Z0-9_-]+` as an attribute name, so in practice this is ASCII.
             out.push_str(&key.to_lowercase());
             out.push_str("=\"");
-            escape_html_into(out, &js::string_nodes(value));
+            escape_html_into(out, &attribute_value(value));
             out.push('"');
         }
         out.push('>');
@@ -292,9 +294,9 @@ fn render_into<R: TagRenderer + ?Sized>(
             Step::Node(RenderableTreeNode::Tag(tag)) => open_tag(out, &mut stack, tag, renderer),
             Step::Leaf(scalar) => match scalar {
                 Scalar::String(text) => renderer.text(out, text),
-                // Formatted here, escaped there: a number's spelling is
-                // ECMAScript's and the same for every renderer.
-                Scalar::Number(value) => renderer.text(out, &js::number(*value)),
+                // Through `number`, whose default spells the value as
+                // ECMAScript does and hands it to `text`.
+                Scalar::Number(value) => renderer.number(out, *value),
                 // Upstream's `Array.isArray` arm, which sits above the tag
                 // check: the elements are rendered, not joined with commas.
                 Scalar::Array(items) => stack.extend(items.iter().rev().map(Step::Leaf)),

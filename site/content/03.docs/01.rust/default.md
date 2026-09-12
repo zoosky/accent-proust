@@ -179,16 +179,19 @@ supported rather than tolerated.
 ## What the crate will not do for you
 
 No I/O, no configuration file, no concept of a theme, a template or a plugin.
-Two responsibilities in particular are deliberately left outside:
+Two responsibilities in particular are the host's, reached in two different
+ways:
 
 **Where a schema comes from.** You build a `Config`. Whether the schemas in it
 came from a constant, a YAML file, a database or a sandboxed guest is not the
 crate's business, and no trait pretends to abstract it.
 
-**HTML policy.** `render::render_all` is a convenience that emits upstream's
-markup. A host that wants different elements, different escaping or a template
-engine walks the renderable tree itself -- it is a plain tree of tags and
-scalars, which is exactly what `transform` returns for that purpose.
+**HTML policy.** `render::render_all` emits upstream's markup through
+`render::Html`, one implementation of `render::TagRenderer`. A host that wants
+different elements, different escaping or a different void-element list
+implements the trait and calls `render_with`. It writes the markup for one tag
+at a time -- `open`, `close`, `text` -- and the crate walks the tree, so the
+document's depth is never on the host's stack.
 
 ## Reference
 

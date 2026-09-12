@@ -14,13 +14,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   policy, a different void-element list, or a format that is not HTML.
   `render` and `render_all` are unchanged and produce the same bytes.
 
-  The trait is `open`, `close` and `text`, and deliberately not "here is a
-  tag, here is a callback for its children". The renderer walks an explicit
-  stack because nesting depth is the document's to choose, and a callback
-  would put that depth back on the host's stack one frame per level. The walk
-  stays in the crate and the host only writes bytes. `escape_html_into` and
-  `attribute_value` are public so an implementation can keep the parts of
-  upstream's behaviour it wants.
+  The trait is `open`, `close` and `text`, plus a provided `number` whose
+  default spells a value as ECMAScript does; `open` answers with `Children`,
+  a `#[non_exhaustive]` enum of `Render` or `Skip`. It is deliberately not
+  "here is a tag, here is a callback for its children". The renderer walks an
+  explicit stack because nesting depth is the document's to choose, and a
+  callback would put that depth back on the host's stack one frame per level.
+  The walk stays in the crate and the host only writes bytes.
+
+  `escape_html_into` and `attribute_value` are public so an implementation
+  can keep the parts of upstream's behaviour it wants. The escaper does not
+  replace `'`, which was safe while only `Html` used it and is now a
+  documented condition: text and double-quoted attributes only.
 
 ## [0.10.0] - 2026-09-06
 

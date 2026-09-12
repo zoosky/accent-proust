@@ -64,6 +64,20 @@ fn string(value: &str) -> Scalar {
     Scalar::String(value.to_owned())
 }
 
+/// How deep the two depth tests nest. Far past anything a document produces
+/// through the transformer, which bounds its own recursion at 512.
+const DEPTH: usize = 50_000;
+
+/// `depth` `<b>` elements around one `<i>x</i>`, for the two tests that pin
+/// the walk as iterative. One fixture, so the depth they pin is one number.
+fn deep_tree(depth: usize) -> RenderableTreeNode {
+    let mut tree = node("i", &[], vec![text("x")]);
+    for _ in 0..depth {
+        tree = node("b", &[], vec![tree]);
+    }
+    tree
+}
+
 mod upstream {
     use super::*;
 
@@ -427,12 +441,7 @@ mod beyond_upstream {
         // Nesting depth in a renderable tree comes from the document, which is
         // attacker-controlled. A recursive renderer aborts the process here,
         // and an abort is not something a caller can catch.
-        const DEPTH: usize = 50_000;
-
-        let mut tree = node("i", &[], vec![text("x")]);
-        for _ in 0..DEPTH {
-            tree = node("b", &[], vec![tree]);
-        }
+        let tree = deep_tree(DEPTH);
 
         let html = render(&tree);
         assert_eq!(html.matches("<b>").count(), DEPTH);
@@ -575,16 +584,19 @@ mod tag_renderer {
 
     #[test]
     fn html_is_the_default_renderer() {
-        // `render` is `render_with(.., &Html)`, byte for byte. The corpus
-        // grades `render`; this is what makes that grade cover `Html`.
+        // Pinned to bytes, not to `render`: `render` is `render_with(.., &Html)`
+        // by definition, so comparing the two would test nothing.
         let example = node(
             "td",
             &[("colSpan", Scalar::Number(2.0)), ("title", string("a & b"))],
             vec![text("<x>"), number(1e21), node("br", &[], vec![])],
         );
-        assert_eq!(render_with(&example, &Html), render(&example));
+        let expected = r#"<td colspan="2" title="a &amp; b">&lt;x&gt;1e+21<br></td>"#;
+        assert_eq!(render_with(&example, &Html), expected);
+        assert_eq!(render(&example), expected);
         let many = [example.clone(), text("tail")];
-        assert_eq!(render_all_with(&many, &Html), render_all(&many));
+        assert_eq!(render_all_with(&many, &Html), format!("{expected}tail"));
+        assert_eq!(render_all(&many), format!("{expected}tail"));
     }
 
     #[test]
@@ -643,13 +655,14 @@ mod tag_renderer {
 
     #[test]
     fn a_number_child_reaches_text_already_formatted() {
-        // ECMAScript's spelling, decided before the renderer sees it.
+        // The default `number`: ECMAScript's spelling, handed to `text`, so
+        // a renderer that does not override it sees a string.
         let example = node("p", &[], vec![number(1e21), number(-0.0), number(1e-7)]);
         assert_eq!(render_with(&example, &Sexp), r#"(p "1e+21" "0" "1e-7")"#);
     }
 
     #[test]
-    fn null_and_boolean_children_never_reach_text() {
+    fn null_boolean_and_object_children_reach_no_method() {
         let example = node(
             "p",
             &[],
@@ -658,6 +671,7 @@ mod tag_renderer {
                 text("a"),
                 RenderableTreeNode::Scalar(Scalar::Boolean(true)),
                 text("b"),
+                RenderableTreeNode::Scalar(Scalar::Object(IndexMap::new())),
             ],
         );
         assert_eq!(render_with(&example, &Sexp), r#"(p "a" "b")"#);
@@ -699,17 +713,41 @@ mod tag_renderer {
         );
     }
 
+    /// `Sexp` with a number type: `number` is overridden to write the value.
+    struct TypedSexp;
+
+    impl TagRenderer for TypedSexp {
+        fn open(&self, out: &mut String, tag: &Tag) -> Children {
+            Sexp.open(out, tag)
+        }
+
+        fn close(&self, out: &mut String, tag: &Tag) {
+            Sexp.close(out, tag);
+        }
+
+        fn text(&self, out: &mut String, text: &str) {
+            Sexp.text(out, text);
+        }
+
+        fn number(&self, out: &mut String, value: f64) {
+            out.push(' ');
+            out.push_str(&value.to_string());
+        }
+    }
+
+    #[test]
+    fn a_renderer_with_a_number_type_overrides_number() {
+        let example = node("p", &[], vec![number(1.5), text("x"), number(2.0)]);
+        assert_eq!(render_with(&example, &Sexp), r#"(p "1.5" "x" "2")"#);
+        assert_eq!(render_with(&example, &TypedSexp), r#"(p 1.5 "x" 2)"#);
+    }
+
     #[test]
     fn deep_nesting_does_not_overflow_the_stack_through_a_host_renderer() {
         // The property the seam's shape exists for. A trait that rendered
         // children through a callback would put one host frame per level
         // here, and this is the test that fails when someone reshapes it.
-        const DEPTH: usize = 50_000;
-
-        let mut tree = node("i", &[], vec![text("x")]);
-        for _ in 0..DEPTH {
-            tree = node("b", &[], vec![tree]);
-        }
+        let tree = deep_tree(DEPTH);
 
         let out = render_with(&tree, &Sexp);
         assert_eq!(out.matches("(b").count(), DEPTH);

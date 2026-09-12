@@ -7,6 +7,8 @@
 
 use crate::renderable::Tag;
 
+use super::js;
+
 /// Whether a tag's children are rendered after its opening markup.
 ///
 /// Returned by [`TagRenderer::open`]. [`Html`](super::Html) answers [`Skip`]
@@ -52,17 +54,22 @@ pub enum Children {
 /// So the trait never asks for children to be rendered. [`open`] writes what
 /// precedes them and says whether they follow; the crate walks them;
 /// [`close`] writes what comes after. Every method is called for one node,
-/// writes, and returns. An implementation needs no depth limit of its own and
-/// cannot be handed a tree deep enough to overflow, whatever the document did.
+/// writes, and returns, and the crate never re-enters the renderer. That is
+/// the whole of the guarantee, and it is worth being exact about: [`open`]
+/// receives the tag with its `children` and `attributes` in plain view, and
+/// an implementation that walks either of them itself -- rendering a slot's
+/// subtree from inside `open`, say -- has taken the stack back. Return
+/// [`Children::Render`] and let the crate do it.
 ///
 /// # What the crate decides, and what the host decides
 ///
-/// The crate owns the shape of the walk: document order, that an array child
-/// renders element by element, that `null` and a boolean render as nothing,
-/// and that a tag with no name is a wrapper whose children render in place.
-/// None of those reaches an implementation, because none of them is markup.
-/// They are upstream's tree semantics, and a host that changed one would be
-/// rendering a different tree.
+/// The crate owns the shape of the walk: document order; that an array child
+/// renders element by element, each reaching the renderer on its own; that
+/// `null`, a boolean and an object render as nothing and reach no method at
+/// all; and that a tag with no name is a wrapper whose children render in
+/// place. None of those reaches an implementation, because none of them is
+/// markup. They are upstream's tree semantics, and a host that changed one
+/// would be rendering a different tree.
 ///
 /// The host owns everything that is markup: what a tag opens and closes with,
 /// which attributes are written and how, which elements are void, and how text
@@ -71,13 +78,15 @@ pub enum Children {
 /// wants:
 ///
 /// - [`escape_html_into`](super::escape_html_into) is markdown-it's escaper,
-///   the four replacements upstream makes and no others.
+///   the four replacements upstream makes and no others. It does not replace
+///   `'`, so it is only safe in text and between double quotes; a renderer
+///   that delimits attributes differently needs its own.
 /// - [`attribute_value`](super::attribute_value) is ECMAScript's `String(v)`
 ///   over an attribute, which is what upstream writes between the quotes.
 /// - [`is_void_element`](super::is_void_element) is the HTML standard's list.
 ///
-/// Every method writes into `out` rather than returning a `String`, so a
-/// document renders into one allocation however many tags it holds.
+/// Every method writes into `out`, so the output is one `String` appended to
+/// from start to finish rather than assembled from pieces.
 ///
 /// # Examples
 ///
@@ -148,10 +157,30 @@ pub trait TagRenderer {
 
     /// Write `text`, escaped to the implementation's policy.
     ///
-    /// Reached for a string child and for a number child. A number arrives
-    /// already formatted by ECMAScript's rules -- `1e21` as `1e+21`, `-0` as
-    /// `0` -- because that formatting is upstream's arithmetic rather than its
-    /// markup, and it is the same for every renderer. What remains here is
-    /// escaping, which is not.
+    /// Reached for a string child, and, through [`number`]'s default, for a
+    /// number child. An array child reaches it once per element, in order,
+    /// because upstream renders an array's elements and does not join them;
+    /// so `text` cannot tell one array child from several string children,
+    /// and is not meant to. `null`, a boolean and an object never reach it.
+    ///
+    /// [`number`]: TagRenderer::number
     fn text(&self, out: &mut String, text: &str);
+
+    /// Write a number child.
+    ///
+    /// The default spells `value` as ECMAScript does -- `1e21` as `1e+21`,
+    /// `-0` as `0`, `1e-7` as `1e-7` -- and hands the result to [`text`],
+    /// which is what upstream's renderer does and what [`Html`](super::Html)
+    /// wants. That spelling is upstream's arithmetic rather than its markup,
+    /// so the default is the same for every renderer and a renderer that only
+    /// changes markup never overrides this.
+    ///
+    /// A renderer whose output has a number type -- JSON, an S-expression --
+    /// overrides it to write the value rather than a string that looks like
+    /// one.
+    ///
+    /// [`text`]: TagRenderer::text
+    fn number(&self, out: &mut String, value: f64) {
+        self.text(out, &js::number(value));
+    }
 }

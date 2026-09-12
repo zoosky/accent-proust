@@ -37,14 +37,22 @@
 //! not a behaviour, which is why [`escape_html`] returns a [`Cow`]: same
 //! answer, same allocation profile.
 //!
-//! # Why the single quote is not in the set, and why that is safe here
+//! # Why the single quote is not in the set, and what that asks of a renderer
 //!
 //! An escaper that omits `'` is only safe if every attribute it feeds is
-//! double-quoted. That is not a convention here, it is the renderer: `html.rs`
-//! writes `="` and `"` around every value with no branch that could choose
-//! otherwise, so an apostrophe in a value can never end the attribute. Adding
-//! `&#39;` would be strictly safer in the abstract and a divergence in fact --
-//! it changes the bytes upstream produces for ordinary prose.
+//! double-quoted. For [`Html`](super::Html) that is not a convention, it is
+//! the code: its `open` writes `="` and `"` around every value with no branch
+//! that could choose otherwise, so an apostrophe in a value can never end the
+//! attribute. Adding `&#39;` would be strictly safer in the abstract and a
+//! divergence in fact -- it changes the bytes upstream produces for ordinary
+//! prose.
+//!
+//! The escaper is public, and a [`TagRenderer`](super::TagRenderer) inherits
+//! the condition with it. In text and between double quotes these four
+//! replacements are enough. Between single quotes they are not: a value of
+//! `' onmouseover='...` walks straight through and ends the attribute. A
+//! renderer that delimits attributes any other way needs an escaper that
+//! matches its delimiter, and this one is deliberately not it.
 
 use std::borrow::Cow;
 
@@ -53,6 +61,10 @@ use std::borrow::Cow;
 /// Replaces `&`, `<`, `>` and `"` with their named entities and leaves
 /// everything else, including `'`, unchanged. Returns the input borrowed when
 /// it contains none of the four.
+///
+/// Safe for text and for double-quoted attribute values only. `'` is not
+/// replaced, so a single-quoted attribute can be ended by its value; see the
+/// module documentation.
 ///
 /// # Examples
 ///
@@ -82,6 +94,9 @@ pub fn escape_html(input: &str) -> Cow<'_, str> {
 /// [`TagRenderer`](super::TagRenderer) writes into the document's one string,
 /// and a host keeping upstream's escaping while changing something else should
 /// not have to pay an allocation per text node to do it.
+///
+/// The same condition as [`escape_html`]: text and double-quoted attribute
+/// values only, because `'` is not replaced.
 ///
 /// # Examples
 ///
