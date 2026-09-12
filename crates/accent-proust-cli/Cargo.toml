@@ -36,7 +36,7 @@ saphyr = { version = "0.0.12", default-features = false }
 # The unified diff `fmt --check` prints. A host's dependency: the library
 # needs no diff, and this is the kind of thing a host carries so that it does
 # not have to.
-similar = "2"
+similar = "3"
 
 [dev-dependencies]
 # The `--write` tests need a directory of their own, and one that is removed
