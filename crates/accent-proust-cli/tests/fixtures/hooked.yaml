@@ -1,0 +1,4 @@
+tags:
+  callout:
+    render: aside
+    validate: some code

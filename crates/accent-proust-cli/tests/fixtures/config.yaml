@@ -1,0 +1,10 @@
+tags:
+  callout:
+    render: aside
+    attributes:
+      type:
+        type: String
+        required: true
+        matches: [note, warning]
+variables:
+  greeting: hello

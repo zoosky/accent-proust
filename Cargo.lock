@@ -18,7 +18,10 @@ name = "accent-proust-cli"
 version = "0.10.0"
 dependencies = [
  "accent-proust",
+ "accent-proust-schema-config",
  "clap",
+ "indexmap",
+ "saphyr",
  "similar",
  "tempfile",
 ]
