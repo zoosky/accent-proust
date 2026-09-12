@@ -102,6 +102,29 @@ assert_eq!(
 `format(parse(s))` is idempotent, so a tool can rewrite a file in place, and
 `parse(format(ast))` gives back the same tree, so formatting loses nothing.
 
+## Command line
+
+The same engine as a command, for a documentation repository that wants a CI
+gate and for anyone with a Markdoc file to tidy:
+
+```sh
+cargo install --path crates/accent-proust-cli    # the binary is `accent-proust`
+accent-proust fmt --check docs/*.md
+accent-proust validate --config schema.yaml --partials docs/partials docs/*.md
+accent-proust render --config schema.yaml --var channel=stable docs/page.md
+```
+
+`fmt` reprints canonical source and, with `--check`, prints a diff and exits 1
+if anything would change. `validate` reports `path:line:column: level[id]:
+message` per error, or one JSON object per file with `--format json`, and
+exits 1 on an error. `render`, `transform` and `parse` print HTML, the
+renderable tree and the syntax tree. The configuration is a YAML or JSON file
+in the same vocabulary the WebAssembly bindings read from an object, so a
+schema declared for one host is accepted by the other; `--partials` is a
+directory of files, which is the thing the browser cannot do. The crate's
+[README](crates/accent-proust-cli/README.md) has the rest, exit codes
+included.
+
 ## Bring your own CommonMark parser
 
 The bundled tokenizer uses `pulldown-cmark`, behind the default
@@ -138,7 +161,7 @@ cargo test --test conformance -- --nocapture
 
 ## Contributing
 
-The library's minimum supported Rust version is 1.82. Develop on stable, which
+The library's minimum supported Rust version is 1.96. Develop on stable, which
 the test suite needs. See [AGENT.md](AGENT.md) for the gates and the workflow.
 
 ## Licence

@@ -6,7 +6,7 @@ lead: >-
   ships built in, and where the language stops and your schema starts.
 menu:
   visible: true
-  order: 3
+  order: 4
 description: >-
   A reference for the Markdoc language as accent-proust implements it: tags,
   annotations, attributes, variables, functions, partials, and the built-in

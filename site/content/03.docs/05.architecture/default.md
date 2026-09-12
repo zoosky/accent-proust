@@ -2,15 +2,16 @@
 title: Architecture
 template: docs
 lead: >-
-  Five pure stages, one trait seam, two responsibilities left outside, and two
-  ratchets that keep the port honest.
+  Five pure stages, three trait seams, a workspace of hosts around them, and
+  two ratchets that keep the port honest.
 menu:
   visible: true
-  order: 4
+  order: 5
 description: >-
-  How accent-proust is put together: the pipeline stages, the Tokenizer seam,
-  what the crate deliberately refuses to do, the module layout mirroring
-  upstream, and the conformance and divergence ratchets.
+  How accent-proust is put together: the pipeline stages, the Tokenizer,
+  TagRenderer and SchemaSource seams, what the crate deliberately refuses to
+  do, the module layout mirroring upstream, the workspace of hosts, and the
+  conformance and divergence ratchets.
 ---
 
 ## The pipeline
@@ -159,13 +160,20 @@ Members are hosts:
 | Member | What |
 |---|---|
 | `crates/accent-proust-wasm` | WebAssembly bindings for a browser or other JavaScript host. Ships to npm rather than crates.io, so it sets `publish = false` |
+| `crates/accent-proust-cli` | The [command-line host](/docs/cli), a binary named `accent-proust`: `fmt`, `validate`, `render`, `transform` and `parse`. `publish = false` until it has a release cadence of its own |
+| `crates/accent-proust-schema-config` | The declarative schema vocabulary both hosts read: the keys, the refusal of an unknown one with the path to it, and the mapping onto `Schema`. Not a host; what the hosts share |
 
 A binding that carries the library across an ABI is a host in the same sense a
-CMS is, so it gets a crate beside the library rather than a feature inside it --
-the same reasoning that keeps `Tokenizer` a trait rather than an implementation.
-`default-members = ["."]` holds a bare `cargo build`, `cargo test` and
-`cargo clippy --all-targets` to the library alone, so no member can quietly join
-the standalone, MSRV or conformance lanes.
+CMS is, and so is a binary that reads files; each gets a crate beside the
+library rather than a feature inside it -- the same reasoning that keeps
+`Tokenizer` a trait rather than an implementation. The vocabulary crate is not
+a host but what two hosts share, and it lives beside them so that a schema
+declared for the browser is accepted by the shell -- one from an object, the
+other from a file -- and the two cannot drift apart. `default-members = ["."]`
+holds a bare `cargo build`,
+`cargo test` and `cargo clippy --all-targets` to the library alone, so no
+member can quietly join the standalone, MSRV or conformance lanes; each brings
+its own CI job.
 
 ## The two ratchets
 
