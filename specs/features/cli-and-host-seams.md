@@ -1,7 +1,8 @@
 # A command-line host, and the two seams it needs
 
 Status: proposed
-Target: 0.11.0
+Target: 0.11.0, which is a breaking release -- `Config` loses its `nodes` and
+`tags` fields. See "Wiring it into Config".
 
 This specification covers one change with two halves. The first half adds
 `SchemaSource` and `TagRenderer` to the library, because both are promised in
@@ -58,9 +59,9 @@ In scope:
 - `TagRenderer`, a trait for turning a renderable tag into markup.
 - `crates/accent-proust-cli`, a binary crate with `fmt`, `validate`, `render`
   and `parse` subcommands, built with clap.
-- A declarative configuration format for schemas, shared with the existing
-  WebAssembly host rather than invented again.
-- A CI job and gate commands for the new crate.
+- `crates/accent-proust-schema-config`, the declarative configuration
+  vocabulary, shared by both hosts rather than written twice.
+- CI jobs and gate commands for both new crates.
 
 Out of scope:
 
@@ -114,6 +115,11 @@ pub trait SchemaSource {
 }
 ```
 
+One provided method joins `find` below, under "Debug must not regress". It is
+listed there rather than here because it serves diagnostics and not
+resolution, and a reader meeting the trait for the first time should see the
+one method that matters.
+
 Three properties are deliberate.
 
 **It is object-safe.** A host stores one as `Arc<dyn SchemaSource>`. No generic
@@ -135,42 +141,155 @@ which is what the command-line host does.
 
 ### Wiring it into Config
 
-Two options, and the difference is whether 0.11.0 is a breaking release.
-
-**Option A, additive (recommended).** `Config` keeps `nodes` and `tags` and
-gains one field:
+`nodes` and `tags` go private behind a `MapSchemaSource` that implements the
+trait, and `Config` holds the trait object alone:
 
 ```rust
 pub struct Config<'a> {
-    pub nodes: Arc<IndexMap<NodeType, Schema>>,
-    pub tags: Arc<IndexMap<String, Schema>>,
-    /// Consulted before the maps, when a host supplies one.
-    pub schemas: Option<Arc<dyn SchemaSource + Send + Sync>>,
-    // ... unchanged
+    /// Where a schema comes from. The only mechanism: there is no map beside
+    /// it and so no precedence rule to remember.
+    pub schemas: Arc<dyn SchemaSource + Send + Sync>,
+    pub variables: Option<Variables>,
+    pub functions: Arc<IndexMap<String, ConfigFunction>>,
+    pub partials: Arc<IndexMap<String, Node<'a>>>,
+    pub validation: ValidationOptions<'a>,
 }
 ```
 
-`find_schema` gains one branch: ask `schemas` first, fall back to the maps.
-Nothing existing breaks -- `builtins::config()`, `config.tags_mut().insert(..)`,
-every doctest, the README, and `crates/accent-proust-wasm` all keep working
-untouched.
+`find_schema` becomes one line -- `self.schemas.find(key)` -- and keeps its
+signature, so `src/validate/validator.rs:278` and `src/transform/node.rs:134`
+and `:188` do not change at all.
 
-The cost is two mechanisms for one job, so the precedence rule has to be
-written down where a reader meets it rather than inferred: **a source shadows
-the maps, and the maps are the fallback, not a merge**. Write that on the field
-and in the `SchemaSource` trait docs.
+`functions` and `partials` stay maps. Neither is a schema, `SchemaSource` does
+not describe them, and moving them would be a second redesign riding along with
+this one.
 
-**Option B, replacing.** `nodes` and `tags` become private behind a
-`MapSchemaSource` that implements the trait, and `Config` holds
-`Arc<dyn SchemaSource>` alone. One mechanism, no precedence rule to remember.
+This is a breaking release. 0.11.0 says so.
 
-It breaks `tags_mut()`, `nodes_mut()`, both public fields, the README example,
-several doctests and the WebAssembly host. At 0.10.0 that is permitted, and it
-is the shape a 1.0 wants.
+#### MapSchemaSource
 
-Take Option A now and Option B at 1.0, where the churn is expected and can be
-batched with anything else the API owes. Record the intent in `CHANGELOG.md`
-under the 0.11.0 entry so the second step is not a surprise.
+The default source owns what `Config` used to:
+
+```rust
+/// The schemas a host registered, as two maps.
+#[derive(Clone, Debug, Default)]
+pub struct MapSchemaSource {
+    nodes: IndexMap<NodeType, Schema>,
+    tags: IndexMap<String, Schema>,
+}
+
+impl MapSchemaSource {
+    /// Markdoc's own nodes and tags.
+    pub fn builtin() -> MapSchemaSource;
+    /// Nothing registered. Every lookup misses, which is what
+    /// `Config::new` has always meant.
+    pub fn new() -> MapSchemaSource;
+
+    pub fn insert_tag(&mut self, name: impl Into<String>, schema: Schema) -> &mut Self;
+    pub fn insert_node(&mut self, node_type: NodeType, schema: Schema) -> &mut Self;
+
+    /// The names registered, for diagnostics.
+    pub fn tag_names(&self) -> impl Iterator<Item = &str>;
+    pub fn node_types(&self) -> impl Iterator<Item = NodeType>;
+}
+
+impl SchemaSource for MapSchemaSource {
+    fn find(&self, key: SchemaKey<'_>) -> Option<&Schema> { /* today's two lines */ }
+}
+```
+
+Copy-on-write moves with it. `Config` shares its maps behind an `Arc` and
+`tags_mut()` reaches through `Arc::make_mut` (`src/validate/config.rs:121,127`),
+which is documented on the site as a property callers rely on
+(`site/content/03.docs/01.rust/default.md:79`). Under this design the host
+mutates a `MapSchemaSource` it owns and then shares it, so the sharing is
+explicit rather than clever. That documentation needs rewriting, not deleting:
+the "four maps behind an `Arc`" sentence is now wrong in its count and its
+mechanism.
+
+#### Debug must not regress
+
+`Config`'s hand-written `Debug` (`src/validate/config.rs:209-224`) prints the
+registered `nodes` and `tags` keys, and its doc comment says why: it is "what
+you want when a `tag-undefined` error disagrees with what you thought you
+registered". A `dyn SchemaSource` cannot enumerate anything, so that
+affordance disappears silently unless the trait keeps it:
+
+```rust
+pub trait SchemaSource {
+    fn find(&self, key: SchemaKey<'_>) -> Option<&Schema>;
+
+    /// The tag names this source defines, when it can say.
+    ///
+    /// Diagnostics only. `None` means "cannot enumerate", which is the honest
+    /// answer for a source that computes schemas on demand, and is why this
+    /// returns an option rather than an empty iterator.
+    fn tag_names(&self) -> Option<Vec<&str>> { None }
+}
+```
+
+`MapSchemaSource` overrides it; `Config::fmt` prints what it gets and
+`"<opaque>"` otherwise. A provided method, so no implementor is forced to care.
+
+#### Migration
+
+33 call sites across 13 files outside `src/validate/config.rs` touch
+`config.tags`, `config.nodes`, `tags_mut()` or `nodes_mut()`. They are not
+evenly distributed, and the shape of the fix is the same everywhere:
+
+| Where | Sites | Fix |
+|---|---|---|
+| `tests/validator.rs` | ~8 | `config.tags = tags(vec![..])` becomes a `MapSchemaSource` built then assigned to `config.schemas` |
+| `crates/accent-proust-wasm/src/config.rs:91,102,127` | 3 | Build one `MapSchemaSource` from `builtin()`, merge declarations into it, share it once |
+| `tests/conformance/config.rs:60-61` | 2 | Same, in the corpus harness |
+| `README.md:47`, `examples/readme.rs:31`, `site/.../01.rust/default.md:57,79` | 4 | The headline example changes shape; see below |
+| `src/builtins.rs:10,36,42-43` | 4 | `builtins::config()` wraps `MapSchemaSource::builtin()` |
+| `src/validate/nodes.rs:7` | 1 | Doc comment |
+
+`builtins::config()` keeps its signature and its meaning, so the common case is
+untouched. What changes is registering a tag on top of it. Today:
+
+```rust
+let mut config = builtins::config();
+config.tags_mut().insert("callout".to_string(), schema);
+```
+
+After:
+
+```rust
+let mut schemas = MapSchemaSource::builtin();
+schemas.insert_tag("callout", schema);
+
+let mut config = builtins::config();
+config.schemas = Arc::new(schemas);
+```
+
+Three lines instead of two, and one concept more. That is the price of the
+single mechanism, and it is worth paying once rather than documenting a
+precedence rule forever -- but it lands in the first example every new reader
+meets, in the README, the crate docs and the site. Provide a shorthand so the
+common case stays two lines:
+
+```rust
+impl Config<'_> {
+    /// Replace the schema source. Chainable, for the registering case.
+    pub fn with_schemas(self, schemas: Arc<dyn SchemaSource + Send + Sync>) -> Self;
+}
+```
+
+`Arc::get_mut` is not the shorthand to reach for. It fails whenever the source
+is already shared, which is exactly when a caller would want it, so it would
+work in the doctest and fail in the host.
+
+#### What this costs the WebAssembly host
+
+`crates/accent-proust-wasm/src/config.rs` merges host declarations over the
+built-ins by calling `tags_mut()` and `nodes_mut()` on a `builtins::config()`
+(lines 91 and 102). It rebuilds the same way: start from
+`MapSchemaSource::builtin()`, merge into it, share it once at the end. That is
+one fewer `Arc::make_mut` per declaration than today, so it is a small
+improvement rather than a tax -- but it is a change to a shipped host, and it
+belongs in the same pull request as the trait, not a follow-up.
 
 ### What the command-line host does with it
 
@@ -297,6 +416,17 @@ Flags:
 - Global: `--config <path>`, `--partials <dir>`, `--var NAME=VALUE`,
   `--file <label>`.
 
+`--check` prints a unified diff of what would change, per file, and exits 1 if
+anything would. rustfmt's behaviour rather than prettier's: a file list answers
+"which files" and a diff also answers "and what is wrong with them", which is
+the question a reader of a failed CI log actually has. The list is recoverable
+from the diff headers; the diff is not recoverable from the list without
+running the tool again locally.
+
+The cost is a diff implementation. Take a dependency rather than write one --
+`similar` is the usual choice and is already the kind of dependency a host
+carries. Keep it out of the library, which needs no diff.
+
 Read from stdin when no path is given and write to stdout, so the tool composes
 with the rest of a documentation pipeline.
 
@@ -354,12 +484,29 @@ naming the path to it, because "a schema that half arrives is worse than one
 that does not, because the half that is missing is invisible until an author
 trips over it". The command-line host takes both.
 
-Two hosts reading one vocabulary means the lists belong in one place. Move them
-and the validation policy into a shared module -- either a `schema-config`
-feature on the library or a small third crate -- leaving each host only its own
-deserialisation: `JsValue` walking for the browser, serde for the CLI. If that
-refactor is deferred, the lists are duplicated and will drift, so defer it
-deliberately or not at all.
+#### The vocabulary is a crate
+
+`crates/accent-proust-schema-config` owns the key lists, the refusal policy,
+the path-building for error messages, and the mapping from declarations to
+`Schema`, `SchemaAttribute` and `SchemaSlot`. Both hosts depend on it. Each
+keeps only its own deserialisation: `JsValue` walking for the browser, serde
+for the command-line host.
+
+A crate rather than a feature on the library, for one reason that outranks the
+extra manifest: **the library's dependency tree stays as it is.** A
+`schema-config` feature would put serde in `accent-proust`'s tree for anyone
+who enabled it, and `scripts/check-standalone.sh` exists precisely to keep that
+tree honest. A separate crate cannot leak into it, and the library stays
+publishable with the dependency list it has today.
+
+The crate is not a host, so it inherits none of the host reasoning in
+`Cargo.toml:9-11`. It sits beside the hosts as what they share. `publish =
+false` until a host outside this repository needs it.
+
+Two things it must not become. It does not depend on clap, because the
+WebAssembly host would then carry an argument parser. And it does not own the
+`Config` assembly -- it produces schemas, and the host decides what to do with
+them, because partials and variables come from places only one host has.
 
 Accept YAML and JSON. YAML is what a documentation repository already has, and
 every JSON file is valid YAML, so one parser serves both.
@@ -377,6 +524,37 @@ the command-line host's reason to exist.
 
 **Whole-repository validation.** Many files, one exit code. Neither the library
 nor the playground can be a CI gate; this is the thing that can.
+
+#### Typed variables
+
+`--var` carries typed values, not strings. `Variables` is
+`IndexMap<String, Value>` (`src/validate/config.rs:41`), so every type a
+Markdoc document can hold is already expressible, and a string-only flag would
+make `{% if $debug %}` true for `--var debug=false`. That is a bug the flag
+would be handing to every user who writes it.
+
+Parse the part after `=` as a YAML scalar, which is the parser the
+configuration file already brings:
+
+| Written | Becomes |
+|---|---|
+| `--var count=3` | `Value::Number(3.0)` |
+| `--var debug=true` | `Value::Boolean(true)` |
+| `--var name=production` | `Value::String("production")` |
+| `--var missing=null` | `Value::Null` |
+| `--var 'version="3"'` | `Value::String("3")` |
+| `--var 'tags=[a, b]'` | `Value::Array([String, String])` |
+
+One rule to document, and it is YAML's own: quote it to force a string. Reusing
+the config parser means `--var` and `--config` never disagree about what `3`
+is, which is the failure a hand-rolled inference rule would eventually produce.
+
+There is one numeric type and it is `f64` (`src/ast/value.rs:44-50`), so `3`
+and `3.0` are the same value and no integer-versus-float question arises.
+
+Split on the first `=` only, so `--var 'title=a=b'` is the string `a=b`. A name
+with an `=` in it is not addressable, which is correct: the grammar does not
+admit one.
 
 ### Two implementation notes that will otherwise cost a rewrite
 
@@ -400,14 +578,18 @@ code is the correct behaviour rather than a lapse.
 `default-members = ["."]` (`Cargo.toml:17`) holds a bare `cargo test`,
 `cargo clippy --all-targets` and the standalone, MSRV and conformance lanes to
 the library, so a new member joins none of them automatically. That is the
-intended behaviour, not an oversight, and it means this crate brings its own:
+intended behaviour, not an oversight, and it means each new crate brings its
+own:
 
 - A `CLI` job in `.github/workflows/ci.yml`, modelled on `WebAssembly`:
   `cargo clippy -p accent-proust-cli --all-targets -- -D warnings` and
   `cargo test -p accent-proust-cli`.
-- A row in the CI table in `AGENT.md`, and its commands in the "Quality gates"
-  section beside the WebAssembly ones, which are already listed by name for the
-  same reason.
+- A `Schema config` job doing the same for
+  `accent-proust-schema-config`. It is the crate both hosts depend on, so it
+  going unlinted is the worst of the three to leave to chance.
+- A row each in the CI table in `AGENT.md`, and their commands in the "Quality
+  gates" section beside the WebAssembly ones, which are already listed by name
+  for the same reason.
 
 `scripts/check-standalone.sh` needs no change. It reads the root `Cargo.toml`
 only, and a member depending on the library by path is exactly what a host
@@ -419,9 +601,12 @@ building the binary on 1.96.
 
 ### Testing
 
-- Trait-level unit tests in the library: a `SchemaSource` that shadows the maps
-  resolves ahead of them, and a `TagRenderer` that emits something other than
-  HTML round-trips through `render_all_with`.
+- Trait-level unit tests in the library: a `SchemaSource` that is not a
+  `MapSchemaSource` -- one that answers from a match arm, say -- resolves
+  through `Config`, and a `TagRenderer` that emits something other than HTML
+  round-trips through `render_all_with`.
+- A `SchemaSource` that returns `None` from `tag_names` renders in `Config`'s
+  `Debug` without panicking or claiming an empty registry.
 - A `TagRenderer` depth test: a tree near `MAX_TRANSFORM_DEPTH` renders through
   a custom renderer without touching the host's stack. This is the test that
   fails if the trait is ever reshaped to render children itself, which is the
@@ -434,10 +619,16 @@ building the binary on 1.96.
 
 ## Risks
 
-**Two config dialects.** The single biggest way this goes wrong is the CLI
-growing its own key names next to the browser's. Both would then be documented
-on the same site, and neither would be the format. Share the vocabulary in the
-first pull request that needs it, not later.
+**A breaking change that arrives twice.** `Config` loses two public fields and
+two methods, and 33 call sites move. The failure mode is doing it in stages --
+a deprecated `tags_mut()` kept "for one release" alongside the source -- which
+restores the precedence rule this design exists to avoid, in the release notes
+instead of the code. Land the whole of step 2 or none of it.
+
+**The vocabulary crate drifting back into a host.** It exists to be shared; the
+first change that is easier to make in the CLI's copy will be made in the CLI's
+copy unless the crate is where the keys live from the day the CLI reads its
+first configuration file. That is why step 4 precedes the CLI's `validate`.
 
 **A permissive CLI reading as authoritative.** The CLI sees declarative schemas
 only, so a host whose real enforcement lives in a `validate` hook gets a CLI
@@ -456,28 +647,39 @@ Each step is a pull request that leaves the repository releasable.
 
 1. `TagRenderer` plus `render::Html`, `render_with`, `render_all_with`. No
    behaviour change; the existing renderer moves behind the trait.
-2. `SchemaSource` plus `SchemaKey` and the `Config.schemas` field, Option A. No
-   behaviour change while the field is `None`.
-3. `crates/accent-proust-cli` with `fmt` only, plus the CI job and the
-   `AGENT.md` rows. Useful on its own, and needs neither trait.
-4. Shared configuration vocabulary, extracted from the WebAssembly host.
+2. `SchemaSource`, `SchemaKey`, `MapSchemaSource`, and `Config.schemas`
+   replacing `nodes` and `tags`. Breaking, and the whole of it: the library, the
+   33 call sites, the WebAssembly host, the README, the examples and the site
+   page that documents copy-on-write.
+3. `crates/accent-proust-cli` with `fmt` only -- including `--check` and its
+   diff -- plus the CI job and the `AGENT.md` rows. Useful on its own, and needs
+   neither trait.
+4. `crates/accent-proust-schema-config`, extracted from the WebAssembly host,
+   with that host moved on to it in the same pull request. Extracting without
+   moving the only existing consumer leaves two copies, which is the state this
+   step exists to prevent.
 5. `validate`, `render`, `parse` and `transform`, plus `--partials` and
    `--var`.
-6. `CHANGELOG.md` entries throughout, and a note under 0.11.0 recording that
-   Option B is intended for 1.0.
+6. `CHANGELOG.md` entries throughout, with 0.11.0 marked breaking and the
+   `Config` migration written out in it. A reader upgrading needs the
+   before-and-after, not a list of renamed items.
 
-Steps 1 and 2 are independent of each other and of step 3, so they can land in
-any order or in parallel.
+Steps 1 and 3 are independent of everything else and can land in any order or
+in parallel. Step 2 is the one that wants its own release. Step 5 depends on
+both 3 and 4.
 
-## Open questions
+## Decisions taken
 
-1. **Where does the shared configuration vocabulary live** -- a library feature,
-   or a third crate? A feature keeps the workspace at three crates; a crate
-   keeps serde out of the library's dependency tree entirely, which the
-   standalone invariant exists to protect.
-2. **Does `fmt --check` print a diff or a file list?** rustfmt prints a diff,
-   prettier prints a list. A list is cheaper and composes with `xargs`.
-3. **Should `--var` accept typed values**, or only strings? `Variables` holds
-   `Value`, so typing is expressible; the question is whether
-   `--var count=3` is the number or the string, and whether a second syntax for
-   that is worth it against `--config`.
+Recorded because each closes a question this specification opened, and the
+reasoning is shorter to keep than to reconstruct.
+
+1. **`Config` holds a `SchemaSource` alone**, rather than a source consulted
+   ahead of the maps. One mechanism and no precedence rule, at the cost of a
+   breaking release and a three-line registration example.
+2. **The configuration vocabulary is a crate**, not a feature on the library.
+   It keeps serde out of the library's dependency tree, which
+   `scripts/check-standalone.sh` exists to protect.
+3. **`fmt --check` prints a unified diff.** A CI log reader wants what is wrong,
+   not only where.
+4. **`--var` takes typed values**, parsed as YAML scalars by the same parser the
+   configuration file uses, so the two can never disagree about what `3` is.
