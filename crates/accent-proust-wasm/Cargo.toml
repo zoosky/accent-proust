@@ -16,7 +16,12 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-accent-proust = { path = "../..", version = "0.10.0" }
+# By path alone, as every member is; see `crates/accent-proust-cli/Cargo.toml`.
+accent-proust = { path = "../.." }
+# The schema vocabulary this host reads a configuration through. What the
+# keys are and what they mean lives there; what a JavaScript value is lives
+# here.
+accent-proust-schema-config = { path = "../accent-proust-schema-config" }
 # The attribute and object maps this crate walks are the library's, so the
 # version has to be the library's.
 indexmap = "2"

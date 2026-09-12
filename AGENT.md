@@ -126,6 +126,14 @@ cargo clippy -p accent-proust-cli --all-targets -- -D warnings
 cargo test -p accent-proust-cli
 ```
 
+`accent-proust-schema-config` is the vocabulary both hosts read, a member
+because it is theirs and not the library's, and its gates are:
+
+```bash
+cargo clippy -p accent-proust-schema-config --all-targets -- -D warnings
+cargo test -p accent-proust-schema-config
+```
+
 Clippy runs **twice**, over both feature configurations. Code inside
 `#[cfg(feature = "...")]` is only linted when that feature is on, and a
 `#[cfg(not(feature = "..."))]` block is only compiled when it is off, so a
@@ -172,6 +180,7 @@ All in `.github/workflows/ci.yml`. Every one gates.
 | `Standalone (Invariant 1)` | `scripts/check-standalone.sh` |
 | `WebAssembly` | clippy, build and Node-hosted tests for `accent-proust-wasm` on `wasm32-unknown-unknown`, then `scripts/build-npm.sh --pack` |
 | `CLI` | clippy over every target and the integration tests for `accent-proust-cli`, which drive the built binary |
+| `Schema config` | clippy over every target and the tests for `accent-proust-schema-config` |
 | `Vendored corpus` | `scripts/check-vendored.sh` -- `spec/` still byte-for-byte upstream's |
 | `Conformance` | runs the corpus and publishes the count to the run summary |
 
@@ -244,6 +253,7 @@ standalone, MSRV or conformance lanes by accident. Build one explicitly with
 |---|---|
 | `crates/accent-proust-wasm` | WebAssembly bindings for a browser or other JavaScript host. Ships to npm, not crates.io, so it sets `publish = false`. |
 | `crates/accent-proust-cli` | The command-line host, a binary named `accent-proust`. `publish = false` until it has a release cadence of its own. |
+| `crates/accent-proust-schema-config` | The declarative schema vocabulary both hosts read: the keys, the refusal policy, and the mapping onto `Schema`. Not a host; what the hosts share. `publish = false`. |
 
 Every crate opts into the one `[workspace.lints]` block with
 `[lints] workspace = true`. This used to be three copies, on the reasoning

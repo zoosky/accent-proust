@@ -72,7 +72,6 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 mod config;
 mod diagnostics;
-mod path;
 mod tree;
 mod utf16;
 mod value;

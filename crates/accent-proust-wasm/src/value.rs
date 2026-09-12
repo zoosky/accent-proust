@@ -14,11 +14,9 @@
 //! instance rather than an error anyone can catch.
 
 use accent_proust::ast::Value;
-use indexmap::IndexMap;
+use accent_proust_schema_config::{Error, ErrorKind, Path};
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::{JsCast, JsValue};
-
-use crate::path::Path;
 
 /// One unit of work for [`value`].
 enum Step {
@@ -34,10 +32,10 @@ enum Step {
 ///
 /// # Errors
 ///
-/// Returns a message naming the path to anything with no counterpart -- a
-/// function, a symbol, a `BigInt`. Silence there would mean a default the host
-/// wrote and this crate discarded.
-pub(crate) fn value(root: &JsValue, at: &Path) -> Result<Value, String> {
+/// [`ErrorKind::NoCounterpart`] at the path of anything with no counterpart --
+/// a function, a symbol, a `BigInt`. Silence there would mean a default the
+/// host wrote and this crate discarded.
+pub(crate) fn value(root: &JsValue, at: &Path) -> Result<Value, Error> {
     let mut steps = vec![Step::Read(root.clone(), at.clone())];
     let mut values: Vec<Value> = Vec::new();
 
@@ -64,7 +62,7 @@ fn read(
     values: &mut Vec<Value>,
     item: &JsValue,
     path: &Path,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     if item.is_null() || item.is_undefined() {
         values.push(Value::Null);
     } else if let Some(flag) = item.as_bool() {
@@ -78,7 +76,8 @@ fn read(
         let len = usize::try_from(array.length()).unwrap_or(0);
         steps.push(Step::Array(len));
         for index in (0..array.length()).rev() {
-            steps.push(Step::Read(array.get(index), path.index(index)));
+            let position = usize::try_from(index).unwrap_or(usize::MAX);
+            steps.push(Step::Read(array.get(index), path.index(position)));
         }
     } else if let Some(object) = plain_object(item) {
         let names = keys(&object);
@@ -90,15 +89,15 @@ fn read(
         // order is what this crate preserves.
         steps.push(Step::Object(names.clone()));
         for key in names.iter().rev() {
-            let child = Reflect::get(&object, &JsValue::from_str(key))
-                .map_err(|_| format!("{}: cannot be read", path.child(key)))?;
+            let child = Reflect::get(&object, &JsValue::from_str(key)).map_err(|_| {
+                Error::new(path.child(key), ErrorKind::Expected("a readable property"))
+            })?;
             steps.push(Step::Read(child, path.child(key)));
         }
     } else {
-        return Err(format!(
-            "{path}: a {} has no Markdoc counterpart; use a string, number, \
-             boolean, null, array or plain object",
-            describe(item)
+        return Err(Error::new(
+            path.clone(),
+            ErrorKind::NoCounterpart(describe(item).to_owned()),
         ));
     }
     Ok(())
@@ -109,7 +108,7 @@ fn read(
 /// A `Date`, a `Map` and a class instance all pass `typeof x === "object"` and
 /// none of them survives the trip, so they are refused by name rather than
 /// silently flattened to `{}`.
-fn plain_object(item: &JsValue) -> Option<Object> {
+pub(crate) fn plain_object(item: &JsValue) -> Option<Object> {
     if !item.is_object() {
         return None;
     }
@@ -132,7 +131,7 @@ fn plain_object(item: &JsValue) -> Option<Object> {
 }
 
 /// A short name for an unconvertible value, for the error message.
-fn describe(item: &JsValue) -> &'static str {
+pub(crate) fn describe(item: &JsValue) -> &'static str {
     if item.is_function() {
         "function"
     } else if item.is_symbol() {
@@ -160,16 +159,4 @@ fn take(values: &mut Vec<Value>, count: usize) -> Vec<Value> {
         Some(start) => values.split_off(start),
         None => std::mem::take(values),
     }
-}
-
-/// Convert a JavaScript object into the map the validator holds variables in.
-pub(crate) fn variables(object: &Object, at: &Path) -> Result<IndexMap<String, Value>, String> {
-    let mut map = IndexMap::new();
-    for key in keys(object) {
-        let child = Reflect::get(object, &JsValue::from_str(&key))
-            .map_err(|_| format!("{}: cannot be read", at.child(&key)))?;
-        let converted = value(&child, &at.child(&key))?;
-        map.insert(key, converted);
-    }
-    Ok(map)
 }

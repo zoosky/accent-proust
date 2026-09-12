@@ -13,7 +13,11 @@
 # and `cargo clippy --all-targets` to the library alone, so a member cannot
 # quietly join the standalone, MSRV or conformance lanes.
 [workspace]
-members = ["crates/accent-proust-cli", "crates/accent-proust-wasm"]
+members = [
+    "crates/accent-proust-cli",
+    "crates/accent-proust-schema-config",
+    "crates/accent-proust-wasm",
+]
 default-members = ["."]
 
 # The profile the npm package is built with. A separate profile rather than

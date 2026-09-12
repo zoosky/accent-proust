@@ -1,0 +1,22 @@
+[package]
+name = "accent-proust-schema-config"
+version = "0.10.0"
+edition = "2024"
+license = "MIT"
+description = "The declarative schema vocabulary shared by accent-proust's hosts: the keys, the refusal policy, and the mapping from a declaration to a schema."
+repository = "https://github.com/zoosky/accent-proust"
+# Shared by the two hosts in this repository. Published when a host outside it
+# needs it, and not before: a published crate is a name and a release cadence
+# to own.
+publish = false
+
+[dependencies]
+# By path alone, as every member is; see `crates/accent-proust-cli/Cargo.toml`.
+accent-proust = { path = "../.." }
+# The maps a declaration fills are the library's, so the version is the
+# library's.
+indexmap = "2"
+
+# The workspace's block, opted into.
+[lints]
+workspace = true

@@ -134,6 +134,22 @@ jobs:
       - name: Build the npm package
         run: ./scripts/build-npm.sh --pack
 
+  # The vocabulary both hosts read. Not in `default-members` either, and the
+  # crate both hosts depend on, so its own gate rather than a ride on theirs:
+  # a lint that slipped here would surface as a failure in whichever host
+  # built first, pointing at the wrong crate.
+  schema-config:
+    name: Schema config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p accent-proust-schema-config --all-targets -- -D warnings
+      - run: cargo test -p accent-proust-schema-config
+
   # The command-line host. Not in `default-members`, so none of the jobs above
   # reach it; this is its whole gate. The same shape as `Test` plus clippy over
   # every target, because the integration tests drive the built binary and are
