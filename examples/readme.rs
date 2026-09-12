@@ -25,11 +25,13 @@ fn main() {
         "<article><h1>Title</h1><p>Some <em>text</em>.</p></article>"
     );
 
-    use accent_proust::validate::{self, Schema, SchemaAttribute, ValidationType};
+    use std::sync::Arc;
 
-    let mut config = builtins::config();
-    config.tags_mut().insert(
-        "callout".to_string(),
+    use accent_proust::validate::{self, MapSchemaSource, Schema, SchemaAttribute, ValidationType};
+
+    let mut schemas = MapSchemaSource::builtin();
+    schemas.insert_tag(
+        "callout",
         Schema::new().render("div").attribute(
             "type",
             SchemaAttribute {
@@ -39,6 +41,7 @@ fn main() {
             },
         ),
     );
+    let config = builtins::config_with(Arc::new(schemas));
 
     let document = parse::parse("{% callout type=\"note\" %}\nBody\n{% /callout %}\n");
     assert!(validate::validate_tree(&document, &config).is_empty());

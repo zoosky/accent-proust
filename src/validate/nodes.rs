@@ -4,7 +4,7 @@
 //! This is schema *content* -- what a `heading` renders as, which attributes a
 //! `fence` has -- as distinct from the schema *shape*, which the rest of
 //! [`crate::validate`] owns. The two are separated because a host replaces
-//! content freely (`config.nodes_mut().insert(Fence, ...)`) and never replaces
+//! content freely (`schemas.insert_node(Fence, ...)`) and never replaces
 //! shape.
 //!
 //! # Why these are built in at all, when nothing else is
@@ -469,7 +469,7 @@ mod tests {
             assert!(nodes.contains_key(&node_type), "no schema for {node_type}");
         }
         // `tag` is deliberately absent: a tag is looked up by name in
-        // `config.tags`, never by node type.
+        // its tag name, never by node type.
         assert!(!nodes.contains_key(&NodeType::Tag));
     }
 

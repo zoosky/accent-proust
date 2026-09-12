@@ -27,11 +27,13 @@
 //! is worse than one that does not, because the half that is missing is
 //! invisible until an author trips over it.
 
+use std::sync::Arc;
+
 use accent_proust::ast::{ErrorLevel, NodeType};
 use accent_proust::validate::{
-    Config, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot, ValidationType,
+    Config, MapSchemaSource, RenderPolicy, Schema, SchemaAttribute, SchemaMatches, SchemaSlot,
+    ValidationType,
 };
-use indexmap::IndexMap;
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::{JsCast, JsValue};
 
@@ -75,38 +77,41 @@ const SLOT_KEYS: &[&str] = &["render", "required"];
 /// message and is never omitted.
 pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
     let at = Path::root();
-    let mut config = accent_proust::builtins::config();
 
     if value.is_null() || value.is_undefined() {
-        return Ok(config);
+        return Ok(accent_proust::builtins::config());
     }
     let object = as_object(value, &at)?;
     reject_unknown(&object, TOP_LEVEL, &at)?;
 
-    let names = node_names(&config);
+    // Merged over the built-ins into one source, and the config assembled
+    // around it at the end: built once, not built and then replaced.
+    let mut schemas = MapSchemaSource::builtin();
 
     if let Some(tags) = property(&object, "tags", &at)? {
         let at = at.child("tags");
         let source = as_object(&tags, &at)?;
-        let map = config.tags_mut();
+        let map = schemas.tags_mut();
         for name in value::keys(&source) {
             let at = at.child(&name);
             let declaration = property(&source, &name, &at)?.unwrap_or(JsValue::UNDEFINED);
-            map.insert(name, schema(&declaration, &at, &names)?);
+            map.insert(name, schema(&declaration, &at)?);
         }
     }
 
     if let Some(nodes) = property(&object, "nodes", &at)? {
         let at = at.child("nodes");
         let source = as_object(&nodes, &at)?;
-        let map = config.nodes_mut();
+        let map = schemas.nodes_mut();
         for name in value::keys(&source) {
             let at = at.child(&name);
-            let node = node_type(&names, &name, &at)?;
+            let node = node_key(&name, &at)?;
             let declaration = property(&source, &name, &at)?.unwrap_or(JsValue::UNDEFINED);
-            map.insert(node, schema(&declaration, &at, &names)?);
+            map.insert(node, schema(&declaration, &at)?);
         }
     }
+
+    let mut config = accent_proust::builtins::config_with(Arc::new(schemas));
 
     if let Some(variables) = property(&object, "variables", &at)? {
         let at = at.child("variables");
@@ -117,28 +122,14 @@ pub(crate) fn build(value: &JsValue) -> Result<Config<'static>, String> {
     Ok(config)
 }
 
-/// The node types that have a name, taken from the built-in schemas.
-///
-/// `NodeType` has no string parser, and writing one here would be a second list
-/// to keep in step with the library's. The built-in node schemas are keyed by
-/// every type a host can name, so they are the list.
-fn node_names(config: &Config<'static>) -> IndexMap<&'static str, NodeType> {
-    config
-        .nodes
-        .keys()
-        .map(|node| (node.as_str(), *node))
-        .collect()
-}
-
 /// Resolve a node type by its upstream spelling.
-fn node_type(
-    names: &IndexMap<&'static str, NodeType>,
-    name: &str,
-    at: &Path,
-) -> Result<NodeType, String> {
-    names.get(name).copied().ok_or_else(|| {
-        let mut known: Vec<&str> = names.keys().copied().collect();
-        known.sort_unstable();
+///
+/// The library's parser, as the conformance harness uses it, and the
+/// library's list for the message: one list to keep in step with the enum,
+/// not one per host.
+fn node_type(name: &str, at: &Path) -> Result<NodeType, String> {
+    NodeType::from_name(name).ok_or_else(|| {
+        let known: Vec<&str> = NodeType::ALL.iter().map(|node| node.as_str()).collect();
         format!(
             "{at}: unknown node type {name:?}; expected one of {}",
             known.join(", ")
@@ -146,12 +137,24 @@ fn node_type(
     })
 }
 
+/// Resolve a key of the `nodes` map: a node type, and not `tag`.
+///
+/// `tag` is a node type -- a schema's `children` may name it, and upstream's
+/// `document` does -- but a schema registered for it is never consulted,
+/// because a tag is looked up by its name. A declaration under `nodes.tag` is
+/// a schema that silently never applies, which is the mistake to refuse by
+/// name rather than accept.
+fn node_key(name: &str, at: &Path) -> Result<NodeType, String> {
+    match node_type(name, at)? {
+        NodeType::Tag => Err(format!(
+            "{at}: a tag is looked up by its name, never as the node type \"tag\"; declare it under \"tags\""
+        )),
+        node => Ok(node),
+    }
+}
+
 /// Convert one schema declaration.
-fn schema(
-    value: &JsValue,
-    at: &Path,
-    names: &IndexMap<&'static str, NodeType>,
-) -> Result<Schema, String> {
+fn schema(value: &JsValue, at: &Path) -> Result<Schema, String> {
     let object = as_object(value, at)?;
     reject_unknown(&object, SCHEMA_KEYS, at)?;
 
@@ -181,7 +184,7 @@ fn schema(
             let name = item
                 .as_string()
                 .ok_or_else(|| format!("{at}: expected a node type name"))?;
-            allowed.push(node_type(names, &name, &at)?);
+            allowed.push(node_type(&name, &at)?);
         }
         schema.children = Some(allowed);
     }

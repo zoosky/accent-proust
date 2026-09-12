@@ -16,13 +16,15 @@
 //! # What it does not build
 //!
 //! Anything expressed as behaviour. Upstream's config type carries `transform`
-//! and `validate` hooks, which a YAML file cannot hold. The built-in node, tag
-//! and function schemas are not built here either -- they come from
-//! [`accent_proust::builtins::config`], which is `mergeConfig` reached at construction
-//! -- and a case's own declarations are merged *over* them, keeping a redeclared
-//! key in its built-in position and taking the case's value. That is what
-//! JavaScript's `{...nodes, ...config.nodes}` does, and the corpus depends on
-//! the replacement being total: "Using a backtick in a fenced code block string
+//! and `validate` hooks, which a YAML file cannot hold. The built-in schemas
+//! are not written here either: the nodes and tags come from
+//! [`MapSchemaSource::builtin`] and the functions from
+//! [`accent_proust::builtins::config_with`], which between them are
+//! `mergeConfig` reached at construction -- and a case's own declarations are
+//! merged *over* the built-in source, keeping a redeclared key in its built-in
+//! position and taking the case's value. That is what JavaScript's
+//! `{...nodes, ...config.nodes}` does, and the corpus depends on the
+//! replacement being total: "Using a backtick in a fenced code block string
 //! attribute" supplies a `fence` schema with no transform hook and expects the
 //! built-in hook to be gone with it.
 
@@ -37,6 +39,8 @@ use accent_proust::validate::{
 };
 
 use crate::corpus::Case;
+use accent_proust::validate::MapSchemaSource;
+
 use crate::value::Value;
 
 /// Build the config a case is graded against.
@@ -47,20 +51,24 @@ use crate::value::Value;
 /// understand. That is always a gap in this harness, never a conformance
 /// result.
 pub fn build(case: &Case) -> Result<Config<'_>, String> {
-    let mut config = builtins::config();
     let Some(source) = &case.config else {
-        return Ok(config);
+        return Ok(builtins::config());
     };
     let Value::Map(entries) = source else {
         return Err(format!("config must be a mapping, got {}", source.kind()));
     };
 
+    // The built-ins are built once, here, and the config is assembled around
+    // them at the end rather than built first and then overwritten.
+    let mut schemas = MapSchemaSource::builtin();
+    let mut declared_variables = None;
+    let mut declared_partials = None;
     for (key, value) in entries {
         match key.as_str() {
-            "tags" => config.tags_mut().extend(tags(value)?),
-            "nodes" => config.nodes_mut().extend(nodes(value)?),
-            "variables" => config.variables = Some(variables(value)?),
-            "partials" => config.partials = std::sync::Arc::new(partials(value)?),
+            "tags" => schemas.tags_mut().extend(tags(value)?),
+            "nodes" => schemas.nodes_mut().extend(nodes(value)?),
+            "variables" => declared_variables = Some(variables(value)?),
+            "partials" => declared_partials = Some(partials(value)?),
             other => {
                 return Err(format!(
                     "unknown config key {other:?}. The corpus declares something this harness \
@@ -69,6 +77,11 @@ pub fn build(case: &Case) -> Result<Config<'_>, String> {
                 ));
             }
         }
+    }
+    let mut config = builtins::config_with(std::sync::Arc::new(schemas));
+    config.variables = declared_variables;
+    if let Some(partials) = declared_partials {
+        config.partials = std::sync::Arc::new(partials);
     }
     Ok(config)
 }

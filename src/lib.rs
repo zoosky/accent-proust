@@ -26,9 +26,11 @@
 //!   pulldown-cmark ships behind the `pulldown-cmark-tokenizer` feature, so a
 //!   host that already owns a CommonMark parser can supply its own rather than
 //!   compile a second one.
-//! - `SchemaSource` answers "what is the schema for this tag name?". Whether
-//!   that answer comes from a file, a constant, or a sandboxed guest is the
-//!   host's business, not this crate's.
+//! - [`SchemaSource`](validate::SchemaSource) answers "what is the schema for
+//!   this tag name?". Whether that answer comes from a file, a constant, or a
+//!   sandboxed guest is the host's business, not this crate's;
+//!   [`MapSchemaSource`](validate::MapSchemaSource) is the answer for a host
+//!   that assembles it by hand.
 //! - [`TagRenderer`](render::TagRenderer) turns a validated tag into markup.
 //!   Escaping, void elements, and HTML policy live there; the walk over the
 //!   tree does not, which keeps the document's depth off the host's stack.
@@ -49,7 +51,11 @@
 //!
 //! - **Public enums are `#[non_exhaustive]`.** Markdoc gained node types across
 //!   its 0.5.x line; spelling them exhaustively would turn each new one into a
-//!   breaking release.
+//!   breaking release. The one exception is
+//!   [`SchemaKey`](validate::SchemaKey): its two variants are the two ways a
+//!   node is looked up, not a list that grows with Markdoc, and a source that
+//!   implements [`SchemaSource`](validate::SchemaSource) should stop compiling
+//!   if a third appeared rather than silently answer `None`.
 //! - **Validation errors are data, not failures.** The validator returns a
 //!   `Vec` of them. `Result::Err` is reserved for internal invariants.
 //! - **Output is deterministic.** Attribute order is authored order, never hash

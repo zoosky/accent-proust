@@ -97,8 +97,10 @@ it as a free function to mirror upstream's `transformer.findSchema`.
 ### The trait
 
 ```rust
-/// What a lookup is keyed by: a tag by name, a node by type.
-#[non_exhaustive]
+/// What a lookup is keyed by: a tag by name, a node by type. Exhaustive: the
+/// one public enum that is, because its variants are the two ways a node is
+/// looked up rather than a list that grows with Markdoc, and an implementor
+/// should stop compiling if that ever changed rather than silently miss.
 pub enum SchemaKey<'a> {
     Tag(&'a str),
     Node(NodeType),
@@ -188,9 +190,13 @@ impl MapSchemaSource {
     pub fn insert_tag(&mut self, name: impl Into<String>, schema: Schema) -> &mut Self;
     pub fn insert_node(&mut self, node_type: NodeType, schema: Schema) -> &mut Self;
 
-    /// The names registered, for diagnostics.
-    pub fn tag_names(&self) -> impl Iterator<Item = &str>;
-    pub fn node_types(&self) -> impl Iterator<Item = NodeType>;
+    /// The maps themselves. They are the whole content, so hiding them would
+    /// only add a method per operation; a host merging many declarations
+    /// reaches for `tags_mut().extend(..)`.
+    pub fn tags(&self) -> &IndexMap<String, Schema>;
+    pub fn tags_mut(&mut self) -> &mut IndexMap<String, Schema>;
+    pub fn nodes(&self) -> &IndexMap<NodeType, Schema>;
+    pub fn nodes_mut(&mut self) -> &mut IndexMap<NodeType, Schema>;
 }
 
 impl SchemaSource for MapSchemaSource {
@@ -225,11 +231,16 @@ pub trait SchemaSource {
     /// answer for a source that computes schemas on demand, and is why this
     /// returns an option rather than an empty iterator.
     fn tag_names(&self) -> Option<Vec<&str>> { None }
+
+    /// The node types, likewise. `Debug` printed both before, so both stay.
+    fn node_types(&self) -> Option<Vec<NodeType>> { None }
 }
 ```
 
-`MapSchemaSource` overrides it; `Config::fmt` prints what it gets and
-`"<opaque>"` otherwise. A provided method, so no implementor is forced to care.
+`MapSchemaSource` overrides both; `Config::fmt` prints what it gets, and a
+source that cannot enumerate prints as `None` -- which is the truth, and
+different from an empty list. Provided methods, so no implementor is forced to
+care.
 
 #### Migration
 
@@ -259,27 +270,36 @@ After:
 ```rust
 let mut schemas = MapSchemaSource::builtin();
 schemas.insert_tag("callout", schema);
-
-let mut config = builtins::config();
-config.schemas = Arc::new(schemas);
+let config = builtins::config_with(Arc::new(schemas));
 ```
 
 Three lines instead of two, and one concept more. That is the price of the
 single mechanism, and it is worth paying once rather than documenting a
 precedence rule forever -- but it lands in the first example every new reader
-meets, in the README, the crate docs and the site. Provide a shorthand so the
-common case stays two lines:
+meets, in the README, the crate docs and the site, so the entry point has to
+be the cheap one:
 
 ```rust
+/// `config()` with the caller's source: the built-in functions added, and the
+/// built-in schemas built exactly once, by whoever called `builtin()`.
+pub fn builtins::config_with(schemas: Arc<dyn SchemaSource + Send + Sync>) -> Config;
+
 impl Config<'_> {
-    /// Replace the schema source. Chainable, for the registering case.
+    /// Replace the schema source on a config already held.
     pub fn with_schemas(self, schemas: Arc<dyn SchemaSource + Send + Sync>) -> Self;
 }
 ```
 
-`Arc::get_mut` is not the shorthand to reach for. It fails whenever the source
-is already shared, which is exactly when a caller would want it, so it would
-work in the doctest and fail in the host.
+`builtins::config().with_schemas(..)` is the shape to avoid, and the first
+implementation shipped it: `config()` builds the built-in source, and the
+caller then builds it again and throws the first away -- the rebuild the
+`builtins` module exists to prevent. `config_with` is the entry point for that
+reason; `with_schemas` stays for the host that swaps a source on a config it
+did not construct.
+
+`Arc::get_mut` is not a shorthand to reach for either. It fails whenever the
+source is already shared, which is exactly when a caller would want it, so it
+would work in the doctest and fail in the host.
 
 #### What this costs the WebAssembly host
 
@@ -710,3 +730,15 @@ reasoning is shorter to keep than to reconstruct.
    them, the third because a renderer with a number type should not have to
    parse a string it was handed. `close` takes the `Tag`, for the reason
    given under "The trait".
+6. **`SchemaKey::for_node` chooses the key**, and `MapSchemaSource` exposes
+   its maps rather than iterators over their names. Both came out of step 2:
+   the first so that `find_schema` is one line and the branch on `node.tag`
+   lives in one place, the second because the two hosts that merge
+   declarations want `extend`, not a loop of inserts. `node_types` joins
+   `tag_names` as a provided method, since `Debug` printed both.
+7. **`builtins::config_with` is the registering entry point**, and
+   `SchemaKey` is exhaustive. Both came out of reviewing step 2. The first
+   because `config().with_schemas(..)` built the built-in source twice and
+   discarded one, in the README's own example; the second because a wildcard
+   arm in every host's `find` turns a future variant into a silent `None`,
+   and no future variant is foreseen.

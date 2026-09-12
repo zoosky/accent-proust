@@ -13,23 +13,26 @@
 //! - **`ConfigFunction::parameters` is optional**, for the same shape of
 //!   reason: absent skips parameter checking, empty rejects every parameter.
 //!
-//! The other three are plain maps. A missing schema and an empty schema map
-//! produce the same `Undefined tag` error, so there is nothing for an
-//! [`Option`] to distinguish.
+//! The rest are a schema source and two plain maps. A missing schema and an
+//! empty source produce the same `Undefined tag` error, so there is nothing
+//! for an [`Option`] to distinguish.
 //!
 //! # Where the content comes from
 //!
 //! Nowhere in this crate. A `Config` is assembled by the host -- from a file, a
-//! constant, a plugin manifest -- and handed in. This module owns the *shape*
-//! only, which is the line that lets `accent-proust` be published without shipping
-//! anybody's schemas.
+//! constant, a plugin manifest -- and handed in. Schemas arrive through
+//! [`SchemaSource`], which is the host's to implement; [`MapSchemaSource`] is
+//! the implementation for a host that assembles them by hand. This module
+//! owns the *shape* only, which is the line that lets `accent-proust` be
+//! published without shipping anybody's schemas.
 
 use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use crate::ast::{Node, NodeType, Value};
+use crate::ast::{Node, Value};
 use crate::validate::schema::{FunctionTransformHook, FunctionValidateHook, Schema};
+use crate::validate::source::{MapSchemaSource, SchemaKey, SchemaSource};
 use crate::validate::{SchemaAttribute, ValidationType};
 
 /// Variables a document may reference with `$name`.
@@ -50,7 +53,7 @@ pub type Variables = IndexMap<String, Value>;
 /// only validate documents of its own lifetime would have to be rebuilt per
 /// page.
 ///
-/// # Why four fields are behind an [`Arc`]
+/// # Why three fields are behind an [`Arc`]
 ///
 /// A config is cloned on a hot path and only one field differs between the
 /// original and the copy: `{% partial %}` scopes a partial's body by cloning
@@ -60,22 +63,21 @@ pub type Variables = IndexMap<String, Value>;
 /// the site's whole partial corpus on every partial in every page, which
 /// compounds exactly where partials earn their keep.
 ///
-/// So those four are shared rather than copied. Reads are unchanged
-/// ([`Arc`] derefs), and the copy-on-write mutators
-/// ([`nodes_mut`](Config::nodes_mut) and its three siblings) hand back an
-/// ordinary `&mut IndexMap` for assembly.
-#[derive(Clone, Default)]
+/// So those three are shared rather than copied. Reads are unchanged
+/// ([`Arc`] derefs). The two maps have copy-on-write mutators
+/// ([`functions_mut`](Config::functions_mut) and
+/// [`partials_mut`](Config::partials_mut)) for assembly; the schema source
+/// does not, because a trait object cannot be copied on write. A host fills a
+/// [`MapSchemaSource`] and shares it with [`with_schemas`](Config::with_schemas),
+/// so the sharing is explicit rather than clever.
+#[derive(Clone)]
 pub struct Config<'a> {
-    /// Schemas for built-in node types, keyed by type.
+    /// Where a schema comes from.
     ///
-    /// Shared: see the note on [`Config`]. Use [`nodes_mut`](Config::nodes_mut)
-    /// to edit one in place.
-    pub nodes: Arc<IndexMap<NodeType, Schema>>,
-    /// Schemas for tags, keyed by tag name.
-    ///
-    /// Shared: see the note on [`Config`]. Use [`tags_mut`](Config::tags_mut)
-    /// to edit one in place.
-    pub tags: Arc<IndexMap<String, Schema>>,
+    /// The only mechanism: there is no map beside it and so no precedence rule
+    /// to remember. [`Config::new`] starts it empty and
+    /// [`builtins::config`](crate::builtins::config) at Markdoc's own.
+    pub schemas: Arc<dyn SchemaSource + Send + Sync>,
     /// Variables a `$name` reference resolves against.
     ///
     /// [`None`] switches variable checking off; `Some` of an empty map switches
@@ -100,6 +102,20 @@ pub struct Config<'a> {
     pub validation: ValidationOptions<'a>,
 }
 
+impl Default for Config<'_> {
+    /// [`Config::new`]: an empty schema source, no variables, no functions, no
+    /// partials. Written out because a trait object has no default.
+    fn default() -> Self {
+        Config {
+            schemas: Arc::new(MapSchemaSource::new()),
+            variables: None,
+            functions: Arc::default(),
+            partials: Arc::default(),
+            validation: ValidationOptions::default(),
+        }
+    }
+}
+
 impl<'a> Config<'a> {
     /// An empty config: no schemas, no variables, no functions, no partials.
     ///
@@ -112,29 +128,27 @@ impl<'a> Config<'a> {
         Config::default()
     }
 
-    /// The node schemas, for in-place edit.
+    /// Replace the schema source.
+    ///
+    /// Chainable, for the registering case: fill a [`MapSchemaSource`] and hand
+    /// it over in one expression. The source is shared, not copied, so a host
+    /// with one registry and many configs pays for it once.
+    #[must_use]
+    pub fn with_schemas(mut self, schemas: Arc<dyn SchemaSource + Send + Sync>) -> Config<'a> {
+        self.schemas = schemas;
+        self
+    }
+
+    /// The functions, for in-place edit.
     ///
     /// Copy-on-write: the map is copied only if another `Config` is sharing it,
-    /// which is what makes registering schemas once and scoping many times
-    /// cheap.
-    pub fn nodes_mut(&mut self) -> &mut IndexMap<NodeType, Schema> {
-        Arc::make_mut(&mut self.nodes)
-    }
-
-    /// The tag schemas, for in-place edit. Copy-on-write, as
-    /// [`nodes_mut`](Config::nodes_mut) is.
-    pub fn tags_mut(&mut self) -> &mut IndexMap<String, Schema> {
-        Arc::make_mut(&mut self.tags)
-    }
-
-    /// The functions, for in-place edit. Copy-on-write, as
-    /// [`nodes_mut`](Config::nodes_mut) is.
+    /// which is what makes registering once and scoping many times cheap.
     pub fn functions_mut(&mut self) -> &mut IndexMap<String, ConfigFunction> {
         Arc::make_mut(&mut self.functions)
     }
 
     /// The parsed partials, for in-place edit. Copy-on-write, as
-    /// [`nodes_mut`](Config::nodes_mut) is.
+    /// [`functions_mut`](Config::functions_mut) is.
     pub fn partials_mut(&mut self) -> &mut IndexMap<String, Node<'a>> {
         Arc::make_mut(&mut self.partials)
     }
@@ -144,13 +158,11 @@ impl<'a> Config<'a> {
     /// Upstream's `transformer.findSchema`. It lives on the config rather than
     /// on [`Node`] because the node is the leaf type and the config is the
     /// stage above it; upstream's `node.findSchema(config)` is the same call
-    /// with the arrow pointing the other way.
+    /// with the arrow pointing the other way. The work is
+    /// [`SchemaSource::find`]'s; this only chooses the key.
     #[must_use]
     pub fn find_schema(&self, node: &Node<'_>) -> Option<&Schema> {
-        match &node.tag {
-            Some(tag) => self.tags.get(tag.as_str()),
-            None => self.nodes.get(&node.node_type),
-        }
+        self.schemas.find(SchemaKey::for_node(node))
     }
 }
 
@@ -211,10 +223,16 @@ impl std::fmt::Debug for Config<'_> {
     /// `Debug` is unavailable and this one reports what is *there* instead: the
     /// names registered, which is what you want when a `tag-undefined` error
     /// disagrees with what you thought you registered.
+    ///
+    /// The schema names come through the source's provided
+    /// [`tag_names`](SchemaSource::tag_names) and
+    /// [`node_types`](SchemaSource::node_types), and print as `None` for a
+    /// source that cannot enumerate -- which is the truth, and different from
+    /// an empty list.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config")
-            .field("nodes", &self.nodes.keys().collect::<Vec<_>>())
-            .field("tags", &self.tags.keys().collect::<Vec<_>>())
+            .field("nodes", &self.schemas.node_types())
+            .field("tags", &self.schemas.tag_names())
             .field("variables", &self.variables)
             .field("functions", &self.functions.keys().collect::<Vec<_>>())
             .field("partials", &self.partials.keys().collect::<Vec<_>>())
@@ -237,17 +255,15 @@ impl std::fmt::Debug for ConfigFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::Node;
+    use crate::ast::{Node, NodeType};
 
     #[test]
     fn a_tag_is_looked_up_by_name_and_a_node_by_type() {
-        let mut config = Config::new();
-        config
-            .tags_mut()
-            .insert("callout".to_string(), Schema::default());
-        config
-            .nodes_mut()
-            .insert(NodeType::Heading, Schema::default());
+        let mut schemas = MapSchemaSource::new();
+        schemas
+            .insert_tag("callout", Schema::default())
+            .insert_node(NodeType::Heading, Schema::default());
+        let config = Config::new().with_schemas(Arc::new(schemas));
 
         let mut tag = Node::new(NodeType::Tag);
         tag.tag = Some("callout".to_string());
@@ -265,6 +281,54 @@ mod tests {
         let mut unknown = Node::new(NodeType::Tag);
         unknown.tag = Some("nope".to_string());
         assert!(config.find_schema(&unknown).is_none());
+    }
+
+    #[test]
+    fn a_source_that_is_not_a_map_resolves_through_the_config() {
+        // The seam, exercised by something that is not the built-in: a source
+        // with no map, answering from a match arm.
+        struct Aside(Schema);
+        impl SchemaSource for Aside {
+            fn find(&self, key: SchemaKey<'_>) -> Option<&Schema> {
+                match key {
+                    SchemaKey::Tag("callout") => Some(&self.0),
+                    _ => None,
+                }
+            }
+        }
+
+        let config = Config::new().with_schemas(Arc::new(Aside(Schema::new().render("aside"))));
+
+        let mut callout = Node::new(NodeType::Tag);
+        callout.tag = Some("callout".to_string());
+        assert_eq!(
+            config
+                .find_schema(&callout)
+                .and_then(|s| s.render.as_deref()),
+            Some("aside")
+        );
+        assert!(config.find_schema(&Node::new(NodeType::Heading)).is_none());
+    }
+
+    #[test]
+    fn debug_names_what_a_map_holds_and_admits_what_it_cannot_see() {
+        struct Opaque;
+        impl SchemaSource for Opaque {
+            fn find(&self, _key: SchemaKey<'_>) -> Option<&Schema> {
+                None
+            }
+        }
+
+        let mut schemas = MapSchemaSource::new();
+        schemas.insert_tag("callout", Schema::new());
+        let named = format!("{:?}", Config::new().with_schemas(Arc::new(schemas)));
+        assert!(named.contains(r#"tags: Some(["callout"])"#), "{named}");
+        assert!(named.contains("nodes: Some([])"), "{named}");
+
+        // Not an empty registry: a source that cannot say.
+        let opaque = format!("{:?}", Config::new().with_schemas(Arc::new(Opaque)));
+        assert!(opaque.contains("tags: None"), "{opaque}");
+        assert!(opaque.contains("nodes: None"), "{opaque}");
     }
 
     #[test]

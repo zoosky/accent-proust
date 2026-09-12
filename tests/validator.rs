@@ -41,8 +41,8 @@ use indexmap::IndexMap;
 use accent_proust::ast::{ErrorLevel, Node, NodeType, ValidationError, Value};
 use accent_proust::parse::parse;
 use accent_proust::validate::{
-    AttributeType, Config, ConfigFunction, RenderPolicy, Schema, SchemaAttribute, ValidationType,
-    Variables, validate_tree,
+    AttributeType, Config, ConfigFunction, MapSchemaSource, RenderPolicy, Schema, SchemaAttribute,
+    ValidationType, Variables, validate_tree,
 };
 
 /// The built-in node schemas these tests reach, standing in for upstream's.
@@ -51,7 +51,7 @@ use accent_proust::validate::{
 /// left unrestricted rather than copying upstream's lists, because no test here
 /// exercises a nesting rule and an unenforced list is easier to remove honestly
 /// than a half-copied one.
-fn nodes() -> Arc<IndexMap<NodeType, Schema>> {
+fn nodes() -> IndexMap<NodeType, Schema> {
     let mut nodes = IndexMap::new();
     nodes.insert(NodeType::Document, Schema::new());
     nodes.insert(NodeType::Paragraph, Schema::new());
@@ -70,15 +70,12 @@ fn nodes() -> Arc<IndexMap<NodeType, Schema>> {
             .attribute("content", hidden(required(string())))
             .attribute("language", string()),
     );
-    Arc::new(nodes)
+    nodes
 }
 
 /// A config with the node schemas above and nothing else.
 fn config() -> Config<'static> {
-    Config {
-        nodes: nodes(),
-        ..Config::new()
-    }
+    Config::new().with_schemas(Arc::new(schemas(vec![])))
 }
 
 fn string() -> SchemaAttribute {
@@ -106,13 +103,14 @@ fn hidden(mut attribute: SchemaAttribute) -> SchemaAttribute {
     attribute
 }
 
-fn tags(pairs: Vec<(&str, Schema)>) -> Arc<IndexMap<String, Schema>> {
-    Arc::new(
-        pairs
-            .into_iter()
-            .map(|(name, schema)| (name.to_string(), schema))
-            .collect(),
-    )
+/// The node schemas above plus `pairs` as tags, as one source.
+fn schemas(pairs: Vec<(&str, Schema)>) -> MapSchemaSource {
+    let mut schemas = MapSchemaSource::new();
+    schemas.nodes_mut().extend(nodes());
+    for (name, schema) in pairs {
+        schemas.insert_tag(name, schema);
+    }
+    schemas
 }
 
 fn functions(pairs: Vec<(&str, ConfigFunction)>) -> IndexMap<String, ConfigFunction> {
@@ -155,7 +153,7 @@ fn function_config(functions: IndexMap<String, ConfigFunction>) -> Config<'stati
     let mut config = config();
     config.validation.validate_functions = true;
     config.functions = Arc::new(functions);
-    config.tags = tags(vec![
+    config.schemas = Arc::new(schemas(vec![
         ("foo", Schema::new().attribute("bar", string())),
         (
             "union-tag-1",
@@ -164,7 +162,7 @@ fn function_config(functions: IndexMap<String, ConfigFunction>) -> Config<'stati
                 .attribute("bar", number())
                 .attribute("baz", typed(ValidationType::Boolean)),
         ),
-    ]);
+    ]));
     config
 }
 
@@ -386,7 +384,7 @@ fn rejects_undeclared_parameters_with_a_positional_parameter() {
 
 fn inline_config() -> Config<'static> {
     let mut config = config();
-    config.tags = tags(vec![
+    config.schemas = Arc::new(schemas(vec![
         (
             "foo",
             Schema {
@@ -402,7 +400,7 @@ fn inline_config() -> Config<'static> {
             },
         ),
         ("baz", Schema::new()),
-    ]);
+    ]));
     config
 }
 
@@ -456,7 +454,7 @@ fn validates_block_tag() {
 #[test]
 fn an_attribute_validate_hook_using_a_simple_conditional() {
     let mut config = config();
-    config.tags = tags(vec![(
+    config.schemas = Arc::new(schemas(vec![(
         "foo",
         Schema::new().attribute(
             "bar",
@@ -478,7 +476,7 @@ fn an_attribute_validate_hook_using_a_simple_conditional() {
                 ..SchemaAttribute::default()
             },
         ),
-    )]);
+    )]));
 
     let document = parse("{% foo bar=20 /%}");
     assert!(errors(&document, &config).is_empty());
@@ -497,7 +495,7 @@ fn matches_config(allowed: Vec<&str>) -> Config<'static> {
     use accent_proust::validate::SchemaMatches;
 
     let mut config = config();
-    config.tags = tags(vec![(
+    config.schemas = Arc::new(schemas(vec![(
         "foo",
         Schema::new().attribute(
             "jawn",
@@ -509,7 +507,7 @@ fn matches_config(allowed: Vec<&str>) -> Config<'static> {
                 ..SchemaAttribute::default()
             },
         ),
-    )]);
+    )]));
     config
 }
 
@@ -596,12 +594,12 @@ impl AttributeType for Link {
 #[test]
 fn a_custom_type_returns_error_on_failure() {
     let mut config = config();
-    config.tags = tags(vec![(
+    config.schemas = Arc::new(schemas(vec![(
         "link",
         Schema::new()
             .render("a")
             .attribute("href", typed(ValidationType::Custom(Arc::new(Link)))),
-    )]);
+    )]));
 
     let document = parse(r#"{% link href="/relative-link"  /%}"#);
     assert_eq!(
@@ -616,7 +614,7 @@ fn a_custom_type_returns_error_on_failure() {
 #[test]
 fn a_custom_type_returns_no_errors_when_valid() {
     let mut config = config();
-    config.tags = tags(vec![(
+    config.schemas = Arc::new(schemas(vec![(
         "link",
         Schema {
             self_closing: true,
@@ -624,7 +622,7 @@ fn a_custom_type_returns_no_errors_when_valid() {
                 .render("a")
                 .attribute("href", typed(ValidationType::Custom(Arc::new(Link))))
         },
-    )]);
+    )]));
 
     let document = parse(r#"{% link href="http://google.com"  /%}"#);
     assert!(errors(&document, &config).is_empty());
@@ -727,12 +725,12 @@ fn an_attribute_validate_hook_receives_the_attribute_name() {
         )),
         ..SchemaAttribute::default()
     };
-    config.tags = tags(vec![(
+    config.schemas = Arc::new(schemas(vec![(
         "foo",
         Schema::new()
             .attribute("bar", attribute())
             .attribute("blah", attribute()),
-    )]);
+    )]));
 
     let document = parse("{% foo bar={baz: 3} /%}");
     assert_eq!(
@@ -763,12 +761,12 @@ fn a_custom_attribute_type_receives_the_attribute_name() {
 
     let mut config = config();
     let custom = ValidationType::Custom(Arc::new(CustomType));
-    config.tags = tags(vec![(
+    config.schemas = Arc::new(schemas(vec![(
         "foo",
         Schema::new()
             .attribute("bar", typed(custom.clone()))
             .attribute("blah", typed(custom)),
-    )]);
+    )]));
 
     let document = parse("{% foo bar={baz: 3} /%}");
     assert_eq!(
@@ -786,7 +784,7 @@ fn a_custom_attribute_type_receives_the_attribute_name() {
 #[test]
 fn parent_validation_for_deep_nesting() {
     let mut config = config();
-    config.tags = tags(vec![
+    let mut schemas = schemas(vec![
         ("foo", Schema::new()),
         ("bar", Schema::new()),
         ("baz", Schema::new()),
@@ -809,7 +807,8 @@ fn parent_validation_for_deep_nesting() {
         })),
         ..Schema::new().attribute("level", hidden(required(number())))
     };
-    config.nodes_mut().insert(NodeType::Heading, heading);
+    schemas.insert_node(NodeType::Heading, heading);
+    config.schemas = Arc::new(schemas);
 
     let document =
         parse("\n{% foo %}\n{% bar %}\n{% baz %}\n# testing\n{% /baz %}\n{% /bar %}\n{% /foo %}\n");
@@ -827,7 +826,7 @@ fn parent_validation_for_deep_nesting() {
 fn parent_validation_with_function_validation_enabled() {
     let mut config = config();
     config.validation.validate_functions = true;
-    config.tags = tags(vec![
+    config.schemas = Arc::new(schemas(vec![
         ("foo", Schema::new()),
         (
             "bar",
@@ -853,7 +852,7 @@ fn parent_validation_with_function_validation_enabled() {
                 ..Schema::new()
             },
         ),
-    ]);
+    ]));
 
     let document = parse("{% foo %}{% bar %}this is a test{% /bar %}{% /foo %}");
     assert!(errors(&document, &config).is_empty());

@@ -4,12 +4,14 @@
 //! built-in `nodes`, `tags` and `functions` under whatever the caller passed --
 //! on every call to `transform` and `validate`.
 //!
-//! Doing that per call would rebuild three maps for every document, so
-//! [`config`] builds them once and the caller overrides what it wants. The
-//! result is the same, reached at construction instead of at use:
-//! `builtins::config()` then `config.tags_mut().insert("if", mine)` leaves a
-//! config in which the caller's `if` wins, exactly as passing one to
-//! `Markdoc.transform` does.
+//! Doing that per call would rebuild three maps for every document, so the
+//! built-ins are built once, at construction. [`config`] is that for a host
+//! that adds nothing. A host that adds to the vocabulary starts from
+//! [`MapSchemaSource::builtin`], inserts its own, and hands the result to
+//! [`config_with`], which adds the built-in functions and builds nothing
+//! twice. The result is upstream's: a source with the caller's `if` inserted
+//! over the built-in one is a config in which the caller's `if` wins, exactly
+//! as passing one to `Markdoc.transform` does.
 //!
 //! [`Config::new`] stays empty, which is the honest starting point for a host
 //! that supplies every schema itself -- and, since the validator reports
@@ -22,25 +24,54 @@
 //! [`validate::nodes`](crate::validate::nodes) is `schema.ts`,
 //! [`tags`](crate::tags) is `src/tags/`, and [`functions`](crate::functions) is
 //! `src/functions/`. This module only assembles them, which is all `index.ts`
-//! does.
+//! does -- the nodes and tags through
+//! [`MapSchemaSource::builtin`](crate::validate::MapSchemaSource::builtin), so
+//! that a host starting from the same vocabulary has one place to get it.
 
-use crate::validate::Config;
+use std::sync::Arc;
+
+use crate::validate::{Config, MapSchemaSource, SchemaSource};
 
 /// A configuration carrying the built-in nodes, tags and functions.
 ///
 /// Variables and partials are empty: those are content, and this crate has
-/// none.
+/// none. To add tags of your own, see [`config_with`].
 ///
 /// ```
+/// use accent_proust::validate::SchemaKey;
+///
 /// let config = accent_proust::builtins::config();
-/// assert!(config.tags.contains_key("if"));
+/// assert!(config.schemas.find(SchemaKey::Tag("if")).is_some());
 /// assert!(config.functions.contains_key("equals"));
 /// ```
 #[must_use]
 pub fn config<'a>() -> Config<'a> {
-    let mut config = Config::new();
-    config.nodes = std::sync::Arc::new(crate::validate::nodes::builtin());
-    config.tags = std::sync::Arc::new(crate::tags::builtin());
-    config.functions = std::sync::Arc::new(crate::functions::builtin());
+    config_with(Arc::new(MapSchemaSource::builtin()))
+}
+
+/// A configuration carrying `schemas` and the built-in functions.
+///
+/// The registering case. Fill a [`MapSchemaSource::builtin`] with your own
+/// tags and hand it over, and the built-in schemas are built once -- rather
+/// than once by [`config`] and again by you, with the first thrown away.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use accent_proust::builtins;
+/// use accent_proust::validate::{MapSchemaSource, Schema, SchemaKey};
+///
+/// let mut schemas = MapSchemaSource::builtin();
+/// schemas.insert_tag("callout", Schema::new().render("aside"));
+///
+/// let config = builtins::config_with(Arc::new(schemas));
+/// assert!(config.schemas.find(SchemaKey::Tag("callout")).is_some());
+/// assert!(config.schemas.find(SchemaKey::Tag("if")).is_some());
+/// assert!(config.functions.contains_key("equals"));
+/// ```
+#[must_use]
+pub fn config_with<'a>(schemas: Arc<dyn SchemaSource + Send + Sync>) -> Config<'a> {
+    let mut config = Config::new().with_schemas(schemas);
+    config.functions = Arc::new(crate::functions::builtin());
     config
 }
