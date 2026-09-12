@@ -1,6 +1,7 @@
 # A command-line host, and the two seams it needs
 
-Status: proposed
+Status: implemented, in pull requests #45 through #49; awaiting the 0.11.0
+release.
 Target: 0.11.0, which is a breaking release -- `Config` loses its `nodes` and
 `tags` fields. See "Wiring it into Config".
 
