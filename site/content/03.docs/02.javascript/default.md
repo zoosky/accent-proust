@@ -195,8 +195,10 @@ change what a `heading` renders as.
 
 The vocabulary -- which keys a declaration may carry, and what each means -- is
 [`accent-proust-schema-config`](https://github.com/zoosky/accent-proust/tree/main/crates/accent-proust-schema-config),
-shared with the [command line](/docs/cli): a schema file written for one host is read by the
-other unchanged.
+shared with the [command line](/docs/cli). The browser reads it from an
+object and the shell from a YAML or JSON file, so a schema declared for one
+is accepted by the other: a JSON file the shell reads is what `JSON.parse`
+hands `new Config` here.
 
 ### What crosses the boundary
 

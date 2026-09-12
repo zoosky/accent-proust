@@ -68,3 +68,20 @@ fn every_readme_rust_block_appears_in_the_example() {
         );
     }
 }
+
+#[test]
+fn the_readme_states_the_manifests_minimum_rust_version() {
+    // The sentence drifted once -- it said 1.82 for a release after the floor
+    // moved to 1.96 -- because nothing read it. Cargo hands the manifest's
+    // `rust-version` to every test as an environment variable, so the
+    // sentence is pinned to it here.
+    let expected = format!(
+        "minimum supported Rust version is {}.",
+        env!("CARGO_PKG_RUST_VERSION")
+    );
+    assert!(
+        README.contains(&expected),
+        "README.md does not say \"{expected}\"; the Contributing section names a \
+         different floor from Cargo.toml's rust-version"
+    );
+}

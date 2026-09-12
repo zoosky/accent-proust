@@ -53,7 +53,8 @@ cat page.md | accent-proust fmt        # stdin to stdout
 Spacing inside a tag is normalised; your own spellings are left alone, so
 `__bold__` stays `__bold__`. `parse(format(ast))` returns the same tree, so
 formatting loses nothing, and `fmt` reformats its own output until it stops
-changing, so write-then-check is clean by construction. `--check` prints a
+changing -- refusing, with exit 2, a document still changing after four
+passes -- so write-then-check is clean. `--check` prints a
 diff rather than a list, because a CI log reader wants to know what is wrong,
 not only where. Line endings are written as LF; a CRLF file is named by
 `--check` and rewritten by `--write`.
@@ -87,8 +88,10 @@ renderable tree as JSON, one array per input, one per line, in the shape
 upstream's renderers expect -- a tag is `{"$$mdtype": "Tag", "name",
 "attributes", "children"}`. `parse` prints the syntax tree the same way,
 every node in the field order of upstream's `Node` class, so the output is
-what `JSON.stringify(Markdoc.parse(source))` gives. One value per line rather
-than one array for the run, because that composes with `jq`.
+what `JSON.stringify(Markdoc.parse(source))` gives, with two additions upstream
+does not make: positions in the bindings' shape, and a `file` label on every
+location. One value per line rather than one array for the run, because that
+composes with `jq`.
 
 ## The schema file
 
@@ -101,8 +104,13 @@ accent-proust render \
 ```
 
 `--config` is a YAML or JSON file declaring `tags`, `nodes` and `variables`,
-in the same vocabulary the JavaScript bindings' `Config` reads. A schema file
-written for one host is read by the other unchanged:
+in the vocabulary
+[`accent-proust-schema-config`](https://github.com/zoosky/accent-proust/tree/main/crates/accent-proust-schema-config)
+defines -- which keys a declaration may carry, what each means, and the
+refusal of an unknown one with the path to it -- and the JavaScript
+bindings' `Config` reads from an object. A schema declared for one host is
+accepted by the other; a JSON file is the one spelling both read as it
+stands, the shell from disk and the browser through `JSON.parse`:
 
 ```yaml
 tags:
@@ -139,6 +147,7 @@ disagree about what `3` is:
 | `--var count=3` | the number 3 |
 | `--var debug=true` | the boolean true |
 | `--var name=production` | the string `production` |
+| `--var missing=null`, `--var missing=` | null |
 | `--var 'version="3"'` | the string `3` |
 | `--var 'tags=[a, b]'` | a list of two strings |
 
@@ -148,7 +157,7 @@ disagree about what `3` is:
 |---|---|
 | 0 | Success; for `fmt --check`, nothing would change |
 | 1 | A document has a problem: a file that would change, an error at level `error` or `critical` |
-| 2 | A usage error, a file that could not be read or written, or a schema file that does not declare |
+| 2 | A usage error, a file that could not be read or written, a schema file that does not declare, or a document the formatter does not settle on |
 
 1 and 2 are kept apart so that CI can tell "the docs are wrong" from "the tool
 is misconfigured". They are different alerts.

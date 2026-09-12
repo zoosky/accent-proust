@@ -7,7 +7,16 @@ The library reads no files and decides no policy; a host does. This is the
 second host beside the WebAssembly bindings, with one command per stage the
 library exposes.
 
-## Build
+## Install
+
+From a checkout of the repository:
+
+```sh
+cargo install --path crates/accent-proust-cli    # puts `accent-proust` on PATH
+accent-proust --help
+```
+
+Or build without installing:
 
 ```sh
 cargo build -p accent-proust-cli --release

@@ -86,9 +86,10 @@ llms:
   description: |
     accent-proust is a Rust implementation of the Markdoc language: parse,
     validate, transform, render, and format. It also compiles to WebAssembly
-    and is published to npm for use in a browser. These pages cover the Rust
-    API, the JavaScript API, the Markdoc language itself, the architecture,
-    and every declared divergence from upstream Markdoc.
+    and is published to npm for use in a browser, and ships as a command for
+    the shell. These pages cover the Rust API, the JavaScript API, the command
+    line, the Markdoc language itself, the architecture, and every declared
+    divergence from upstream Markdoc.
   extra_links:
     - title: "Source"
       url: "https://github.com/zoosky/accent-proust"

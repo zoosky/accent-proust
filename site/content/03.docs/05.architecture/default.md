@@ -168,8 +168,9 @@ CMS is, and so is a binary that reads files; each gets a crate beside the
 library rather than a feature inside it -- the same reasoning that keeps
 `Tokenizer` a trait rather than an implementation. The vocabulary crate is not
 a host but what two hosts share, and it lives beside them so that a schema
-file written for the browser is read by the shell unchanged, and the two
-cannot drift apart. `default-members = ["."]` holds a bare `cargo build`,
+declared for the browser is accepted by the shell -- one from an object, the
+other from a file -- and the two cannot drift apart. `default-members = ["."]`
+holds a bare `cargo build`,
 `cargo test` and `cargo clippy --all-targets` to the library alone, so no
 member can quietly join the standalone, MSRV or conformance lanes; each brings
 its own CI job.

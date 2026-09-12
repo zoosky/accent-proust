@@ -119,9 +119,9 @@ if anything would change. `validate` reports `path:line:column: level[id]:
 message` per error, or one JSON object per file with `--format json`, and
 exits 1 on an error. `render`, `transform` and `parse` print HTML, the
 renderable tree and the syntax tree. The configuration is a YAML or JSON file
-in the same vocabulary the WebAssembly bindings read, so one schema file
-serves the browser and the shell; `--partials` is a directory of files, which
-is the thing the browser cannot do. The crate's
+in the same vocabulary the WebAssembly bindings read from an object, so a
+schema declared for one host is accepted by the other; `--partials` is a
+directory of files, which is the thing the browser cannot do. The crate's
 [README](crates/accent-proust-cli/README.md) has the rest, exit codes
 included.
 

@@ -7,7 +7,7 @@ menu:
 description: >-
   accent-proust is a Rust implementation of the Markdoc language: parse,
   validate, transform, render, and format. It compiles to WebAssembly, so the
-  same engine runs in a browser.
+  same engine runs in a browser, and ships as a command for the shell.
 
 # `lead` above is one of Accent's own page fields, so home.html.jinja reads it
 # as `page.lead`. Everything below is read through `page.custom.*`. A
