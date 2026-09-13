@@ -243,8 +243,48 @@ code, kbd, samp, pre { font-family: var(--mono); }
   }
 }
 
+.site-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+// A phone cannot hold the wordmark, four links and two buttons on one 60px
+// row: at 390px the row ran to 488px and every page scrolled sideways. So the
+// header wraps into two rows. The buttons stay beside the wordmark, and the
+// links take a full-width row of their own that scrolls sideways when it does
+// not fit, rather than hiding links to make the rest fit.
 @media (max-width: 640px) {
-  .site-nav .hide-sm { display: none; }
+  // The sticky header is taller here, so in-page links need a larger offset.
+  html { scroll-padding-top: 7.5rem; }
+
+  .site-header > .container {
+    flex-wrap: wrap;
+    height: auto;
+    column-gap: 0.75rem;
+    row-gap: 0.15rem;
+    padding-top: 0.6rem;
+  }
+
+  .site-tools { margin-left: auto; }
+
+  .site-nav {
+    order: 3;
+    flex: 1 0 100%;
+    // Full-bleed, so the row scrolls to the screen edges; the inner padding
+    // lines the first link's text up with the wordmark above it.
+    margin: 0 -1.5rem;
+    padding: 0 1.5rem 0.55rem 0.9rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
+
+    a {
+      flex: none;
+      white-space: nowrap;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -836,8 +876,72 @@ code, kbd, samp, pre { font-family: var(--mono); }
 
   @media (max-width: 940px) {
     position: static;
-    padding-bottom: 1.25rem;
-    border-bottom: 1px solid var(--border);
+  }
+
+  // Beside the page the menu is always open and needs no control, so its
+  // summary is hidden. Above the page it is a one-line disclosure naming the
+  // page you are on; see the note in docs.html.jinja.
+  .docs-nav-menu > summary { display: none; }
+
+  @media (max-width: 940px) {
+    .docs-nav-menu {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+
+    .docs-nav-menu > summary {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.7rem 0.9rem;
+      cursor: pointer;
+      list-style: none;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+
+      &::-webkit-details-marker { display: none; }
+
+      // A chevron drawn with two borders, pointing down while closed and up
+      // while open.
+      &::after {
+        content: "";
+        flex: none;
+        width: 0.45rem;
+        height: 0.45rem;
+        margin: 0 0.2rem 0.2rem 0;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(45deg);
+      }
+    }
+
+    .docs-nav-menu[open] > summary::after {
+      margin: 0.2rem 0.2rem 0 0;
+      transform: rotate(-135deg);
+    }
+
+    .docs-nav-current {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: right;
+      font-family: var(--font);
+      font-size: 0.9rem;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--text);
+    }
+
+    .docs-nav-lists {
+      padding: 0.9rem 0.6rem 0.2rem;
+      border-top: 1px solid var(--border);
+    }
   }
 
   .nav-title {
@@ -1010,6 +1114,10 @@ code, kbd, samp, pre { font-family: var(--mono); }
 
 .pane-head {
   display: flex;
+  // The output pane's head holds a title, the stylesheet picker and four tabs.
+  // On a phone that is wider than the pane, and `.pane` hides overflow, so
+  // without wrapping the tabs were cut off rather than moved to a second row.
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
@@ -1033,10 +1141,16 @@ code, kbd, samp, pre { font-family: var(--mono); }
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  // A select is as wide as its longest option. These let it shrink with the
+  // pane, so a long stylesheet name truncates instead of running out of it.
+  min-width: 0;
+  max-width: 100%;
   font-size: 0.78rem;
   color: var(--text-faint);
 
   select {
+    min-width: 0;
+    max-width: 100%;
     padding: 0.2rem 0.4rem;
     border: 1px solid var(--border-strong);
     border-radius: 5px;
@@ -1050,11 +1164,20 @@ code, kbd, samp, pre { font-family: var(--mono); }
 .tabs {
   display: inline-flex;
   gap: 2px;
+  // The four tabs are wider than a pane on the smallest phones. They scroll
+  // sideways there, the way the header's links do, rather than being cut off
+  // by the pane.
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 2px;
   border-radius: var(--radius-sm);
   background: var(--bg-sunken);
 
+  &::-webkit-scrollbar { display: none; }
+
   button {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -1246,6 +1369,13 @@ pre.tabpanel {
     padding-top: 1.25rem;
     border-top: 1px solid var(--border);
     font-size: 0.83rem;
+    color: var(--text-faint);
+  }
+
+  .build-info {
+    margin: 0.5rem 0 0;
+    font-family: var(--mono);
+    font-size: 0.72rem;
     color: var(--text-faint);
   }
 }
