@@ -26,6 +26,14 @@
 {% block body %}
 <div class="container docs-layout">
   <nav class="docs-nav" aria-label="Documentation">
+    {# A disclosure, so a narrow screen -- where this sits above the page
+       rather than beside it -- can collapse the links to one line and show the
+       content first. It ships open, which is what a reader without JavaScript
+       gets on any screen; the script below closes it on a narrow screen before
+       the page below it renders. #}
+    <details class="docs-nav-menu" open>
+      <summary>Pages<span class="docs-nav-current">{{ page.title }}</span></summary>
+      <div class="docs-nav-lists">
     <p class="nav-title">Documentation</p>
     <ul>
       <li>
@@ -46,6 +54,21 @@
       <li><a href="https://markdoc.dev/docs">Markdoc (upstream)</a></li>
       <li><a href="https://github.com/zoosky/accent-proust">Source</a></li>
     </ul>
+      </div>
+    </details>
+    {# Inline and synchronous rather than in the deferred chrome.js: a deferred
+       script closes the menu after first paint, so a phone would show the
+       whole list and then jump. The width matches the stacking breakpoint in
+       main.scss, and crossing it -- a rotated tablet -- resets the state. #}
+    <script>
+      (function () {
+        var menu = document.currentScript.previousElementSibling;
+        var narrow = window.matchMedia("(max-width: 940px)");
+        function sync() { menu.open = !narrow.matches; }
+        sync();
+        narrow.addEventListener("change", sync);
+      })();
+    </script>
   </nav>
 
   <article class="docs-main">
