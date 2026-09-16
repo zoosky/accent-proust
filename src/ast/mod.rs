@@ -19,6 +19,6 @@ mod node;
 mod value;
 
 pub use error::{ErrorLevel, ValidationError};
-pub use location::{Lines, Location, Position};
+pub use location::{AttributeLocation, Lines, Location, Position};
 pub use node::{Node, NodeType};
 pub use value::{Function, PathSegment, Value, Variable};

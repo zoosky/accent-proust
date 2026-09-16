@@ -167,6 +167,10 @@ required-features = ["pulldown-cmark-tokenizer"]
 name = "formatter"
 required-features = ["pulldown-cmark-tokenizer"]
 
+[[test]]
+name = "attribute_spans"
+required-features = ["pulldown-cmark-tokenizer"]
+
 # Parses its own fixtures, so it is gated like the suites above and skipped by
 # `--no-default-features` rather than failing to compile in that lane.
 [[example]]

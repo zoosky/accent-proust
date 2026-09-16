@@ -49,6 +49,8 @@ mod tests;
 pub use cursor::MAX_VALUE_DEPTH;
 pub use error::TagError;
 
+use std::ops::Range;
+
 use crate::ast::Value;
 use cursor::Cursor;
 
@@ -131,6 +133,40 @@ pub enum Attribute {
     },
 }
 
+/// Where one attribute was written, in bytes relative to the tag body.
+///
+/// Offsets index the string passed to [`parse_tag_spanned`], not the document:
+/// the grammar is handed a trimmed tag body and has never been told where that
+/// body sits. A caller holding both translates by adding the body's own start,
+/// which is what [`parse`](crate::parse) does to put
+/// [`Node::annotation_locations`](crate::ast::Node::annotation_locations) in
+/// document coordinates.
+///
+/// The spans are provenance, not identity: they are reported beside
+/// [`Attribute`] rather than inside it, so that the attribute stays the shape
+/// upstream defines and two attributes written differently still compare equal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AttributeSpan {
+    /// The whole item as written: `type="note"`, `#intro` or `.lead`.
+    ///
+    /// A primary value is the exception. Its name is synthetic -- there is no
+    /// `primary=` in the source -- so `all` covers the bare value, `"note"` in
+    /// `{% callout "note" /%}`, and is the same range as
+    /// [`value`](AttributeSpan::value). Text taken from `all` re-reads as an
+    /// attribute for every other kind and as a value for that one, so a
+    /// consumer that re-parses it must expect both.
+    pub all: Range<usize>,
+    /// The value alone, when the author wrote one.
+    ///
+    /// [`None`] for the `#id` and `.class` shortcuts. Their value is implied by
+    /// the syntax rather than written -- `#intro` carries the string `intro`
+    /// and `.lead` carries `true` -- so there is no range whose text is the
+    /// value, and reporting the identifier would invite a rewrite that replaces
+    /// `intro` with something the shortcut cannot spell.
+    pub value: Option<Range<usize>>,
+}
+
 /// Parses the internals of a tag: everything between `{%` and `%}`.
 ///
 /// Pass the body with the delimiters removed and both ends trimmed, which is
@@ -167,6 +203,32 @@ pub enum Attribute {
 /// understands. The message is upstream's message for the same input, and the
 /// offsets are byte offsets into `input`.
 pub fn parse_tag(input: &str) -> Result<TagItem, TagError> {
+    parse_tag_spanned(input).map(|(item, _)| item)
+}
+
+/// Parses a tag body and reports where each attribute was written.
+///
+/// Identical to [`parse_tag`] in what it accepts and what it refuses -- that
+/// function is this one with the spans dropped, so the two cannot disagree
+/// about whether a body parses. The spans are in the order the attributes were
+/// authored, one per entry of the item's attribute list, and a `primary` value
+/// is spanned where it was written even though its name was not.
+///
+/// ```
+/// use accent_proust::grammar::parse_tag_spanned;
+///
+/// let body = r#"callout type="note" /"#;
+/// let (_item, spans) = parse_tag_spanned(body)?;
+/// assert_eq!(&body[spans[0].all.clone()], r#"type="note""#);
+/// assert_eq!(&body[spans[0].value.clone().expect("a written value")], r#""note""#);
+/// # Ok::<(), accent_proust::grammar::TagError>(())
+/// ```
+///
+/// # Errors
+///
+/// As [`parse_tag`]: a [`TagError`] when the body is not a well-formed tag, or
+/// is one followed by anything else.
+pub fn parse_tag_spanned(input: &str) -> Result<(TagItem, Vec<AttributeSpan>), TagError> {
     let mut cursor = Cursor::new(input);
     match cursor.top() {
         Some(item) if cursor.at_end() => Ok(item),
