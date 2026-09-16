@@ -33,10 +33,27 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking: `Node` gains a public field.** `annotation_locations` joins the
+  struct, and `Node` is not `#[non_exhaustive]`, so a host that builds a node by
+  literal or destructures one exhaustively has to name the new field. Reading a
+  node is unaffected, every existing function keeps its signature, and
+  `Node::new` fills the field like any other.
+
+  The struct stays open rather than gaining `#[non_exhaustive]` in the same
+  breath: hosts and tests are invited to construct nodes, and closing it would
+  take that away permanently to save naming one field once. `#[non_exhaustive]`
+  is on the crate's public *enums*, where it earns its keep by making a new
+  upstream node type a non-breaking release.
+
 - **`Node`'s `Debug` output carries the new field.** The hand-written emitter is
   pinned against the derive, so every `{:?}` and `{:#?}` of a node now includes
   `annotation_locations`, whether or not the feature is used. Node `Debug` output
   is observable; a snapshot or log diff keyed on it moves once, here.
+
+- **The site fits a phone, and its footer names the build.** The stylesheet and
+  the base and docs templates carry the responsive work. The site only: no crate
+  behaviour moves with it, and it is recorded here because the website has been
+  in this file's scope since 0.10.0 shipped it.
 
 ## [0.11.0] - 2026-09-12
 

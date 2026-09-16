@@ -64,10 +64,11 @@ places. Every disagreement that matters is enumerated in
 
 ## Versioning
 
-The crate is at `0.12.0` rather than `1.0.0` because the API has had no external
-users yet. The conventions above are already promises; the shape of the Rust
-types is not, and a `0.x` number is the honest way to say so -- `0.11.0` is the
-release in which `Config` changed shape, and the changelog says what moved.
+The crate is at `0.12.0` rather than `1.0.0` because the shape of the Rust types
+is not promised yet. The conventions above already are; a `0.x` number is the
+honest way to say the rest still moves -- `0.11.0` is the release in which
+`Config` changed shape, `0.12.0` adds a field to `Node`, and the changelog says
+what moved each time.
 
 > [!NOTE]
 > The npm package and the crate share one version number. A release publishes
