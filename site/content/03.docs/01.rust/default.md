@@ -126,6 +126,58 @@ Two properties make this safe to run over a file in place:
 tree. The first means a formatter can run twice without churn; the second means
 formatting loses nothing.
 
+## Where each attribute was written
+
+Formatting reprints a whole document. To change one attribute and leave every
+other byte alone -- the author's spacing, their quoting, the tag body -- read
+the span the parser already recorded for it.
+
+`Node::annotation_locations` runs parallel to `Node::annotations`: the same
+order, one entry each, or empty when locations are switched off. `all` covers
+the item as written, and `value` covers the value alone, which is the range to
+replace.
+
+```rust
+use accent_proust::grammar::Attribute;
+use accent_proust::parse::parse;
+
+let source = "{% callout type=\"note\"   title=\"Heads up\" %}\nBody.\n{% /callout %}\n";
+let document = parse(source);
+let callout = document
+    .children
+    .iter()
+    .find(|node| node.tag.as_deref() == Some("callout"))
+    .expect("the callout");
+
+let index = callout
+    .annotations
+    .iter()
+    .position(|annotation| {
+        matches!(annotation, Attribute::Attribute { name, .. } if name == "type")
+    })
+    .expect("a type attribute");
+
+let value = callout.annotation_locations[index]
+    .value
+    .expect("a written value");
+
+let mut rewritten = String::new();
+rewritten.push_str(&source[..value.start.offset]);
+rewritten.push_str("\"warning\"");
+rewritten.push_str(&source[value.end.offset..]);
+// Only those bytes moved. The two spaces before `title` are still two spaces.
+```
+
+Two shapes carry no `value` range, because the syntax implies the value rather
+than spelling it: the `#id` and `.class` shortcuts. A fence annotated through
+its info string carries no locations at all -- the tokenizer hands over that
+string's text but not where it sits, and a guessed offset cannot be told from a
+real one.
+
+`grammar::parse_tag_spanned` is the same information one level down, for a host
+that holds a tag body rather than a document. It returns the item and one
+`AttributeSpan` per attribute, in bytes relative to that body.
+
 ## Variables, functions and partials
 
 Those three live on `Config` alongside the schemas.

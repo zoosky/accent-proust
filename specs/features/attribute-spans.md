@@ -1,9 +1,11 @@
 # Attribute spans: where each attribute was written
 
-Status: implemented, in this pull request.
-Target: 0.12.0. Additive -- nothing that compiled against 0.11.0 stops
-compiling. The minor bump is the pre-1.0 convention for a new public type, not
-a migration.
+Status: implemented in pull request #54; released in 0.12.0.
+Target: 0.12.0, which is a breaking release. The API is additive in the sense
+that matters least: every function and type that existed still exists with the
+same signature. But `Node` gains a public field and is not
+`#[non_exhaustive]`, so a host that builds a node by literal, or destructures
+one exhaustively, has to name it. The changelog says so under `### Changed`.
 
 A tag's `location` says where the tag is. Nothing said where any one of its
 attributes is, so a consumer that wants to change `type="note"` to
