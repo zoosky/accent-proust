@@ -3,7 +3,9 @@
    The navigation is written out rather than looped over `pages`, because half
    of it leaves the site -- crates.io, npm, docs.rs, GitHub -- and a loop that
    has to be pieced back together with a hand-written tail is longer than the
-   list it replaces. Four links do not need a data structure. #}
+   list it replaces. The changelog is a page of this site, mounted from the
+   root CHANGELOG.md by `content.mounts` in config.yaml, and is named here like
+   the rest. Five links do not need a data structure. #}
 <!DOCTYPE html>
 <html lang="{{ page.language or 'en' }}" dir="{{ page.direction or 'ltr' }}">
 
@@ -63,6 +65,7 @@
       <nav class="site-nav" aria-label="Main">
         <a href="{{ url('/playground') }}" {% if page.url and '/playground' in page.url %}class="active"{% endif %}>Playground</a>
         <a href="{{ url('/docs') }}" {% if page.url and '/docs' in page.url %}class="active"{% endif %}>Docs</a>
+        <a href="{{ url('/changelog') }}" {% if page.url and '/changelog' in page.url %}class="active"{% endif %}>Changelog</a>
         <a class="ext" href="https://docs.rs/accent-proust">API</a>
         <a class="ext" href="https://github.com/zoosky/accent-proust">GitHub</a>
       </nav>
@@ -152,7 +155,7 @@
           <h2>Project</h2>
           <ul>
             <li><a href="https://github.com/zoosky/accent-proust">Source</a></li>
-            <li><a href="https://github.com/zoosky/accent-proust/blob/main/CHANGELOG.md">Changelog</a></li>
+            <li><a href="{{ url('/changelog') }}">Changelog</a></li>
             <li><a href="https://github.com/zoosky/accent-proust/blob/main/LICENSE">Licence</a></li>
             <li><a href="https://markdoc.dev">Markdoc</a></li>
           </ul>
@@ -171,7 +174,8 @@
          Accent binary that rendered the page and its git hash, for example
          `0.25.1 (d7ed19b)`. The date is when the site was built, which is when
          a change was last deployed: the Pages workflow rebuilds on every change
-         to the site, the engine, or the scripts that assemble them. File
+         to the site, the engine, the scripts that assemble them, or
+         CHANGELOG.md. File
          modification dates are not used, because a CI checkout gives every
          file the time of the checkout.
 

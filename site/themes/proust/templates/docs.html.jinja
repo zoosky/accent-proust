@@ -22,6 +22,9 @@
    there is no `startswith`. `/docs` itself does not contain `/docs/`, which is
    exactly the exclusion wanted -- the index gets its own entry below. #}
 {% set section_prefix = docs_root ~ "/" %}
+{# The root CHANGELOG.md, mounted by `content.mounts` in config.yaml. It is not
+   under `/docs`, so the loop below never lists it; the sidebar names it. #}
+{% set changelog_url = url("/changelog") %}
 
 {% block body %}
 <div class="container docs-layout">
@@ -50,6 +53,7 @@
 
     <p class="nav-title">Reference</p>
     <ul>
+      <li><a href="{{ changelog_url }}" {% if page.url == changelog_url %}class="active" aria-current="page"{% endif %}>Changelog</a></li>
       <li><a href="https://docs.rs/accent-proust">Rust API (docs.rs)</a></li>
       <li><a href="https://markdoc.dev/docs">Markdoc (upstream)</a></li>
       <li><a href="https://github.com/zoosky/accent-proust">Source</a></li>
@@ -74,7 +78,13 @@
   <article class="docs-main">
     <header>
       <h1>{{ page.title }}</h1>
-      {% if page.lead %}<p class="lead">{{ page.lead }}</p>{% endif %}
+      {# The mounted changelog has no frontmatter, so Accent takes its first
+         paragraph as the lead, and printing it here would show that paragraph
+         twice. Skipped by URL rather than by looking for the lead in the body:
+         the derived lead is plain text while the body keeps the paragraph's
+         links and code, so the lead never occurs in the body verbatim, and
+         templates are not told which leads were derived. #}
+      {% if page.lead and page.url != changelog_url %}<p class="lead">{{ page.lead }}</p>{% endif %}
     </header>
 
     <div class="prose">

@@ -114,6 +114,12 @@ touch output/.nojekyll
 [ -f output/theme/assets/wasm/accent_proust_wasm_bg.wasm ] \
   || die "the build produced no engine under output/theme/assets/wasm/"
 
+# The changelog page exists only through `content.mounts` in config.yaml, and a
+# mount whose source moved drops the page without failing the build. Assert it
+# rendered and carries the file's content.
+grep -q 'Keep a Changelog' output/changelog/index.html 2>/dev/null \
+  || die "the build produced no changelog page under output/changelog/; check content.mounts in site/config.yaml"
+
 step "Done"
 echo "  output: $SITE/output"
 

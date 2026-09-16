@@ -6,6 +6,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The changelog is a page of the site.** `site/config.yaml` mounts this file
+  at `/changelog`, so the page is the file rather than a copy of it, and the
+  header, the footer and the documentation sidebar link to it; the footer used
+  to link to the file on GitHub. The Pages workflow now also runs when this
+  file changes. The site only: no crate behaviour moves with it.
+
 ## [0.12.0] - 2026-09-16
 
 ### Added
