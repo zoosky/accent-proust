@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-16
+
 ### Added
 
 - **A byte span for every attribute.** `grammar::parse_tag_spanned` reports
@@ -242,7 +244,8 @@ crate builds on pulldown-cmark.
 - **MSRV 1.96** for the library, normalised across the Accent crates, on Rust
   edition 2024.
 
-[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/zoosky/accent-proust/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/zoosky/accent-proust/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/zoosky/accent-proust/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/zoosky/accent-proust/releases/tag/v0.9.0
