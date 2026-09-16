@@ -2,8 +2,8 @@
 
 <https://zoosky.github.io/accent-proust>
 
-The landing page, the documentation, and a playground that runs the engine in
-your browser. Built with [Accent CMS](https://accentcms.dev) -- the sibling
+The landing page, the documentation, the changelog, and a playground that runs
+the engine in your browser. Built with [Accent CMS](https://accentcms.dev) -- the sibling
 project this crate ships alongside -- so the pages are rendered by one half of
 the family and the playground by the other.
 
@@ -39,6 +39,7 @@ contributor who never touches the site never installs any of the above.
 | `config.yaml` | Site configuration. The `site.url` path component is what prefixes every internal link |
 | `content/` | The pages, as Markdown with frontmatter. Directory order (`01.`, `02.`) is menu order |
 | `content/default.md` | The landing page, at the site root rather than behind a redirect |
+| `../CHANGELOG.md` | The changelog page, at `/changelog`, through `content.mounts` in `config.yaml` |
 | `themes/proust/` | The theme: templates, stylesheet, and the playground script |
 | `themes/proust/assets/wasm/` | **Generated.** The engine, staged here by `scripts/build-site.sh` |
 | `output/` | **Generated.** What gets deployed |
@@ -47,6 +48,19 @@ The last two are gitignored. The engine is rebuilt from
 `crates/accent-proust-wasm` on every site build rather than committed, for the
 same reason the npm package is not committed: a checked-in binary is a copy
 that can disagree with the source beside it.
+
+## The changelog is mounted, not copied
+
+`config.yaml` mounts the repository's `CHANGELOG.md` at `/changelog` as a
+single-file mount. Accent reads the file on every build, takes the page title
+from its `# Changelog` heading, and renders it with the `docs` template, so the
+page cannot drift from the file. `scripts/build-site.sh` fails if the page is
+missing, because a mount whose source moved would otherwise drop it silently.
+
+Two consequences for the file. A relative link inside it would resolve against
+`/changelog` on the site, so links there are absolute. And with no frontmatter,
+its first paragraph becomes the page's lead, which the `docs` template skips on
+this page rather than print the paragraph twice.
 
 ## Adding a page
 
@@ -85,7 +99,7 @@ it again.
 ## Deployment
 
 `.github/workflows/pages.yml` builds and publishes on a push to `main` that
-touches the site, the engine, or the scripts that assemble them. It downloads a
+touches the site, the engine, the scripts that assemble them, or the changelog. It downloads a
 pinned `accent` release and verifies its checksum rather than building the CMS
 from source.
 

@@ -18,6 +18,15 @@ server:
 content:
   directory: "./content"
 
+  # The root CHANGELOG.md, surfaced as the /changelog page without a copy: a
+  # single-file mount reads the file on every build, so the site cannot drift
+  # from it. Its `# Changelog` heading becomes the page title and is stripped
+  # from the body. The path is relative to this file.
+  mounts:
+    - source: ../CHANGELOG.md
+      mount: /changelog
+      default_template: docs
+
 theme:
   name: "proust"
   directory: "./themes"

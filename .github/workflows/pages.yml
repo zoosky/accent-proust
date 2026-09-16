@@ -13,9 +13,11 @@ on:
     # The site is rebuilt when the site changes, when the engine it embeds
     # changes, or when the scripts that assemble the two change. A change to
     # `src/` reaches the playground through the wasm crate, which depends on
-    # the library by path -- so the library is in this list as well.
+    # the library by path -- so the library is in this list as well. So is
+    # CHANGELOG.md, which site/config.yaml mounts as the /changelog page.
     paths:
       - "site/**"
+      - "CHANGELOG.md"
       - "src/**"
       - "crates/accent-proust-wasm/**"
       - "scripts/build-site.sh"
