@@ -24,7 +24,7 @@
 
 use indexmap::IndexMap;
 
-use crate::ast::{Location, ValidationError, Value};
+use crate::ast::{AttributeLocation, Location, ValidationError, Value};
 use crate::grammar::Attribute;
 
 /// What kind of node this is.
@@ -279,6 +279,19 @@ pub struct Node<'a> {
     /// the formatter reprints the annotation it was given -- `.foo` stays
     /// `.foo`, not `class={foo: true}`.
     pub annotations: Vec<Attribute>,
+    /// Where each annotation was written, parallel to [`Node::annotations`].
+    ///
+    /// Either empty, or one entry per annotation in the same order, so index
+    /// `i` describes `annotations[i]`. A consumer that finds the two lengths
+    /// equal can zip them; one that finds this empty has no positions and must
+    /// say so rather than guess.
+    ///
+    /// Empty in two cases. Locations switched off, as [`Node::location`] is;
+    /// and a fence annotated through its info string, because the tokenizer
+    /// reports that string's text but not where it sits, so there is no honest
+    /// offset to give. The two never mix on one node: a fence has no inline
+    /// run, so it cannot also collect a positioned annotation.
+    pub annotation_locations: Vec<AttributeLocation<'a>>,
     /// Whether this node sits inside an inline run.
     pub inline: bool,
     /// Where the node came from, unless locations were switched off.
@@ -341,6 +354,7 @@ impl Clone for Node<'_> {
                         errors: node.errors.clone(),
                         lines: node.lines.clone(),
                         annotations: node.annotations.clone(),
+                        annotation_locations: node.annotation_locations.clone(),
                         inline: node.inline,
                         location: node.location,
                     });
@@ -363,6 +377,7 @@ impl PartialEq for Node<'_> {
                 || left.errors != right.errors
                 || left.lines != right.lines
                 || left.annotations != right.annotations
+                || left.annotation_locations != right.annotation_locations
                 || left.inline != right.inline
                 || left.location != right.location
                 || left.children.len() != right.children.len()
@@ -487,6 +502,10 @@ fn expand_node<'n, 'a>(
             ("errors", flat(&node.errors, inner, true)),
             ("lines", flat(&node.lines, inner, true)),
             ("annotations", flat(&node.annotations, inner, true)),
+            (
+                "annotation_locations",
+                flat(&node.annotation_locations, inner, true),
+            ),
             ("inline", flat(&node.inline, inner, true)),
             ("location", flat(&node.location, inner, true)),
         ] {
@@ -518,10 +537,12 @@ fn expand_node<'n, 'a>(
             queued.push(NodeTok::Node(slot, depth));
         }
         queued.push(NodeTok::Owned(format!(
-            "}}, errors: {}, lines: {}, annotations: {}, inline: {}, location: {} }}",
+            "}}, errors: {}, lines: {}, annotations: {}, annotation_locations: {}, \
+             inline: {}, location: {} }}",
             flat(&node.errors, depth, false),
             flat(&node.lines, depth, false),
             flat(&node.annotations, depth, false),
+            flat(&node.annotation_locations, depth, false),
             flat(&node.inline, depth, false),
             flat(&node.location, depth, false),
         )));
@@ -550,6 +571,7 @@ impl<'a> Node<'a> {
             errors: Vec::new(),
             lines: Vec::new(),
             annotations: Vec::new(),
+            annotation_locations: Vec::new(),
             inline: false,
             location: None,
         }
@@ -575,6 +597,7 @@ impl<'a> Node<'a> {
             errors: Vec::new(),
             lines: Vec::new(),
             annotations: Vec::new(),
+            annotation_locations: Vec::new(),
             inline: false,
             location: None,
         }
@@ -689,7 +712,7 @@ mod debug_parity {
         // otherwise -- that is the whole point of the type.
         #![allow(dead_code, clippy::struct_field_names)]
 
-        use super::{Attribute, Location, NodeType, ValidationError, Value};
+        use super::{Attribute, AttributeLocation, Location, NodeType, ValidationError, Value};
         use indexmap::IndexMap;
 
         #[derive(Debug)]
@@ -702,6 +725,7 @@ mod debug_parity {
             pub errors: Vec<ValidationError<'a>>,
             pub lines: Vec<usize>,
             pub annotations: Vec<Attribute>,
+            pub annotation_locations: Vec<AttributeLocation<'a>>,
             pub inline: bool,
             pub location: Option<Location<'a>>,
         }
@@ -721,6 +745,7 @@ mod debug_parity {
             errors: node.errors.clone(),
             lines: node.lines.clone(),
             annotations: node.annotations.clone(),
+            annotation_locations: node.annotation_locations.clone(),
             inline: node.inline,
             location: node.location,
         }

@@ -549,6 +549,185 @@ mod tag_is_tag {
 }
 
 /// Cases upstream does not have, for behaviour upstream does have.
+/// Attribute spans, which upstream does not report at all.
+///
+/// Nothing here is a ported case: there is no oracle to port from. The cases
+/// are chosen so that a span that drifted by one byte, or that leaked the
+/// whitespace around an item, fails rather than still looking plausible.
+mod attribute_spans {
+    use super::*;
+    use crate::grammar::parse_tag_spanned;
+
+    /// The spans and the attributes they describe, for a body that parses.
+    fn spanned(input: &str) -> (Vec<Attribute>, Vec<crate::grammar::AttributeSpan>) {
+        let (item, spans) = parse_tag_spanned(input).expect("parses");
+        let attributes = match item {
+            TagItem::Annotation { attributes } | TagItem::TagOpen { attributes, .. } => attributes,
+            other => panic!("expected attributes, got {other:?}"),
+        };
+        (attributes, spans)
+    }
+
+    /// The text each span covers, whole item then value.
+    fn texts(input: &str) -> Vec<(&str, Option<&str>)> {
+        let (_, spans) = spanned(input);
+        spans
+            .iter()
+            .map(|span| {
+                (
+                    &input[span.all.clone()],
+                    span.value.clone().map(|value| &input[value]),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_span_covers_the_item_and_its_value_but_not_the_space_around_them() {
+        assert_eq!(
+            texts(r#"callout type="note" open=true /"#),
+            [
+                (r#"type="note""#, Some(r#""note""#)),
+                ("open=true", Some("true")),
+            ]
+        );
+    }
+
+    #[test]
+    fn there_is_one_span_per_attribute_in_authored_order() {
+        let (attributes, spans) = spanned(r"callout a=1 b=2 c=3 /");
+        assert_eq!(attributes.len(), spans.len());
+        assert_eq!(
+            texts(r"callout a=1 b=2 c=3 /")
+                .iter()
+                .map(|(all, _)| *all)
+                .collect::<Vec<_>>(),
+            ["a=1", "b=2", "c=3"]
+        );
+    }
+
+    #[test]
+    fn the_shortcuts_report_no_value_because_the_syntax_implies_it() {
+        assert_eq!(texts("#intro .lead"), [("#intro", None), (".lead", None)]);
+    }
+
+    #[test]
+    fn a_primary_value_is_spanned_where_it_was_written() {
+        // Its name is synthetic -- there is no `primary=` in the source -- so
+        // the whole item and the value are the same range, and it sorts first.
+        let input = r#"callout "note" open=true /"#;
+        assert_eq!(
+            texts(input),
+            [
+                (r#""note""#, Some(r#""note""#)),
+                ("open=true", Some("true")),
+            ]
+        );
+        let (attributes, _) = spanned(input);
+        assert!(matches!(
+            &attributes[0],
+            Attribute::Attribute { name, .. } if name == "primary"
+        ));
+    }
+
+    #[test]
+    fn a_string_keeps_its_quotes_and_its_escapes_inside_the_value_span() {
+        assert_eq!(
+            texts(r#"callout title="a \"b\" c" /"#),
+            [(r#"title="a \"b\" c""#, Some(r#""a \"b\" c""#))]
+        );
+    }
+
+    #[test]
+    fn a_container_value_is_spanned_whole() {
+        assert_eq!(
+            texts("callout items=[1, 2] meta={a: 1} /"),
+            [
+                ("items=[1, 2]", Some("[1, 2]")),
+                ("meta={a: 1}", Some("{a: 1}")),
+            ]
+        );
+    }
+
+    #[test]
+    fn offsets_are_bytes_so_a_multibyte_value_does_not_shift_the_next_span() {
+        // Slicing with a shifted offset would panic on a character boundary or
+        // return the wrong text; both are failures here rather than surprises
+        // in a consumer.
+        assert_eq!(
+            texts(r#"callout title="héllo wörld" type="note" /"#),
+            [
+                (r#"title="héllo wörld""#, Some(r#""héllo wörld""#)),
+                (r#"type="note""#, Some(r#""note""#)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tag_written_across_lines_spans_each_attribute_where_it_sits() {
+        assert_eq!(
+            texts("callout\n  type=\"note\"\n  open=true"),
+            [
+                (r#"type="note""#, Some(r#""note""#)),
+                ("open=true", Some("true")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_repeated_attribute_reports_both_places_it_was_written() {
+        let input = "callout a=1 a=2 /";
+        let spans = texts(input);
+        assert_eq!(spans, [("a=1", Some("1")), ("a=2", Some("2"))]);
+    }
+
+    #[test]
+    fn a_tag_with_no_attributes_reports_no_spans() {
+        let (item, spans) = parse_tag_spanned("callout /").expect("parses");
+        assert!(matches!(item, TagItem::TagOpen { .. }));
+        assert!(spans.is_empty());
+        let (item, spans) = parse_tag_spanned("/callout").expect("parses");
+        assert!(matches!(item, TagItem::TagClose { .. }));
+        assert!(spans.is_empty());
+    }
+
+    /// The property that makes a byte-for-byte rewrite safe: the text a span
+    /// covers is the attribute, and re-reading it gives the attribute back.
+    ///
+    /// A `primary` value is excluded because its text is a bare value, which
+    /// re-reads as a value rather than as an attribute -- that is what makes it
+    /// primary.
+    #[test]
+    fn the_text_a_span_covers_reparses_to_the_same_attribute() {
+        for input in [
+            r#"callout type="note" open=true /"#,
+            "#intro .lead",
+            r#"callout title="a \"b\" c" items=[1, {a: 2}] /"#,
+            r#"callout title="héllo" type="note" /"#,
+            "callout\n  type=\"note\"\n  open=true",
+            "callout a=1 a=2 /",
+        ] {
+            let (attributes, spans) = spanned(input);
+            assert_eq!(attributes.len(), spans.len(), "one span each for {input:?}");
+            for (attribute, span) in attributes.iter().zip(spans.iter()) {
+                if matches!(attribute, Attribute::Attribute { name, .. } if name == "primary") {
+                    continue;
+                }
+                let text = &input[span.all.clone()];
+                let (reparsed, _) = parse_tag_spanned(text).expect("the span re-parses");
+                let TagItem::Annotation { attributes: again } = reparsed else {
+                    panic!("an attribute on its own is an annotation, got {reparsed:?}");
+                };
+                assert_eq!(
+                    again.as_slice(),
+                    std::slice::from_ref(attribute),
+                    "{text:?}"
+                );
+            }
+        }
+    }
+}
+
 mod fidelity {
     use super::*;
 

@@ -32,8 +32,8 @@
 
 use std::ops::Range;
 
-use crate::ast::{Lines, Location, Node, NodeType, ValidationError, Value};
-use crate::grammar::{Attribute, TagItem, parse_tag};
+use crate::ast::{AttributeLocation, Lines, Location, Node, NodeType, ValidationError, Value};
+use crate::grammar::{Attribute, AttributeSpan, TagItem, parse_tag_spanned};
 use crate::parse::ParseOptions;
 use crate::parse::annotate::annotate;
 use crate::parse::scan::{CLOSE, OPEN, contains_markdoc_tag_in_url, find_tag_end};
@@ -326,6 +326,37 @@ impl<'s, 'o> Builder<'s, 'o> {
         self.lines.locate(span, self.options.file)
     }
 
+    /// Translate attribute spans out of tag-body coordinates into the document's.
+    ///
+    /// `base` is where the parsed body starts in the source. This is the same
+    /// translation a parse error gets a few lines below: the grammar counts from
+    /// the trimmed body it was handed and knows nothing of the document around
+    /// it.
+    ///
+    /// Empty when locations are switched off, so the result is either empty or
+    /// one entry per span -- which is the invariant
+    /// [`Node::annotation_locations`](crate::ast::Node::annotation_locations)
+    /// promises its readers.
+    fn attribute_locations(
+        &self,
+        spans: &[AttributeSpan],
+        base: usize,
+    ) -> Vec<AttributeLocation<'s>> {
+        if !self.options.location {
+            return Vec::new();
+        }
+        spans
+            .iter()
+            .map(|span| AttributeLocation {
+                all: self.locate(base + span.all.start..base + span.all.end),
+                value: span
+                    .value
+                    .as_ref()
+                    .map(|value| self.locate(base + value.start..base + value.end)),
+            })
+            .collect()
+    }
+
     /// Upstream's half-open `[first, last + 1]` line pair.
     fn line_pair(&self, span: &Range<usize>) -> Vec<usize> {
         let first = self.lines.position(span.start).line;
@@ -361,26 +392,38 @@ impl<'s, 'o> Builder<'s, 'o> {
         // back to the document costs the leading whitespace that was cut.
         let body_start = span.inner.start + (body.len() - body.trim_start().len());
 
-        match parse_tag(trimmed) {
-            Ok(TagItem::TagOpen {
-                name,
-                attributes,
-                self_closing,
-            }) => {
+        match parse_tag_spanned(trimmed) {
+            Ok((
+                TagItem::TagOpen {
+                    name,
+                    attributes,
+                    self_closing,
+                },
+                spans,
+            )) => {
                 let mut node = self.node(NodeType::Tag, span.outer.clone());
                 node.inline = inline;
                 node.tag = Some(name);
                 node.lines = span.lines.to_vec();
+                let locations = self.attribute_locations(&spans, body_start);
                 annotate(&mut node, &attributes);
+                node.annotation_locations = locations;
+                debug_assert!(
+                    node.annotation_locations.is_empty()
+                        || node.annotation_locations.len() == node.annotations.len(),
+                    "attribute locations must stay parallel to annotations"
+                );
                 if self_closing {
                     self.attach(node);
                 } else {
                     self.open(node);
                 }
             }
-            Ok(TagItem::TagClose { name }) => self.close_tag(&name, span, inline),
-            Ok(TagItem::Annotation { attributes }) => self.annotation(&attributes, span),
-            Ok(TagItem::Variable(value)) => {
+            Ok((TagItem::TagClose { name }, _)) => self.close_tag(&name, span, inline),
+            Ok((TagItem::Annotation { attributes }, spans)) => {
+                self.annotation(&attributes, &spans, body_start, span);
+            }
+            Ok((TagItem::Variable(value), _)) => {
                 // Upstream maps the `variable` token type onto `text`, whose
                 // `content` attribute then holds a value rather than a string.
                 let mut node = self.node(NodeType::Text, span.outer.clone());
@@ -430,11 +473,29 @@ impl<'s, 'o> Builder<'s, 'o> {
     }
 
     /// Apply a bare `{% #id .cls %}` to the block that owns the inline run.
-    fn annotation(&mut self, attributes: &[Attribute], span: &TagSpan) {
+    ///
+    /// The locations are built before the owner is borrowed mutably, because
+    /// they read the line index that the borrow would otherwise lock out. They
+    /// extend rather than replace: a block can carry more than one annotation,
+    /// and every annotation reaching a block is positioned.
+    fn annotation(
+        &mut self,
+        attributes: &[Attribute],
+        spans: &[AttributeSpan],
+        body_start: usize,
+        span: &TagSpan,
+    ) {
+        let locations = self.attribute_locations(spans, body_start);
         if let Some(owner) = self.inline_parent
             && let Some(node) = self.stack.get_mut(owner)
         {
             annotate(node, attributes);
+            node.annotation_locations.extend(locations);
+            debug_assert!(
+                node.annotation_locations.is_empty()
+                    || node.annotation_locations.len() == node.annotations.len(),
+                "attribute locations must stay parallel to annotations"
+            );
             return;
         }
         let location = self.locate(span.outer.clone());
@@ -844,8 +905,15 @@ impl<'s, 'o> Builder<'s, 'o> {
             && let Some(end) = find_tag_end(&info, start)
         {
             let body = info.get(start + OPEN.len()..end).unwrap_or("").trim();
-            match parse_tag(body) {
-                Ok(TagItem::Annotation { attributes } | TagItem::TagOpen { attributes, .. }) => {
+            // The spans are dropped here, and the node keeps no attribute
+            // locations. `info` is the tokenizer's reconstruction of the info
+            // string rather than a slice of the document, so there is no base
+            // offset to translate them against and no honest position to report.
+            match parse_tag_spanned(body) {
+                Ok((
+                    TagItem::Annotation { attributes } | TagItem::TagOpen { attributes, .. },
+                    _,
+                )) => {
                     annotate(&mut node, &attributes);
                 }
                 Ok(_) => {}

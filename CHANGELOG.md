@@ -6,6 +6,29 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A byte span for every attribute.** `grammar::parse_tag_spanned` reports
+  where each attribute of a tag body was written, and
+  `Node::annotation_locations` carries the same information in document
+  coordinates, parallel to `Node::annotations`. `all` covers the item as
+  written; `value` covers the value alone, which is the range to replace to
+  change one attribute and leave every other byte of the document -- the
+  author's spacing and the tag body included -- exactly as it was.
+
+  `parse_tag` is now `parse_tag_spanned` with the spans dropped, so the two
+  cannot disagree about what parses. The spans travel beside `Attribute` rather
+  than inside it: that type mirrors upstream's `{type, name, value}`, the
+  command-line host serialises it in that shape, and its tests are a
+  case-for-case port of upstream's.
+
+  The `#id` and `.class` shortcuts report no `value` range, because their value
+  is implied by the syntax rather than written. A fence annotated through its
+  info string reports no locations at all: the tokenizer hands over that
+  string's text but not where it sits, and a guessed offset cannot be told from
+  a real one. Nothing that parsed before parses differently, and no rendered
+  byte changes. See `specs/features/attribute-spans.md`.
+
 ## [0.11.0] - 2026-09-12
 
 ### Added

@@ -95,6 +95,26 @@ impl Location<'_> {
     }
 }
 
+/// Where one of a tag's attributes was written, in document coordinates.
+///
+/// The parser reports attribute spans relative to the tag body it parsed; this
+/// is the same information after translation, so the offsets index the document
+/// and slice it directly. That is what makes a single-attribute rewrite exact:
+/// replace the bytes of [`AttributeLocation::value`] and every other byte of
+/// the document, the rest of the tag included, is untouched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AttributeLocation<'a> {
+    /// The whole item as written: `type="note"`, `#intro` or `.lead`.
+    pub all: Location<'a>,
+    /// The value alone, when the author wrote one.
+    ///
+    /// [`None`] for the `#id` and `.class` shortcuts, whose value the syntax
+    /// implies rather than spells. See
+    /// [`AttributeSpan::value`](crate::grammar::AttributeSpan::value).
+    pub value: Option<Location<'a>>,
+}
+
 /// Turns byte offsets into line and column, for one source buffer.
 ///
 /// Built once per parse and consulted per node. The alternative -- counting
