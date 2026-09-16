@@ -19,6 +19,7 @@ impl Cursor<'_> {
     /// input. Whether what it matched is the *whole* body is checked by the
     /// caller, which is how upstream works and why `{% foo=1 bar %}` is an
     /// error rather than a tag.
+    ///
     /// The spans travel beside the item rather than inside it, one per
     /// attribute in authored order. An alternative that carries no attributes
     /// reports none.

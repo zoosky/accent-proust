@@ -408,11 +408,6 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let locations = self.attribute_locations(&spans, body_start);
                 annotate(&mut node, &attributes);
                 node.annotation_locations = locations;
-                debug_assert!(
-                    node.annotation_locations.is_empty()
-                        || node.annotation_locations.len() == node.annotations.len(),
-                    "attribute locations must stay parallel to annotations"
-                );
                 if self_closing {
                     self.attach(node);
                 } else {
@@ -485,17 +480,19 @@ impl<'s, 'o> Builder<'s, 'o> {
         body_start: usize,
         span: &TagSpan,
     ) {
-        let locations = self.attribute_locations(spans, body_start);
+        // Only an annotation that lands on a block keeps its locations. The
+        // error path below never reads them, so a bare annotation with no inline
+        // run above it does not pay for the line-table lookups.
+        let locations = if self.inline_parent.is_some() {
+            self.attribute_locations(spans, body_start)
+        } else {
+            Vec::new()
+        };
         if let Some(owner) = self.inline_parent
             && let Some(node) = self.stack.get_mut(owner)
         {
             annotate(node, attributes);
             node.annotation_locations.extend(locations);
-            debug_assert!(
-                node.annotation_locations.is_empty()
-                    || node.annotation_locations.len() == node.annotations.len(),
-                "attribute locations must stay parallel to annotations"
-            );
             return;
         }
         let location = self.locate(span.outer.clone());

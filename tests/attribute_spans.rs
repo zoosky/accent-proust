@@ -18,8 +18,10 @@ fn nodes<'n, 'a>(root: &'n Node<'a>) -> Vec<&'n Node<'a>> {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         found.push(node);
+        // Slots are pushed first so they pop last, which keeps children in
+        // document order ahead of them rather than behind them.
+        stack.extend(node.slots.values().rev());
         stack.extend(node.children.iter().rev());
-        stack.extend(node.slots.values());
     }
     found
 }
@@ -39,11 +41,17 @@ fn tag<'n, 'a>(root: &'n Node<'a>, name: &str) -> Option<&'n Node<'a>> {
 /// The location of one named attribute, found the way a consumer finds it:
 /// by matching the annotation and taking the entry beside it.
 fn located<'a>(node: &Node<'a>, name: &str) -> Option<AttributeLocation<'a>> {
-    assert_eq!(
-        node.annotations.len(),
-        node.annotation_locations.len(),
-        "locations must be parallel to annotations"
-    );
+    // The field's contract is "empty, or one entry per annotation", so an empty
+    // list is the contract being honoured rather than broken: a fence annotated
+    // through its info string, and any parse with locations off, reach here
+    // legitimately and answer `None` below.
+    if !node.annotation_locations.is_empty() {
+        assert_eq!(
+            node.annotations.len(),
+            node.annotation_locations.len(),
+            "locations must be parallel to annotations"
+        );
+    }
     let index = node.annotations.iter().position(|annotation| {
         matches!(annotation, Attribute::Attribute { name: written, .. } if written == name)
     })?;
@@ -133,6 +141,21 @@ fn a_fence_annotated_through_its_info_string_reports_no_locations() {
         "the annotation still applies"
     );
     assert!(fence.annotation_locations.is_empty());
+}
+
+#[test]
+fn a_tag_inside_a_processed_fence_is_located_where_it_sits() {
+    // A fence that opts into processing parses its content, so a tag in there
+    // reaches the same translation as any other. That is the opposite of the
+    // fence's own info-string annotation, which has no offset to translate
+    // against -- the asymmetry is deliberate, so it gets a test.
+    let source = "```html {% process=true %}\n{% callout type=\"note\" /%}\n```\n";
+    let document = parse(source);
+    let callout = tag(&document, "callout").expect("the callout tag");
+    let kind = located(callout, "type").expect("a located type attribute");
+
+    assert_eq!(kind.all.text, r#"type="note""#);
+    assert_eq!(&source[kind.all.span()], r#"type="note""#);
 }
 
 #[test]

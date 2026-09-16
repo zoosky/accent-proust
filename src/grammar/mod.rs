@@ -149,6 +149,13 @@ pub enum Attribute {
 #[non_exhaustive]
 pub struct AttributeSpan {
     /// The whole item as written: `type="note"`, `#intro` or `.lead`.
+    ///
+    /// A primary value is the exception. Its name is synthetic -- there is no
+    /// `primary=` in the source -- so `all` covers the bare value, `"note"` in
+    /// `{% callout "note" /%}`, and is the same range as
+    /// [`value`](AttributeSpan::value). Text taken from `all` re-reads as an
+    /// attribute for every other kind and as a value for that one, so a
+    /// consumer that re-parses it must expect both.
     pub all: Range<usize>,
     /// The value alone, when the author wrote one.
     ///

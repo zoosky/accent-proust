@@ -29,6 +29,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a real one. Nothing that parsed before parses differently, and no rendered
   byte changes. See `specs/features/attribute-spans.md`.
 
+### Changed
+
+- **`Node`'s `Debug` output carries the new field.** The hand-written emitter is
+  pinned against the derive, so every `{:?}` and `{:#?}` of a node now includes
+  `annotation_locations`, whether or not the feature is used. Node `Debug` output
+  is observable; a snapshot or log diff keyed on it moves once, here.
+
 ## [0.11.0] - 2026-09-12
 
 ### Added

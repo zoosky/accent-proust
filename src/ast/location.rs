@@ -106,6 +106,10 @@ impl Location<'_> {
 #[non_exhaustive]
 pub struct AttributeLocation<'a> {
     /// The whole item as written: `type="note"`, `#intro` or `.lead`.
+    ///
+    /// A primary value is the exception: its name is synthetic, so this covers
+    /// the bare value and equals [`value`](AttributeLocation::value). See
+    /// [`AttributeSpan::all`](crate::grammar::AttributeSpan::all).
     pub all: Location<'a>,
     /// The value alone, when the author wrote one.
     ///

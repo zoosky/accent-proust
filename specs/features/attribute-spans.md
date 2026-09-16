@@ -101,3 +101,26 @@ mis-spanning a primary value. Each is caught.
   better made by the first consumer that does.
 - **No change to what parses**, to any error, or to any rendered byte. The
   conformance count is unmoved.
+- **The allocation cost is not measured.** Every tag parse now accumulates
+  `Vec<(Attribute, AttributeSpan)>` and `unzip`s it, so a body with attributes
+  allocates three buffers where it allocated one, over an element grown by a
+  range and an optional range; `parse_tag` then drops the spans, as do the
+  `TagClose`, `Variable` and fence paths. The repository has no benchmark
+  harness, so no number is claimed here. Collapsing the two entry points was
+  chosen for correctness rather than cost: one parse path cannot disagree with
+  itself about what parses, and two would eventually.
+
+## Review
+
+One finding was raised and declined, recorded here rather than dropped.
+
+**"The spans are unreachable from both shipped hosts."** `accent-proust parse`
+does not print `annotation_locations`, and the WebAssembly host exports no AST
+at all, so the only way to read a span is to depend on the library directly.
+That is the intended route: the consumer is Accent's admin inspector, a
+server-side Rust path that already depends on this crate, not a browser tool
+reaching it through the bindings. Adding the field to the command-line host
+would also break a promise that host makes -- its `parse` output is
+byte-identical to `JSON.stringify(Markdoc.parse(source))`, and upstream has no
+such field. Exporting an AST from the WebAssembly bindings is a feature of its
+own, with its own consumer, and belongs with that consumer rather than here.
