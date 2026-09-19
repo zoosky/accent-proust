@@ -124,3 +124,87 @@ document
 "
     );
 }
+
+// ---- block HTML with the option off ----------------------------------------
+//
+// markdown-it with `html: false` has no HTML block rule, so the lines of what
+// pulldown-cmark calls an HTML block are an ordinary paragraph there: literal
+// text, one text node per line, joined by soft breaks. These pin that shape.
+// The port once attached the raw markup as a bare `text` node in the block
+// position instead, which the `document` schema rejects.
+
+/// A comment on its own line, with the option off, is a paragraph of text.
+#[test]
+fn a_block_comment_is_a_paragraph_when_the_option_is_off() {
+    let source = dedent("\nthis is a test\n\n<!-- example comment -->\n\nfoo\n");
+    assert_eq!(
+        outline(&parse(&source)),
+        "\
+document
+  paragraph
+    inline
+      text content=\"this is a test\"
+  paragraph
+    inline
+      text content=\"<!-- example comment -->\"
+  paragraph
+    inline
+      text content=\"foo\"
+"
+    );
+}
+
+/// Each line is its own text node, and the lines are joined by soft breaks.
+#[test]
+fn a_multi_line_block_comment_keeps_its_lines_when_the_option_is_off() {
+    assert_eq!(
+        outline(&parse("<!--\nexample comment\n-->\n")),
+        "\
+document
+  paragraph
+    inline
+      text content=\"<!--\"
+      softbreak
+      text content=\"example comment\"
+      softbreak
+      text content=\"-->\"
+"
+    );
+}
+
+/// Raw HTML other than a comment is literal text too, whatever the option.
+#[test]
+fn a_raw_html_block_is_a_paragraph_of_text() {
+    let expected = "\
+document
+  paragraph
+    inline
+      text content=\"<div>\"
+      softbreak
+      text content=\"foo\"
+      softbreak
+      text content=\"</div>\"
+";
+    assert_eq!(outline(&parse("<div>\nfoo\n</div>\n")), expected);
+    assert_eq!(outline(&parse_comments("<div>\nfoo\n</div>\n")), expected);
+}
+
+/// pulldown-cmark keeps a comment open across a blank line; markdown-it ends
+/// the paragraph there. With the option off, the blank line splits it.
+#[test]
+fn a_blank_line_splits_an_html_block_when_the_option_is_off() {
+    assert_eq!(
+        outline(&parse("<!--\n\nexample\n-->\n")),
+        "\
+document
+  paragraph
+    inline
+      text content=\"<!--\"
+  paragraph
+    inline
+      text content=\"example\"
+      softbreak
+      text content=\"-->\"
+"
+    );
+}

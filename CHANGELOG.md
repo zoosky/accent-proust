@@ -6,6 +6,23 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An HTML block is a paragraph of literal text, as upstream has it.** The
+  parser attached a block of raw HTML -- a comment with `allow_comments` off,
+  which is the default, or any other markup -- as one bare `text` node in the
+  block position. Upstream never produces that shape: markdown-it runs with
+  `html: false` and has no HTML block rule, so the same lines are a paragraph
+  there. The `document` schema does not allow a `text` child, so every
+  document with an HTML comment and a tag failed validation with "Can't nest
+  'text' in 'document'", reported at line 1. A documentation site that keeps
+  its source notes in comments saw hundreds of these.
+
+  The block is now one paragraph per run of non-blank lines, each line a
+  trimmed text node, joined by soft breaks. A comment with `allow_comments`
+  on is still a `comment` node, and inline HTML is unchanged. No conformance
+  case moves.
+
 ### Added
 
 - **The changelog is a page of the site.** `site/config.yaml` mounts this file

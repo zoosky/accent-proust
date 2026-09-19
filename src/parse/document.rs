@@ -585,36 +585,88 @@ impl<'s, 'o> Builder<'s, 'o> {
         }
     }
 
-    /// Turn the gathered HTML block into one node.
+    /// Turn the gathered HTML block into nodes.
+    ///
+    /// A comment becomes a `comment` node when comments are enabled. Anything
+    /// else -- a comment when they are not, or any other raw HTML -- is what
+    /// markdown-it with `html: false` makes of the same lines: it has no HTML
+    /// block rule, so they are paragraphs of literal text, one per run of
+    /// non-blank lines, each line a text node and the lines joined by soft
+    /// breaks.
+    ///
+    /// This used to attach the raw markup as one bare `text` node in the
+    /// block position, a shape upstream never produces and one the `document`
+    /// schema rejects: every document with an HTML comment and a tag failed
+    /// validation with "Can't nest 'text' in 'document'".
     fn flush_html_block(&mut self) {
         let Some(span) = self.html_block.take() else {
             return;
         };
-        let node = self.html_node(span);
-        self.attach(node);
+        if let Some(comment) = self.comment_node(&span) {
+            self.attach(comment);
+            return;
+        }
+        for lines in paragraph_runs(self.source, &span) {
+            if let Some(node) = self.literal_paragraph(&lines) {
+                self.attach(node);
+            }
+        }
     }
 
-    /// A comment, or the literal text of something that is not one.
+    /// A paragraph of literal text, one text node per line, as markdown-it
+    /// builds a paragraph from lines it does not parse as anything else.
+    /// `None` for no lines, which `paragraph_runs` never yields.
+    fn literal_paragraph(&mut self, lines: &[Range<usize>]) -> Option<Node<'s>> {
+        let span = lines.first()?.start..lines.last()?.end;
+        let mut paragraph = self.node(NodeType::Paragraph, span);
+        let mut inline = Node::new(NodeType::Inline);
+        inline.lines.clone_from(&paragraph.lines);
+        for (index, line) in lines.iter().enumerate() {
+            if index > 0 {
+                let mut breaker = Node::new(NodeType::Softbreak);
+                breaker.inline = true;
+                inline.push(breaker);
+            }
+            let content = self.slice(line).to_string();
+            let mut text = self.text_node(content, line.clone());
+            text.inline = true;
+            inline.push(text);
+        }
+        paragraph.push(inline);
+        Some(paragraph)
+    }
+
+    /// The `comment` node for `span`, when comments are enabled and the
+    /// markup is one comment.
+    fn comment_node(&mut self, span: &Range<usize>) -> Option<Node<'s>> {
+        if !self.options.allow_comments {
+            return None;
+        }
+        let inner = self
+            .slice(span)
+            .trim()
+            .strip_prefix("<!--")
+            .and_then(|rest| rest.strip_suffix("-->"))?;
+        let content = inner.trim().to_string();
+        let mut node = self.node(NodeType::Comment, span.clone());
+        node.set("content", Value::String(content));
+        Some(node)
+    }
+
+    /// Inline HTML: a comment, or the literal text of something that is not
+    /// one.
     ///
     /// Upstream runs markdown-it with `html: false`, so raw HTML is text there,
     /// and adds a comment rule when `allowComments` is on. Both are reproduced:
     /// a comment becomes a `comment` node when comments are enabled, and
     /// anything else -- including a comment when they are not -- becomes text
-    /// carrying the markup verbatim.
+    /// carrying the markup verbatim, inside the paragraph it sits in.
     fn html_node(&mut self, span: Range<usize>) -> Node<'s> {
-        let raw = self.slice(&span);
-        let trimmed = raw.trim();
-        if self.options.allow_comments
-            && let Some(inner) = trimmed
-                .strip_prefix("<!--")
-                .and_then(|rest| rest.strip_suffix("-->"))
-        {
-            let content = inner.trim().to_string();
-            let mut node = self.node(NodeType::Comment, span);
-            node.set("content", Value::String(content));
-            return node;
+        if let Some(comment) = self.comment_node(&span) {
+            return comment;
         }
-        self.text_node(raw.to_string(), span)
+        let raw = self.slice(&span).to_string();
+        self.text_node(raw, span)
     }
 
     fn start(&mut self, container: &Container<'_>, span: Range<usize>) {
@@ -1141,4 +1193,33 @@ fn unescape(text: &str) -> String {
         }
     }
     out
+}
+
+/// The runs of non-blank lines in `span`, each line trimmed of surrounding
+/// whitespace, as byte ranges into `source`.
+///
+/// markdown-it ends a paragraph at a blank line and strips each line's
+/// leading and trailing whitespace, so an HTML block that spans a blank line
+/// -- a comment written across one, say -- is two paragraphs there.
+fn paragraph_runs(source: &str, span: &Range<usize>) -> Vec<Vec<Range<usize>>> {
+    let text = source.get(span.clone()).unwrap_or("");
+    let mut runs: Vec<Vec<Range<usize>>> = Vec::new();
+    let mut current: Vec<Range<usize>> = Vec::new();
+    let mut offset = span.start;
+    for line in text.split_inclusive('\n') {
+        let start = offset + (line.len() - line.trim_start().len());
+        let end = offset + line.trim_end().len();
+        offset += line.len();
+        if start >= end {
+            if !current.is_empty() {
+                runs.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        current.push(start..end);
+    }
+    if !current.is_empty() {
+        runs.push(current);
+    }
+    runs
 }
