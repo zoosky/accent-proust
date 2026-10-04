@@ -144,6 +144,10 @@ name = "html_block_validation"
 required-features = ["pulldown-cmark-tokenizer"]
 
 [[test]]
+name = "html_block_placement"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
 name = "links"
 required-features = ["pulldown-cmark-tokenizer"]
 

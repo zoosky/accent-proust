@@ -122,6 +122,12 @@ impl<'s, 'o> Builder<'s, 'o> {
                     }
                 }
                 Block::Tag(span) => {
+                    // A raw-HTML block that ends right before a tag belongs
+                    // where it was written. Flushed only at the next markdown
+                    // event, it would attach to whichever node is open then:
+                    // the tag that follows, the parent after a closing tag,
+                    // the branch after `{% else /%}`.
+                    self.flush_html_block();
                     self.close_inline();
                     self.tag(span, false);
                 }
