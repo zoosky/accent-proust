@@ -215,7 +215,7 @@ fn correctly_handles_union_types() {
     let config = function_config(return_type_functions());
 
     let document = parse("{% union-tag-1 foo=withUnion() bar=withUnion() /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     // `baz` is typed `Boolean`, which is not one of the union's members.
     let document = parse("{% union-tag-1 foo=withUnion() bar=withUnion() baz=withUnion() /%}");
@@ -233,7 +233,7 @@ fn correctly_handles_return_types_for_nested_function_calls() {
     let config = function_config(return_type_functions());
 
     let document = parse("{% foo bar=nested(baz(), number()) /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     let document = parse("{% foo bar=nested(number(), baz()) /%}");
     assert_eq!(
@@ -255,14 +255,14 @@ fn correctly_handles_return_types_for_nested_function_calls() {
 fn accepts_a_correct_return_type() {
     let config = function_config(return_type_functions());
     let document = parse("{% foo bar=baz() /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
 fn correctly_handles_no_return_type() {
     let config = function_config(functions(vec![("baz", ConfigFunction::default())]));
     let document = parse("{% foo bar=baz() /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn parameter_functions() -> IndexMap<String, ConfigFunction> {
 fn with_a_missing_optional_parameter() {
     let config = function_config(parameter_functions());
     let document = parse("{% foo bar=qux() /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
@@ -336,14 +336,14 @@ fn with_a_missing_required_parameter() {
 fn accepts_defined_parameters_with_a_keyed_parameter() {
     let config = function_config(parameter_functions());
     let document = parse(r#"{% foo bar=qux(test="example") /%}"#);
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
 fn ignores_parameters_when_there_is_no_typing() {
     let config = function_config(parameter_functions());
     let document = parse("{% foo bar=noTyping(foo=1) /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
@@ -409,10 +409,10 @@ fn allows_inline_or_block_when_undefined() {
     let config = inline_config();
 
     let document = parse("this is inline {% baz %}bar{% /baz %}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     let document = parse("\n{% baz %}\nbar\n{% /baz %}\n      ");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
@@ -420,7 +420,7 @@ fn validates_inline_tag() {
     let config = inline_config();
 
     let document = parse("this is inline {% foo %}bar{% /foo %}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     let document = parse("\n{% foo %}\nbar\n{% /foo %}\n      ");
     let found = errors(&document, &config);
@@ -436,7 +436,7 @@ fn validates_block_tag() {
     let config = inline_config();
 
     let document = parse("\n{% bar %}\nbar\n{% /bar %}\n");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     let document = parse("this is inline {% bar %}bar{% /bar %}");
     let found = errors(&document, &config);
@@ -479,7 +479,7 @@ fn an_attribute_validate_hook_using_a_simple_conditional() {
     )]));
 
     let document = parse("{% foo bar=20 /%}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     let document = parse("{% foo bar=5 /%}");
     assert_eq!(
@@ -545,7 +545,7 @@ fn properly_validates_ids() {
     let config = config();
 
     let document = parse("# foo {% #bar %}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 
     let document = parse("# foo {% #1bar %}");
     assert_eq!(
@@ -625,7 +625,7 @@ fn a_custom_type_returns_no_errors_when_valid() {
     )]));
 
     let document = parse(r#"{% link href="http://google.com"  /%}"#);
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 // ---------------------------------------------------------------------------
@@ -636,7 +636,7 @@ fn a_custom_type_returns_no_errors_when_valid() {
 fn should_only_validate_if_the_variables_config_is_passed() {
     let config = config();
     let document = parse("{% $valid.variable %}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
@@ -671,7 +671,7 @@ fn should_not_warn_if_variable_exists() {
     config.variables = Some(variables);
 
     let document = parse("{% $valid.variable %}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +690,7 @@ fn should_not_error_for_missing_support_for_code_block() {
     let document = parse(
         "   # https://spec.commonmark.org/0.30/#indented-code-block\n    4-space indented code",
     );
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 // ---------------------------------------------------------------------------
@@ -819,7 +819,7 @@ fn parent_validation_for_deep_nesting() {
     let document = parse(
         "\n{% foo %}\n{% bar %}\n{% /bar %}\n{% /foo %}\n\n{% bar %}\n{% baz %}\n# testing\n{% /baz %}\n{% /bar %}\n",
     );
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }
 
 #[test]
@@ -855,5 +855,5 @@ fn parent_validation_with_function_validation_enabled() {
     ]));
 
     let document = parse("{% foo %}{% bar %}this is a test{% /bar %}{% /foo %}");
-    assert!(errors(&document, &config).is_empty());
+    assert_eq!(errors(&document, &config), []);
 }

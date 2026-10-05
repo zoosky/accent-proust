@@ -173,8 +173,14 @@ mod tests {
     #[test]
     fn class_accepts_a_string_or_an_object() {
         let config = Config::new();
-        assert!(errors(Class.validate(&Value::String("a b".into()), &config, "class")).is_empty());
-        assert!(errors(Class.validate(&Value::Hash(IndexMap::new()), &config, "class")).is_empty());
+        assert_eq!(
+            errors(Class.validate(&Value::String("a b".into()), &config, "class")),
+            []
+        );
+        assert_eq!(
+            errors(Class.validate(&Value::Hash(IndexMap::new()), &config, "class")),
+            []
+        );
         let rejected = errors(Class.validate(&Value::Number(1.0), &config, "class"));
         assert_eq!(
             rejected.first().map(|e| e.id),
@@ -207,7 +213,10 @@ mod tests {
     #[test]
     fn an_id_must_start_with_an_ascii_letter() {
         let config = Config::new();
-        assert!(errors(Id.validate(&Value::String("bar".into()), &config, "id")).is_empty());
+        assert_eq!(
+            errors(Id.validate(&Value::String("bar".into()), &config, "id")),
+            []
+        );
         for rejected in ["1bar", "#bar", "", "\u{e9}bar"] {
             let found = errors(Id.validate(&Value::String(rejected.into()), &config, "id"));
             assert_eq!(
@@ -225,9 +234,13 @@ mod tests {
     #[test]
     fn a_condition_may_be_absent_without_being_wrong() {
         let config = Config::new();
-        assert!(errors(Conditional.validate(&Value::Null, &config, "primary")).is_empty());
-        assert!(
-            errors(Conditional.validate(&Value::Boolean(false), &config, "primary")).is_empty()
+        assert_eq!(
+            errors(Conditional.validate(&Value::Null, &config, "primary")),
+            []
+        );
+        assert_eq!(
+            errors(Conditional.validate(&Value::Boolean(false), &config, "primary")),
+            []
         );
         let rejected =
             errors(Conditional.validate(&Value::String("yes".into()), &config, "primary"));

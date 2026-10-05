@@ -60,7 +60,7 @@ schemas.insert_tag(
 let config = builtins::config_with(Arc::new(schemas));
 
 let document = parse::parse("{% callout type=\"note\" %}\nBody\n{% /callout %}\n");
-assert!(validate::validate_tree(&document, &config).is_empty());
+assert_eq!(validate::validate_tree(&document, &config), []);
 
 let tree = transform::transform(&document, &config);
 assert_eq!(

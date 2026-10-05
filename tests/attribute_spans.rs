@@ -140,7 +140,7 @@ fn a_fence_annotated_through_its_info_string_reports_no_locations() {
         !fence.annotations.is_empty(),
         "the annotation still applies"
     );
-    assert!(fence.annotation_locations.is_empty());
+    assert_eq!(fence.annotation_locations, []);
 }
 
 #[test]
@@ -166,8 +166,8 @@ fn switching_locations_off_reports_none() {
     let document = parse_with(source, &PulldownTokenizer::new(), &options);
     let callout = tag(&document, "callout").expect("the callout tag");
 
-    assert!(!callout.annotations.is_empty());
-    assert!(callout.annotation_locations.is_empty());
+    assert_ne!(callout.annotations, []);
+    assert_eq!(callout.annotation_locations, []);
 }
 
 #[test]

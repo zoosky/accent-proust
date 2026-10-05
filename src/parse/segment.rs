@@ -417,13 +417,13 @@ mod tests {
     fn tags_inside_a_fence_are_left_alone() {
         let source = "```\n{% foo %}\n```\n";
         assert_eq!(blocks(source), [format!("markdown {source:?}")]);
-        assert!(segment(source).inline_tags.is_empty());
+        assert_eq!(segment(source).inline_tags, []);
     }
 
     #[test]
     fn a_tilde_fence_closes_only_on_tildes() {
         let source = "~~~\n{% foo %}\n```\n{% bar %}\n~~~\n";
-        assert!(segment(source).inline_tags.is_empty());
+        assert_eq!(segment(source).inline_tags, []);
     }
 
     #[test]
@@ -469,12 +469,12 @@ mod tests {
     fn an_unclosed_tag_does_not_stall_the_scan() {
         let source = "hello {%\nworld\n";
         let segmentation = segment(source);
-        assert!(segmentation.inline_tags.is_empty());
+        assert_eq!(segmentation.inline_tags, []);
         assert_eq!(segmentation.masked, source);
     }
 
     #[test]
     fn an_empty_document_produces_nothing() {
-        assert!(segment("").blocks.is_empty());
+        assert_eq!(segment("").blocks, []);
     }
 }
