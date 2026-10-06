@@ -6,6 +6,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An HTML block stays where it was written.** The parser flushed a pending
+  raw-HTML block only at the next markdown event, and a tag delimiter is not
+  one. A block that ended right before a tag attached to whichever node was
+  open next: the tag that follows it, the parent after a closing tag, the
+  branch after `{% else /%}`, the next sibling tag. A host that cuts a tag's
+  body from its children got a body that started before the tag; Accent's
+  expander recursed on it until the stack overflowed. The block is now
+  flushed before every tag. The conformance suite passes against the
+  existing baseline.
+
 ## [0.12.1] - 2026-09-19
 
 ### Fixed
