@@ -32,7 +32,7 @@ indexmap = "2"
 # harness already uses: pure Rust, no serde. Default features off for the
 # reason the harness gives -- `encoding` sniffs non-UTF-8 input, and a
 # configuration file is UTF-8.
-saphyr = { version = "0.0.12", default-features = false }
+saphyr = { version = "0.1", default-features = false }
 # The unified diff `fmt --check` prints. A host's dependency: the library
 # needs no diff, and this is the kind of thing a host carries so that it does
 # not have to.
