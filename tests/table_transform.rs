@@ -116,7 +116,10 @@ fn does_not_produce_errors_for_valid_conditional_rows() {
                  {% /table %}";
 
     let document = parse_document(input);
-    assert!(table_syntax_errors(&document).is_empty());
+    assert_eq!(
+        table_syntax_errors(&document),
+        Vec::<&ValidationError>::new()
+    );
 }
 
 /// Upstream's "does not produce errors for valid conditionals within a cell",
@@ -174,7 +177,10 @@ fn does_not_produce_errors_for_a_conditional_with_multiple_rows_and_hr_separator
                  {% /table %}";
 
     let document = parse_document(input);
-    assert!(table_syntax_errors(&document).is_empty());
+    assert_eq!(
+        table_syntax_errors(&document),
+        Vec::<&ValidationError>::new()
+    );
 }
 
 #[test]
@@ -199,7 +205,10 @@ fn does_not_produce_errors_for_comments_in_a_table() {
                  {% /table %}";
 
     let document = parse_document(input);
-    assert!(table_syntax_errors(&document).is_empty());
+    assert_eq!(
+        table_syntax_errors(&document),
+        Vec::<&ValidationError>::new()
+    );
 }
 
 #[test]

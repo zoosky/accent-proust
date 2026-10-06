@@ -538,7 +538,7 @@ fn error_across_annotations_on_the_same_node() {
 fn no_error_for_multiple_classes() {
     let source = dedent("{% foo .bar .baz .qux /%}");
     let document = parse(&source);
-    assert!(error_ids(at(&document, &[0])).is_empty());
+    assert_eq!(error_ids(at(&document, &[0])), Vec::<&str>::new());
 }
 
 /// Upstream writes this fence without an annotation, because its fences process
@@ -638,7 +638,7 @@ fn a_tag_that_does_not_parse_becomes_an_error_node() {
 fn an_unclosed_tag_is_ordinary_text() {
     let source = dedent("hello {% world");
     let document = parse(&source);
-    assert!(all_error_ids(&document).is_empty());
+    assert_eq!(all_error_ids(&document), Vec::<&str>::new());
     assert_eq!(
         attribute(at(&document, &[0, 0, 0]), "content"),
         "\"hello {% world\""

@@ -79,7 +79,7 @@ mod tests {
                 },
             ],
         );
-        assert!(node.errors.is_empty());
+        assert_eq!(node.errors, []);
         let Some(Value::Hash(classes)) = node.get("class") else {
             panic!("expected a class hash");
         };

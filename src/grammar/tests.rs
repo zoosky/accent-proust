@@ -685,10 +685,10 @@ mod attribute_spans {
     fn a_tag_with_no_attributes_reports_no_spans() {
         let (item, spans) = parse_tag_spanned("callout /").expect("parses");
         assert!(matches!(item, TagItem::TagOpen { .. }));
-        assert!(spans.is_empty());
+        assert_eq!(spans, []);
         let (item, spans) = parse_tag_spanned("/callout").expect("parses");
         assert!(matches!(item, TagItem::TagClose { .. }));
-        assert!(spans.is_empty());
+        assert_eq!(spans, []);
     }
 
     /// The property that makes a byte-for-byte rewrite safe: the text a span

@@ -277,7 +277,7 @@ fn a_fence_without_the_opt_in_keeps_its_content_literal() {
     let document = parse(source);
     let fence = at(&document, &[0]);
     assert_eq!(fence.node_type, NodeType::Fence);
-    assert!(fence.children.is_empty());
+    assert_eq!(fence.children, []);
     assert_eq!(
         attribute(fence, "content"),
         "\"hello {% foo %}bar{% /foo %}\\n\""
