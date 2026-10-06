@@ -115,7 +115,7 @@ CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
 
 The test runner ships with `wasm-bindgen-cli` and its version has to match the
 `wasm-bindgen` the crate compiles against:
-`cargo install wasm-bindgen-cli --version 0.2.128 --locked`.
+`cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
 `scripts/build-npm.sh` checks that match rather than letting a mismatch surface
 as broken glue at run time.
 

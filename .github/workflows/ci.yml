@@ -106,7 +106,7 @@ jobs:
     name: WebAssembly
     runs-on: ubuntu-latest
     env:
-      WASM_BINDGEN_VERSION: 0.2.128
+      WASM_BINDGEN_VERSION: 0.2.129
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

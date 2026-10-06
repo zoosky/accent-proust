@@ -42,7 +42,7 @@ env:
   CARGO_TERM_COLOR: always
   # Must match the wasm-bindgen in Cargo.lock, exactly as in ci.yml. The build
   # script checks this and fails loudly if the two drift.
-  WASM_BINDGEN_VERSION: 0.2.128
+  WASM_BINDGEN_VERSION: 0.2.129
   # The Accent CMS release the site is built with. Pinned rather than "latest":
   # a template that renders differently after a CMS release should be a change
   # someone made, not a deployment nobody triggered.

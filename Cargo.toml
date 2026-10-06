@@ -88,7 +88,7 @@ proptest = "1"
 # newer rustc than the crate's own MSRV. That is a floor for `cargo test` in this
 # repository only -- dev-dependencies are never built by a consumer, so the
 # `rust-version` above remains the promise it says it is.
-saphyr = { version = "0.0.12", default-features = false }
+saphyr = { version = "0.1", default-features = false }
 
 # One block for the workspace, and every member opts in with
 # `[lints] workspace = true`. Inheritance is opt-in per member, so sharing the
