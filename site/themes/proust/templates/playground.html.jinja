@@ -75,5 +75,5 @@
 {% block head %}
 {# Not a theme asset: this module instantiates a WebAssembly engine, and no
    other page on the site should pay for that. #}
-<script type="module" src="{{ url('/theme/assets/js/playground.js') }}"></script>
+<script nonce="{{ nonce }}" type="module" src="{{ url('/theme/assets/js/playground.js') }}"></script>
 {% endblock %}

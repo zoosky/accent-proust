@@ -23,8 +23,13 @@
      blocking: a deferred one runs after first paint, which is exactly the
      flash it exists to prevent. Wrapped in try/catch because a browser with
      site data blocked throws on `localStorage` rather than returning null, and
-     a theme preference is not worth a blank page. #}
-  <script>
+     a theme preference is not worth a blank page.
+
+     Every `<script>` in this theme carries `nonce="{{ nonce }}"`. The
+     attribute marks it as the theme's: `accent build` allows a marked inline
+     script by its hash and removes the attribute, and the script policy blocks
+     any script without it. #}
+  <script nonce="{{ nonce }}">
     try {
       var t = localStorage.getItem("theme");
       if (t === "light" || t === "dark") {
@@ -170,29 +175,27 @@
         the engine this site documents.
       </p>
 
-      {# Which build a reader is looking at. `accent.version_string` names the
-         Accent binary that rendered the page and its git hash, for example
-         `0.25.1 (d7ed19b)`. The date is when the site was built, which is when
-         a change was last deployed: the Pages workflow rebuilds on every change
-         to the site, the engine, the scripts that assemble them, or
-         CHANGELOG.md. File
-         modification dates are not used, because a CI checkout gives every
-         file the time of the checkout.
+      {# Which build a reader is looking at. `accent.version_string` is the
+         version and git hash of the Accent binary that rendered the page, so
+         the footer follows the release the Pages workflow pins with no edit
+         here. The date is when the site was built, which is when a change was
+         last deployed: the Pages workflow rebuilds on every change to the
+         site, the engine, the scripts that assemble them, or CHANGELOG.md.
+         File modification dates are not used, because a CI checkout gives
+         every file the time of the checkout.
 
-         `site.built_at` is an ISO 8601 timestamp such as `2026-09-13T16:00:14Z`.
-         The `date` filter passes it through unformatted, so the date is its
-         first ten characters. v0.25.1, the release the workflow pins, renders
-         `site.built_at` though its documentation only lists it from v0.26;
-         `site.last_modified` is the fallback if a release ever omits it. #}
+         `site.built_at` is an ISO 8601 timestamp, which the `date` filter
+         reads. `site.last_modified` is the fallback if a release ever omits
+         it. #}
       {% set updated = site.built_at or site.last_modified %}
       <p class="build-info">
         Built with Accent CMS {{ accent.version_string }}{% if updated %} · Last updated
-        <time datetime="{{ updated }}">{{ updated[:10] }}</time>{% endif %}
+        <time datetime="{{ updated }}">{{ updated | date }}</time>{% endif %}
       </p>
     </div>
   </footer>
-  <script src="{{ url('/_search/search.js') }}" defer></script>
-  <script src="{{ url('/theme/assets/js/chrome.js') }}" defer></script>
+  <script nonce="{{ nonce }}" src="{{ url('/_search/search.js') }}" defer></script>
+  <script nonce="{{ nonce }}" src="{{ url('/theme/assets/js/chrome.js') }}" defer></script>
 </body>
 
 </html>

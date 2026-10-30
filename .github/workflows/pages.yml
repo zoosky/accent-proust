@@ -46,7 +46,7 @@ env:
   # The Accent CMS release the site is built with. Pinned rather than "latest":
   # a template that renders differently after a CMS release should be a change
   # someone made, not a deployment nobody triggered.
-  ACCENT_VERSION: v0.25.1
+  ACCENT_VERSION: v0.27.5
 
 jobs:
   build:

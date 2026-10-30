@@ -64,6 +64,16 @@ build:
   routing:
     error_document: /404.html
 
+http_headers:
+  security:
+    script_policy:
+      # The playground compiles its engine with `WebAssembly.instantiateStreaming`,
+      # which a `script-src` without this keyword blocks. It allows WebAssembly
+      # compilation only, not JavaScript `eval`. GitHub Pages sends no CSP, so
+      # what this governs is `accent serve` and the `serve-static` preview --
+      # where, without it, the playground fails and the deployed one does not.
+      sources: ["'wasm-unsafe-eval'"]
+
 markdown:
   tables: true
   footnotes: true

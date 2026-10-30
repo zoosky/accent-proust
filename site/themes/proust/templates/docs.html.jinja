@@ -64,7 +64,7 @@
        script closes the menu after first paint, so a phone would show the
        whole list and then jump. The width matches the stacking breakpoint in
        main.scss, and crossing it -- a rotated tablet -- resets the state. #}
-    <script>
+    <script nonce="{{ nonce }}">
       (function () {
         var menu = document.currentScript.previousElementSibling;
         var narrow = window.matchMedia("(max-width: 940px)");
