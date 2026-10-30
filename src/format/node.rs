@@ -18,8 +18,10 @@
 //!
 //! - **`blockquote` and `list` re-enter at the top.** They call the whole
 //!   formatter on each child and paste the result behind a prefix, rather than
-//!   streaming the child's chunks into their own. That is what lets them
-//!   left-trim a child independently of its siblings.
+//!   streaming the child's chunks into their own. That is what lets them trim
+//!   a child independently of its siblings. A `list` item keeps the item's
+//!   indent; a `blockquote` child is formatted at indent zero, because the
+//!   quote's prefix carries the indent for every line.
 //! - **`table` reads chunks, not text** (`super::table`).
 //! - **`text` escapes differently depending on its parent** (`super::inline`).
 
@@ -198,10 +200,16 @@ impl Formatter<'_> {
         let children: Vec<String> = node
             .children
             .iter()
-            .map(|child| self.subtree(child, flush).trim().to_owned())
+            .map(|child| {
+                // Upstream's `.trim()`. `subtree` has already trimmed the
+                // start, so only the end is left.
+                let mut text = self.subtree(child, flush);
+                text.truncate(text.trim_end().len());
+                text
+            })
             .collect();
-        let inner = children.join(&format!("{NL}{NL}"));
-        let quoted = inner.split(NL).collect::<Vec<_>>().join(&prefix);
+        // `NL + NL`, then every `NL` behind the prefix.
+        let quoted = children.join("\n\n").replace(NL, &prefix);
         out.text(format!("{prefix}{quoted}{NL}"));
     }
 
