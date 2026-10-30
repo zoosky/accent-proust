@@ -6,6 +6,22 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Current with upstream Markdoc 0.5.11.** The vendored reference source and
+  the conformance corpus now pin upstream `v0.5.11` (revision `9440a1d`)
+  instead of `0.5.9`. The corpus is byte-identical between the two releases,
+  and all 105 cases give the same result under both, so the conformance count
+  does not move. `DIVERGENCES.md` is measured against the new release:
+  - Entry 16 lists three formatter defects instead of four. Upstream fixed the
+    blockquote that marked only its first line (markdoc/markdoc#640), which
+    this crate already did.
+  - Entry 13 covers blockquotes as well as list items. Since 0.5.10, upstream
+    parses a tag opening that spans several quoted lines (markdoc/markdoc#642).
+    Here, a tag inside a quote is read as inline. An opening that spans lines
+    inside a container currently leaks masked text, which is a bug tracked in
+    #73.
+
 ## [0.12.2] - 2026-10-06
 
 ### Fixed

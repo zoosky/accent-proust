@@ -1,7 +1,7 @@
 # The conformance corpus, vendored
 
 Upstream: <https://github.com/markdoc/markdoc>
-Revision: `afee1a4f19678d97bf35606aed38b27c5ed5b1df` (tag `v0.5.9`)
+Revision: `9440a1d45670d367090d66446c5e387028ea9236` (tag `v0.5.11`)
 Path upstream: `spec/marktest/`
 
 `tests.yaml` is 105 cases of source in, expected output out. It is the progress

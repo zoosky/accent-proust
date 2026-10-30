@@ -10,25 +10,25 @@
 //!
 //! # What upstream actually does
 //!
-//! markdown-it 12.3.2, `lib/common/utils.js`, verified against the published
-//! source at that tag. Upstream pins 12.3.2 in `package-lock.json` and patches
-//! it (`reference/patches/markdown-it+12.3.2.patch`), but the patch touches
-//! nine block rules and never `lib/common/utils.js`, so the escaper in force is
-//! stock:
+//! markdown-it 15.0.1, `src/common/utils.ts`, verified against the published
+//! source at that tag. Upstream pins 15.0.1 in `package-lock.json` and patches
+//! it (`reference/patches/markdown-it+15.0.1.patch`), but the patch touches
+//! nine block rules and never the escaper, so the escaper in force is stock. It
+//! is unchanged from 12.3.2, the release this crate was first ported against:
 //!
 //! ```js
-//! var HTML_REPLACEMENTS = {
+//! const HTML_REPLACEMENTS = {
 //!   '&': '&amp;',
 //!   '<': '&lt;',
 //!   '>': '&gt;',
 //!   '"': '&quot;'
-//! };
+//! }
 //!
-//! function escapeHtml(str) {
+//! function escapeHtml (str: string) {
 //!   if (HTML_ESCAPE_TEST_RE.test(str)) {
-//!     return str.replace(HTML_ESCAPE_REPLACE_RE, replaceUnsafeChar);
+//!     return str.replace(HTML_ESCAPE_REPLACE_RE, replaceUnsafeChar)
 //!   }
-//!   return str;
+//!   return str
 //! }
 //! ```
 //!

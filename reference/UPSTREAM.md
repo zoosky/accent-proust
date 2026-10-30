@@ -1,7 +1,7 @@
 # The upstream TypeScript, vendored for reading
 
 Upstream: <https://github.com/markdoc/markdoc>
-Revision: `afee1a4f19678d97bf35606aed38b27c5ed5b1df` (tag `v0.5.9`)
+Revision: `9440a1d45670d367090d66446c5e387028ea9236` (tag `v0.5.11`)
 Paths upstream: `src/`, `index.ts`, `patches/`
 
 This is the source `proust` is ported from, committed unmodified so that the
@@ -27,7 +27,8 @@ port is gated on the ported unit tests as well as on the corpus, and those tests
 are where the intended behaviour of an individual function is written down.
 
 `patches/` comes with it because upstream patches markdown-it itself
-(`markdown-it+12.3.2.patch`, which adds `allowIndentation` to nine block rules).
+(`markdown-it+15.0.1.patch`, which adds `allowIndentation` to nine block rules
+in both of markdown-it's bundles).
 A reference tree without the patch misrepresents the behaviour being ported --
 reading `tokenizer/index.ts` alone suggests the option is ordinary markdown-it
 configuration, and the whole reasoning behind divergence 8 rests on it not

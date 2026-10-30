@@ -145,8 +145,8 @@ are yours.
 
 ## Compatibility
 
-Ported from upstream Markdoc `v0.5.9` (revision `afee1a4`). The tag language and
-the error ids are the contract. CommonMark edge behaviour is not: upstream builds
+Ported from upstream Markdoc and current with `v0.5.11` (revision `9440a1d`).
+The tag language and the error ids are the contract. CommonMark edge behaviour is not: upstream builds
 on markdown-it, this crate on pulldown-cmark. Every deliberate difference is
 declared in [`DIVERGENCES.md`](DIVERGENCES.md), never emulated silently.
 

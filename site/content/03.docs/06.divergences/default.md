@@ -10,12 +10,13 @@ menu:
   order: 6
 description: >-
   Every deliberate difference between accent-proust and upstream Markdoc
-  v0.5.9, grouped by cause: the CommonMark engine, deliberate limits, API
+  v0.5.11, grouped by cause: the CommonMark engine, deliberate limits, API
   shape, unimplemented surface, and upstream defects that are fixed rather
   than reproduced.
 ---
 
-Ported from upstream Markdoc `v0.5.9` (revision `afee1a4`). Two rules govern
+Ported from upstream Markdoc and current with `v0.5.11` (revision `9440a1d`).
+Two rules govern
 what follows, and they are the reason the list can be trusted to be complete.
 
 **Divergences are declared, never discovered.** A behaviour difference found
@@ -65,7 +66,7 @@ list follows from that one decision, which is entry 2.
 | 6 | **GFM alerts and a `callout` tag coexist,** and neither is rewritten into the other |
 | 7 | **Metadata blocks are stripped** before the tag layer sees the document |
 | 11 | **Upstream's two disabled markdown-it rules are only half reachable** from this engine |
-| 13 | **A block tag indented inside a list item is not part of the item.** Upstream's block-tag rule is a markdown-it block rule, which changes where the boundary falls |
+| 13 | **A block tag inside a list item or a blockquote is not part of the container.** Upstream's block-tag rule is a markdown-it block rule, which changes where the boundary falls |
 
 ## Because a document is untrusted input
 
@@ -108,11 +109,11 @@ dropped.
 
 | # | Divergence |
 |---|---|
-| 16 | **Four round-trip defects in upstream's formatter are fixed.** Upstream emits output that does not parse back to the tree it came from; this crate does not reproduce that |
+| 16 | **Three round-trip defects in upstream's formatter are fixed.** Upstream emits output that does not parse back to the tree it came from; this crate does not reproduce that |
 
 Entry 16 is the only one that makes this implementation *more* correct than the
 original rather than differently correct, and it is declared here for the same
 reason as the rest: a difference nobody wrote down is a difference nobody can
 plan around. `format(parse(s))` being idempotent and `parse(format(ast))`
 returning the same tree are properties this crate tests, and they are the
-properties those four defects break.
+properties those three defects break.

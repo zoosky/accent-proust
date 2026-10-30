@@ -40,10 +40,10 @@
 //!
 //! # Compatibility
 //!
-//! Ported from upstream Markdoc at revision `afee1a4` (v0.5.9). The tag
-//! language and the validation error ids are the contract; CommonMark edge
-//! behaviour is not, because upstream is built on markdown-it and this crate is
-//! built on pulldown-cmark. Every deliberate difference is recorded in
+//! Ported from upstream Markdoc and current with revision `9440a1d` (v0.5.11).
+//! The tag language and the validation error ids are the contract; CommonMark
+//! edge behaviour is not, because upstream is built on markdown-it and this
+//! crate is built on pulldown-cmark. Every deliberate difference is recorded in
 //! `DIVERGENCES.md` at the repository root, which is normative rather than a
 //! changelog.
 //!
