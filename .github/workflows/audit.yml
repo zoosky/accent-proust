@@ -1,0 +1,33 @@
+name: Audit
+
+# An advisory is published against a release that is already in the lockfile,
+# so a clean audit on the day a pull request merged says nothing a month later.
+# The weekly run is what catches that; the push and pull request runs keep a
+# new dependency from bringing one in. A separate workflow rather than a job in
+# `ci.yml`, because a schedule there would rerun the whole suite to get this.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # A prebuilt binary: `cargo install` would compile the auditor on every
+      # run. Unpinned, because an older auditor can fail to parse a newer
+      # advisory database.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Fails on a vulnerability. An unsound or unmaintained crate is a
+      # warning: it is printed in the log but does not fail the run.
+      - run: cargo audit
