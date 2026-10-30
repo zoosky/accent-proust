@@ -147,7 +147,7 @@
 {% endblock %}
 
 {% block head %}
-<script>
+<script nonce="{{ nonce }}">
   // Copy-to-clipboard for the install line. Inline because a request for
   // twelve lines costs more than the lines do, and delegated from `document`
   // so it can run here in the head: the listener needs no element to exist
