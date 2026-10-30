@@ -101,6 +101,7 @@ cargo test --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 ./scripts/check-standalone.sh
 ./scripts/check-vendored.sh
+cargo audit
 ```
 
 The binding crate is not in `default-members`, so none of the commands above
