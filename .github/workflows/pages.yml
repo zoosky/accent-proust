@@ -58,7 +58,7 @@ jobs:
       # Early, because the build reads its `base_url` output: that is the URL
       # Pages will actually serve, and its path component is what every
       # internal link on the site is prefixed with.
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         id: pages
 
       - uses: dtolnay/rust-toolchain@stable
