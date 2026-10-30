@@ -2,7 +2,7 @@
 
 This file is **normative, not a changelog**. It is the complete list of places
 where `accent-proust` deliberately behaves differently from
-[Markdoc](https://github.com/markdoc/markdoc) at `afee1a4` (v0.5.9), and it is
+[Markdoc](https://github.com/markdoc/markdoc) at `9440a1d` (v0.5.11), and it is
 the only place a difference is allowed to be recorded.
 
 Two rules govern it:
@@ -167,14 +167,16 @@ the runner do something the crate does not, which is measurement shaped to fit.
 ## 8. The `allowIndentation` tokenizer option is not implemented
 
 **Upstream:** `Tokenizer` accepts `allowIndentation: true`, which disables
-CommonMark's four-space rule across nine block rules -- blockquote, code,
-fence, heading, hr, html_block, lheading, list -- so that content nested inside
-a tag may be indented without becoming a code block. The formatter has a
-matching branch: with the option on, it indents nested tag children
-(`formatter.ts:300`).
+CommonMark's four-space rule across nine block rules -- blockquote, fence,
+heading, hr, html_block, list, paragraph, reference, table -- so that content
+nested inside a tag may be indented without becoming a code block. The
+formatter has a matching branch: with the option on, it indents nested tag
+children (`formatter.ts:300`).
 
 It works because upstream **patches markdown-it itself**
-(`patches/markdown-it+12.3.2.patch`), adding the option to nine rule files.
+(`patches/markdown-it+15.0.1.patch`), adding the option to those nine rules in
+both of markdown-it's bundles. The `code` and `lheading` rules need no guard:
+the tokenizer disables both outright (entry 11).
 
 **Here:** the option does not exist. `accent-proust` always behaves as upstream does
 with the option off, which is stock CommonMark, and the formatter never indents
@@ -338,7 +340,7 @@ unchanged, so tooling reading `attribute-value-invalid` sees what it saw
 before. What is given up is the ability to paste a Markdoc schema's regular
 expression literal into a Rust schema and have it work without a matcher around
 it.
-## 13. A block tag indented inside a list item is not part of the item
+## 13. A block tag inside a list item or a blockquote is not part of the container
 
 **Upstream:** the Markdoc block-tag rule is a markdown-it *block rule*,
 registered after `list`, `heading` and `blockquote`. By the time it runs, the
@@ -359,11 +361,23 @@ written two spaces in under `* Some content` opens inside that item:
 Upstream reads the `{% if %}` as content of the second cell. The conditional's
 paragraphs render inside the `<td>`.
 
+A blockquote works the same way: the rule runs on the quote's content with the
+`> ` markers already stripped, so `> {% test %}` opens a block tag inside the
+quote. Since v0.5.10, an opening that spans several quoted lines does too
+(`annotations.ts:80` reads it through `state.getLines`).
+
 **Here:** the segmenter resolves tag syntax *before* the CommonMark parse (the
 one redesign, `src/parse/segment.rs`), so it has no containers to consult. A
 line whose only content is a block tag splits the document wherever it appears,
 indented or not, and the list ends there. The tag becomes a sibling of the list
 rather than a child of its last item.
+
+In a blockquote, the tag shares its line with the `> ` marker, so it is not a
+line of its own. The segmenter reads a single-line opening as an inline tag
+inside the quote's paragraph, not as a block tag around it. An opening that
+spans several lines, in a quote or a list item, is not recognised at all. Its
+masked text currently reaches the output; that is a bug, not this entry, and
+is tracked in #73.
 
 **Why:** knowing that a line sits inside a list item means having parsed the
 list, and the segmenter runs first by construction -- that ordering is what
@@ -385,6 +399,12 @@ split -- and only the indented block form diverges. Upstream's
 valid conditionals within a cell"; the ported test asserts what this crate
 produces and names this entry, so fixing the segmenter turns that test red
 rather than leaving it silently wrong.
+
+No corpus case puts a tag inside a blockquote. Upstream's tokenizer tests do:
+v0.5.10 added five cases to `annotations.test.ts`, from "inside a blockquote"
+on. They are not yet in `tests/annotations.rs`, because four of them meet the
+masked-text bug in #73 rather than this entry, and a test pinned to that output
+would assert the bug. They are ported with its fix.
 
 ## 14. Transform recursion is depth-limited
 
@@ -475,26 +495,22 @@ levels of *authored* nesting, because a paragraph of text is already four --
 document, paragraph, inline, text -- and a list adds two per level. A generated
 or hostile document prints truncated rather than taking the process down.
 
-## 16. Four round-trip defects in upstream's formatter are fixed, not reproduced
+## 16. Three round-trip defects in upstream's formatter are fixed, not reproduced
 
 **Upstream:** the formatter emits output that does not parse back to the tree it
-came from, in four shapes. Each is reachable from an ordinary document, and all
-four are silent -- the output looks plausible.
+came from, in three shapes. Each is reachable from an ordinary document, and all
+three are silent -- the output looks plausible.
 
-1. **A blockquote marks only its first line.** `formatter.ts:236-241` writes
-   `NL + indent + prefix + d`, one `> ` per *child*. A child that prints on more
-   than one line -- a paragraph with a soft break, a list, a fence -- comes back
-   with its later lines outside the quote. `> a\n> b` reprints as `> a\nb`.
-2. **An inline comment ends a line.** The `comment` arm appends a newline to
+1. **An inline comment ends a line.** The `comment` arm appends a newline to
    every comment. Upstream's tokenizer has an inline comment rule, so a comment
    inside a sentence is a real node, and printing it splits the paragraph.
-3. **An indented fence closes at column zero.** The `fence` arm yields the
+2. **An indented fence closes at column zero.** The `fence` arm yields the
    closing boundary with no indent. It looks correct in upstream's own tests
    because content that *ends* with a newline leaves a trailing empty segment
    that the indent-join above it indents. Content without one -- an empty fence,
    or a last line with no terminator -- closes unindented, and the reprint is a
    fence that never closes.
-4. **A tag with children that print nothing is written open-and-closed.** The
+3. **A tag with children that print nothing is written open-and-closed.** The
    `tag` arm asks whether the child list is empty. A tag holding a child that
    prints only whitespace -- an empty `table` node, an `error` node -- is
    therefore written as `{% x %}` ... `{% /x %}` with nothing between, which
@@ -502,28 +518,35 @@ four are silent -- the output looks plausible.
    `{% a %}{% /a %}` as `{% a /%}`, so its output does not settle until a second
    pass.
 
-**Here:** the prefix goes on every line, an inline comment ends no line, the
-closing boundary carries the indent, and a tag whose children come to nothing
-self-closes.
+**Here:** an inline comment ends no line, the closing boundary carries the
+indent, and a tag whose children come to nothing self-closes.
 
 **Why:** because the round trip is the specification, not a nice property. r111
 §9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
 first consumer is a rewriting tool: the host's `migrate` command uses this
-formatter as its writer over a whole content tree. Reproducing defect 1 means
-silently moving the second line of every two-line blockquote out of its quote,
-in every migrated file, with nothing in the output that looks wrong. That is not
-a compatibility win worth having, and "upstream does it too" is not a defence a
-corrupted document accepts.
+formatter as its writer over a whole content tree. Reproducing these defects
+means splitting a paragraph at every inline comment and leaving indented fences
+that never close, in every migrated file, with nothing in the output that looks
+wrong. That is not a compatibility win worth having, and "upstream does it too"
+is not a defence a corrupted document accepts.
+
+There were four. The fourth was a blockquote that marked only its first line:
+one `> ` per child, so a child printing on several lines came back with its
+later lines outside the quote, and `> a\n> b` reprinted as `> a\nb`. Upstream
+fixed it in v0.5.10 by prefixing every line (markdoc/markdoc#640), which is
+what this crate already did. It is no longer a divergence. A quote inside a
+list item still differs here, because its later lines also take the item's
+indent; that is a bug, not a divergence, and is being fixed.
 
 All four were found by the property test rather than by reading, which is the
 argument for having written it: the shapes are individually obvious and
 collectively invisible.
 
 **What it costs, exactly.** Output differs from upstream only where upstream's
-own output does not re-parse. The first three fire in no other case -- upstream's
-`multi-paragraph blockquotes`, `"loose" lists` and `fences with no ending
-newline` cases all reprint byte-identically here, because their content already
-takes the branch that was correct. The fourth changes `{% x %}{% /x %}` into
+own output does not re-parse. The first two fire in no other case -- upstream's
+`"loose" lists` and `fences with no ending newline` cases reprint
+byte-identically here, because their content already takes the branch that was
+correct. The third changes `{% x %}{% /x %}` into
 `{% x /%}` for a tag whose children print nothing, which is the same
 normalisation upstream already applies to a tag with no children at all.
 

@@ -179,13 +179,12 @@ impl Formatter<'_> {
         out.text(NL);
     }
 
-    /// Upstream's `blockquote` arm, with one fix: the prefix goes on every line.
+    /// Upstream's `blockquote` arm: the prefix goes on every line.
     ///
-    /// Upstream writes `NL + indent + prefix + d`, one `> ` per child. That is
-    /// right only while every child prints on one line, which is all its own
-    /// test covers. Give it `> a\n> b` -- one paragraph, one soft break -- and
-    /// the second line comes back without its `> `, outside the quote. See
-    /// `DIVERGENCES.md` entry 16.
+    /// Before v0.5.10, upstream wrote one `> ` per child, so a child printing
+    /// on several lines -- `> a\n> b`, one paragraph with a soft break -- came
+    /// back with its later lines outside the quote. This arm prefixed every
+    /// line from the start, and upstream now does too (markdoc/markdoc#640).
     fn blockquote(&mut self, node: &Node<'_>, ctx: Ctx, no: Ctx, out: &mut Out) {
         let prefix = format!("{}>{SPACE}", indent(ctx));
         let parts: Vec<String> = node

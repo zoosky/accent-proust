@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Current with upstream Markdoc 0.5.11** (revision `9440a1d`, was 0.5.9).
+  The corpus is unchanged and the conformance count does not move.
+  `DIVERGENCES.md` now measures against 0.5.11: entry 16 drops the blockquote
+  defect upstream fixed, and entry 13 covers tags inside blockquotes.
+
 ## [0.12.2] - 2026-10-06
 
 ### Fixed
