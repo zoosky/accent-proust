@@ -207,17 +207,20 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     /// Fold a text node into the text node before it, if there is one.
     ///
-    /// markdown-it does this in a core rule called `text_collapse`, and the
-    /// result is observable: the corpus compares renderable trees, so two text
-    /// children where upstream has one is a failed case even though the rendered
-    /// HTML is identical. pulldown-cmark splits a run at every backslash escape,
+    /// markdown-it does this twice: the inline rule `fragments_join` merges
+    /// adjacent text after emphasis is resolved, and the core rule `text_join`
+    /// turns escapes and entities (`text_special`) into text and merges them
+    /// with their neighbours. Before markdown-it 13 both were one inline rule,
+    /// `text_collapse`. The result is observable: the corpus compares
+    /// renderable trees, so two text children where upstream has one is a
+    /// failed case even though the rendered HTML is identical. pulldown-cmark splits a run at every backslash escape,
     /// entity and unrecognised `<`, so without this a document with `\*` in it
     /// has a different tree shape from upstream's.
     ///
     /// Only plain strings merge. A text node whose `content` is a variable came
     /// from a tag, not from a text run, and upstream does not merge those either
-    /// -- its token is a `variable` until the parser renames it, and
-    /// `text_collapse` has already run by then.
+    /// -- its token is a `variable` until the parser renames it, and both
+    /// rules have already run by then.
     fn merge_text(&mut self, node: &Node<'s>) -> bool {
         if node.node_type != NodeType::Text
             || !node.errors.is_empty()

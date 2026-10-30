@@ -534,7 +534,9 @@ There were four. The fourth was a blockquote that marked only its first line:
 one `> ` per child, so a child printing on several lines came back with its
 later lines outside the quote, and `> a\n> b` reprinted as `> a\nb`. Upstream
 fixed it in v0.5.10 by prefixing every line (markdoc/markdoc#640), which is
-what this crate already did. It is no longer a divergence.
+what this crate already did. It is no longer a divergence. A quote inside a
+list item still differs here, because its later lines also take the item's
+indent; that is a bug, not a divergence, and is being fixed.
 
 All four were found by the property test rather than by reading, which is the
 argument for having written it: the shapes are individually obvious and

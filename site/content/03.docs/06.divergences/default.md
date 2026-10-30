@@ -16,8 +16,8 @@ description: >-
 ---
 
 Ported from upstream Markdoc and current with `v0.5.11` (revision `9440a1d`).
-Two rules govern
-what follows, and they are the reason the list can be trusted to be complete.
+Two rules govern what follows, and they are the reason the list can be trusted
+to be complete.
 
 **Divergences are declared, never discovered.** A behaviour difference found
 while chasing a conformance failure is either a bug to fix or a new entry in

@@ -79,7 +79,6 @@ what moved each time.
 
 MIT, and a compatible reimplementation derived from the MIT-licensed Markdoc
 source. Ported from upstream Markdoc and current with `v0.5.11` (revision
-`9440a1d`). Upstream's
-TypeScript is vendored into the repository unmodified so that a porting change
-shows its source in the diff -- it is excluded from the published crate, where
-it would be 392 KB of another language.
+`9440a1d`). Upstream's TypeScript is vendored into the repository unmodified so
+that a porting change shows its source in the diff -- it is excluded from the
+published crate, where it would be 392 KB of another language.

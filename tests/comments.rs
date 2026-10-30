@@ -109,7 +109,7 @@ document
 /// The option is off by default, as upstream has it, and off means literal.
 ///
 /// One text node, not three: markdown-it with `html: false` produces the `<` as
-/// text and its `text_collapse` rule folds the run back together, which is what
+/// text and its `fragments_join` rule folds the run back together, which is what
 /// this port's own text merging reproduces.
 #[test]
 fn comments_are_text_when_the_option_is_off() {

@@ -3,9 +3,9 @@
 //! `reference/src/types.ts:142-147` and `:172-177` are the contract: a
 //! `ValidateError` carries `type`, `lines`, an optional `location`, and a
 //! nested `error` holding `id`, `level`, `message` and its own optional
-//! `location`. Error ids are the one
-//! place divergence is disallowed outright (`AGENT.md`), because external
-//! tooling binds to them -- so they cross the boundary unchanged.
+//! `location`. Error ids are the one place divergence is disallowed outright
+//! (`AGENT.md`), because external tooling binds to them -- so they cross the
+//! boundary unchanged.
 //!
 //! # Where the location shape differs
 //!
