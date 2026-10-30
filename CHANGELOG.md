@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-10-30
+
 ### Changed
 
 - **Current with upstream Markdoc 0.5.11** (revision `9440a1d`, was 0.5.9).
@@ -317,7 +319,8 @@ crate builds on pulldown-cmark.
 - **MSRV 1.96** for the library, normalised across the Accent crates, on Rust
   edition 2024.
 
-[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.12.2...HEAD
+[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.12.3...HEAD
+[0.12.3]: https://github.com/zoosky/accent-proust/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/zoosky/accent-proust/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/zoosky/accent-proust/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/zoosky/accent-proust/compare/v0.11.0...v0.12.0
