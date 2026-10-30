@@ -1,6 +1,6 @@
 //! Upstream's `reference/src/formatter.test.ts`, ported.
 //!
-//! 858 lines, and the only real gate on the formatter: the conformance corpus
+//! 913 lines, and the only real gate on the formatter: the conformance corpus
 //! grades **zero** cases on formatter output, so a "formatter cases green"
 //! measure would name nothing. What upstream wrote for its own formatter is the
 //! specification, and it is ported here case for case, in upstream's order,
@@ -874,6 +874,62 @@ mod upstream {
         stable(expected);
     }
 
+    #[test]
+    fn lists_in_blockquotes() {
+        let source = "\n> Intro:\n>\n> - One\n> - Two\n>\n> 1. First\n> 2. Second\n>\n> After";
+        let expected =
+            "\n> Intro:\n> \n> - One\n> - Two\n> \n> 1. First\n> 1. Second\n> \n> After\n";
+
+        check(source, expected);
+        stable(expected);
+    }
+
+    #[test]
+    fn nested_blocks_in_blockquotes() {
+        let source = "\n> - One\n>   - Nested\n> - Two\n> \n> > Inner\n> > quote\n> \n> ```js\n> code();\n> ```\n";
+
+        stable(source);
+    }
+
+    /// The case upstream added with its blockquote fix, and the one that
+    /// failed here before this crate ported the fix: the item's indent went
+    /// after the `>` as well as before it, and the second item reprinted as a
+    /// nested list.
+    #[test]
+    fn blockquotes_with_lists_inside_list_items() {
+        let source = "\n- Item\n\n  > Quote\n  > \n  > - One\n  > - Two\n";
+
+        stable(source);
+    }
+
+    /// Not upstream's: a soft break in a quote inside a list item.
+    ///
+    /// The same indent, after the `>`, turned the second line into `  >   b`.
+    /// That still parses as the same paragraph, so only `stable` notices.
+    #[test]
+    fn a_soft_break_in_a_quote_inside_an_item_keeps_its_line() {
+        stable("\n- Item\n\n  > a\n  > b\n");
+    }
+
+    /// Not upstream's: a fence in a quote inside a list item.
+    ///
+    /// The same indent, applied to a fence's content, grew by two columns on
+    /// every pass, so the formatter never settled on the document.
+    #[test]
+    fn a_fence_in_a_quote_inside_an_item_settles() {
+        stable("\n- Item\n\n  > ```js\n  > code();\n  > more();\n  > ```\n");
+    }
+
+    /// Not upstream's: a quote with nothing in it is still a quote.
+    ///
+    /// It used to print nothing, and reparsing the empty output lost the node.
+    /// Upstream prints a bare `> `, and so does this crate.
+    #[test]
+    fn an_empty_blockquote_keeps_its_marker() {
+        check("\n>\n", "\n> \n");
+        stable("\n> \n");
+    }
+
     /// Upstream's "skips over undefined variables".
     ///
     /// Its case builds a node with `undefinedAttribute: undefined`, which the
@@ -956,6 +1012,12 @@ mod properties {
             "# Title {% #intro %}\n",
             "Some *text* with `code` and a [link](/a \"t\").\n",
             "> Blockquote {% .class %}\n>\n> with two paragraphs\n",
+            "> Intro:\n>\n> - One\n> - Two\n>\n> 1. First\n> 2. Second\n>\n> After",
+            "> - One\n>   - Nested\n> - Two\n> \n> > Inner\n> > quote\n> \n> ```js\n> code();\n> ```\n",
+            "- Item\n\n  > Quote\n  > \n  > - One\n  > - Two\n",
+            "- Item\n\n  > a\n  > b\n",
+            "- Item\n\n  > ```js\n  > code();\n  > more();\n  > ```\n",
+            ">\n",
             "- a\n- b\n  - b2\n- c\n",
             "3. one\n4. two\n5. three\n",
             "{% callout type=\"note\" %}\nBody\n{% /callout %}\n",

@@ -13,6 +13,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DIVERGENCES.md` now measures against 0.5.11: entry 16 drops the blockquote
   defect upstream fixed, and entry 13 covers tags inside blockquotes.
 
+### Fixed
+
+- **A blockquote inside a list item reprints as written.** `format` put the
+  item's indent after the `>` as well as before it. A soft break gained spaces,
+  a list's second item came back nested, and a fence never settled. The
+  blockquote arm is now upstream 0.5.11's, and an empty blockquote keeps its
+  `>` instead of printing nothing.
+
 ## [0.12.2] - 2026-10-06
 
 ### Fixed

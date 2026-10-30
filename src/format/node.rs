@@ -179,26 +179,30 @@ impl Formatter<'_> {
         out.text(NL);
     }
 
-    /// Upstream's `blockquote` arm: the prefix goes on every line.
+    /// Upstream's `blockquote` arm, as of v0.5.10 (markdoc/markdoc#640).
     ///
-    /// Before v0.5.10, upstream wrote one `> ` per child, so a child printing
-    /// on several lines -- `> a\n> b`, one paragraph with a soft break -- came
-    /// back with its later lines outside the quote. This arm prefixed every
-    /// line from the start, and upstream now does too (markdoc/markdoc#640).
+    /// Each child is formatted at indent zero and trimmed, the children are
+    /// joined by a blank line, and every line of the result goes behind `> `
+    /// at this node's indent. Indent zero is what makes a quote inside a list
+    /// item come out right: the item's indent belongs before the `>`, once. A
+    /// child formatted at that indent carries it after the `>` as well, on
+    /// every line but its first, so a soft break gains spaces, a list's second
+    /// item reprints as nested, and a fence's content grows on every pass.
+    ///
+    /// An empty line between children takes the prefix too, which is the bare
+    /// `> ` line between two quoted paragraphs, and a quote with no children
+    /// is a single `> `, so it is still a blockquote when reparsed.
     fn blockquote(&mut self, node: &Node<'_>, ctx: Ctx, no: Ctx, out: &mut Out) {
-        let prefix = format!("{}>{SPACE}", indent(ctx));
-        let parts: Vec<String> = node
+        let prefix = format!("{NL}{}>{SPACE}", indent(ctx));
+        let flush = Ctx { indent: 0, ..no };
+        let children: Vec<String> = node
             .children
             .iter()
-            .map(|child| {
-                let formatted = self.subtree(child, no);
-                format!("{NL}{}", quote(&formatted, &prefix))
-            })
+            .map(|child| self.subtree(child, flush).trim().to_owned())
             .collect();
-        // The separator carries no newline, so it lands directly after the
-        // previous child's trailing one. That is what produces the bare `> `
-        // line between two quoted paragraphs.
-        out.text(parts.join(&prefix));
+        let inner = children.join(&format!("{NL}{NL}"));
+        let quoted = inner.split(NL).collect::<Vec<_>>().join(&prefix);
+        out.text(format!("{prefix}{quoted}{NL}"));
     }
 
     fn fence(&mut self, node: &Node<'_>, ctx: Ctx, out: &mut Out) {
@@ -393,22 +397,6 @@ impl Formatter<'_> {
         }
         out.text(NL);
     }
-}
-
-/// Every line of `text`, behind `prefix`.
-///
-/// An empty subtree still gets a marker, so a blockquote holding a node that
-/// prints nothing is still a blockquote.
-fn quote(text: &str, prefix: &str) -> String {
-    if text.is_empty() {
-        return prefix.to_owned();
-    }
-    let mut out = String::with_capacity(text.len() + prefix.len());
-    for line in text.split_inclusive('\n') {
-        out.push_str(prefix);
-        out.push_str(line);
-    }
-    out
 }
 
 /// The leading whitespace for a node at this context.
