@@ -132,6 +132,118 @@ fn multiline_with_symbols_on_separate_lines() {
     assert_eq!(tag.children.len(), 1);
 }
 
+#[test]
+fn multiline_inside_a_blockquote() {
+    let source = dedent("\n> {% test #foo .bar\n>   baz=1 %}\n> This is a test\n> {% /test %}\n");
+    let document = parse(&source);
+    assert_eq!(
+        outline(&document),
+        "\
+document
+  blockquote
+    tag[test] id=\"foo\" class={bar: true} baz=1
+      paragraph
+        inline
+          text content=\"This is a test\"
+"
+    );
+    // Upstream: `[0, 2]` for the open, `[2, 3]` for the paragraph and `[3, 4]`
+    // for the close.
+    let tag = at(&document, &[0, 0]);
+    assert_eq!(tag.lines, vec![0, 2, 3, 4]);
+    assert_eq!(at(tag, &[0]).lines, vec![2, 3]);
+}
+
+#[test]
+fn multiline_followed_by_content_after_the_blockquote() {
+    let source = dedent(
+        "\n> {% test #foo .bar\n>   baz=1 %}\n> This is a test\n> {% /test %}\nAfter the blockquote\n",
+    );
+    let document = parse(&source);
+    assert_eq!(
+        outline(&document),
+        "\
+document
+  blockquote
+    tag[test] id=\"foo\" class={bar: true} baz=1
+      paragraph
+        inline
+          text content=\"This is a test\"
+  paragraph
+    inline
+      text content=\"After the blockquote\"
+"
+    );
+    let tag = at(&document, &[0, 0]);
+    assert_eq!(tag.lines, vec![0, 2, 3, 4]);
+    assert_eq!(at(&document, &[1]).lines, vec![4, 5]);
+}
+
+#[test]
+fn multiline_inside_a_list_item() {
+    // Not dedented: list continuation depends on the indentation.
+    let source = "- {% test #foo .bar\n    baz=1 %}\n  This is a test\n  {% /test %}";
+    let document = parse(source);
+    assert_eq!(
+        outline(&document),
+        "\
+document
+  list ordered=false marker=\"-\"
+    item
+      tag[test] id=\"foo\" class={bar: true} baz=1
+        paragraph
+          inline
+            text content=\"This is a test\"
+"
+    );
+    let tag = at(&document, &[0, 0, 0]);
+    assert_eq!(tag.lines, vec![0, 2, 3, 4]);
+    assert_eq!(at(tag, &[0]).lines, vec![2, 3]);
+}
+
+#[test]
+fn multiline_inside_a_list_item_inside_a_blockquote() {
+    let source = "> - {% test #foo .bar\n>     baz=1 %}\n>   This is a test\n>   {% /test %}";
+    let document = parse(source);
+    assert_eq!(
+        outline(&document),
+        "\
+document
+  blockquote
+    list ordered=false marker=\"-\"
+      item
+        tag[test] id=\"foo\" class={bar: true} baz=1
+          paragraph
+            inline
+              text content=\"This is a test\"
+"
+    );
+    let tag = at(&document, &[0, 0, 0, 0]);
+    assert_eq!(tag.lines, vec![0, 2, 3, 4]);
+    assert_eq!(at(tag, &[0]).lines, vec![2, 3]);
+}
+
+#[test]
+fn with_a_single_line_container_inside_a_blockquote() {
+    let source = dedent("\n> {% test #foo .bar baz=1 %}\n> This is a test\n> {% /test %}\n");
+    let document = parse(&source);
+    assert_eq!(
+        outline(&document),
+        "\
+document
+  blockquote
+    tag[test] id=\"foo\" class={bar: true} baz=1
+      paragraph
+        inline
+          text content=\"This is a test\"
+"
+    );
+    let tag = at(&document, &[0, 0]);
+    assert!(!tag.inline, "a block-level tag is not inline");
+    assert_eq!(tag.lines, vec![0, 1, 2, 3]);
+    assert_eq!(at(tag, &[0]).lines, vec![1, 2]);
+}
+
 // ---- inline -------------------------------------------------------------
 
 #[test]

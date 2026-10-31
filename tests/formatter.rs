@@ -581,20 +581,6 @@ mod upstream {
     }
 
     /// Upstream's `"loose" lists`.
-    ///
-    /// The expectation is this crate's, not upstream's, and the difference is
-    /// `DIVERGENCES.md` entry 13: a block tag indented inside a list item is
-    /// not part of the item. Upstream's segmenter runs after the container
-    /// parser has stripped the item's indentation, so its `{% tag %}` opens
-    /// inside the item; here the tag splits the document where it is written,
-    /// the list ends, and the two indented lines that were the tag's content
-    /// are read as an indented code block.
-    ///
-    /// Everything else in the case -- the loose-list blank lines, the trailing
-    /// item's trim, the indented header, blockquote and fence -- is upstream's
-    /// expectation unchanged. Asserting the whole output rather than deleting
-    /// the case means fixing the segmenter turns this red instead of leaving it
-    /// silently wrong.
     #[test]
     fn loose_lists() {
         let source = concat!(
@@ -639,15 +625,13 @@ mod upstream {
             "  My first paragraph\n",
             "  Test\n",
             "\n",
-            "{% tag %}\n",
-            "```\n",
-            "Indented tag\n",
-            "```\n",
-            "{% /tag %}\n",
+            "  {% tag %}\n",
+            "  Indented tag\n",
+            "  {% /tag %}\n",
             "\n",
-            "```\n",
-            "{% $code %}\n",
-            "```\n",
+            "  ```\n",
+            "  {% $code %}\n",
+            "  ```\n",
             "\n",
             "- Two\n",
             "\n",
@@ -664,12 +648,6 @@ mod upstream {
         stable(expected);
     }
 
-    /// Upstream's "loose lists with direct inline children", under entry 13.
-    ///
-    /// Upstream's case is `stable(source)`: its indented `{% list %}` tags are
-    /// item content, so reprinting returns them indented. Here each one splits
-    /// the document, so the list ends at the first tag and the reprint is flat.
-    /// It is stable in that shape, which is the property that matters.
     #[test]
     fn loose_lists_with_direct_inline_children() {
         let source = concat!(
@@ -683,44 +661,10 @@ mod upstream {
             "  Two\n",
             "  {% /list %}\n",
         );
-        let expected = concat!(
-            "- List\n",
-            "\n",
-            "{% list %}\n",
-            "One\n",
-            "{% /list %}\n",
-            "\n",
-            "Inline text:\n",
-            "\n",
-            "{% list %}\n",
-            "Two\n",
-            "{% /list %}\n",
-        );
 
-        check(source, expected);
-        stable(expected);
+        stable(source);
     }
 
-    /// Upstream's "complicated nested lists", and the one shape in this file
-    /// that is not idempotent on the first pass.
-    ///
-    /// Two things are going on, and only the first is the formatter's.
-    ///
-    /// **Entry 13 again**, and harder than in [`loose_lists`]: the `{% table %}`
-    /// is indented six columns inside a list item, so it splits the document
-    /// and takes its rows with it. The rows are then six-space-indented lines
-    /// with no list around them, which is an indented code block, which the
-    /// table rewrite rejects. What is left is a `{% table %}` holding an empty
-    /// `table`, and the trailing item becomes a fence for the same reason.
-    ///
-    /// **And the empty table is why a tag can self-close here and not upstream.**
-    /// A tag with a child prints an open and a close; the child here is an
-    /// empty `table`, which prints one newline and nothing else. Upstream would
-    /// therefore write `{% table %}\n{% /table %}`, which re-parses as a tag
-    /// with *no* children -- so its own output does not settle until the second
-    /// pass. This port asks what the children came to rather than whether there
-    /// are any, and writes `{% table /%}` at once. See `DIVERGENCES.md` entry
-    /// 16.
     #[test]
     fn complicated_nested_lists() {
         let source = concat!(
@@ -746,9 +690,21 @@ mod upstream {
             "      * Select `CNAME` from the dropdown\n",
             "      * What kind of DNS record this is.\n",
             "      ---\n",
+            "      * Target\n",
+            "      * If your custom subdomain is checkout.powdur.me, enter `checkout`\n",
+            "      * For CNAME records, this field is the first part of your subdomain (the part leading up to the first period).\n",
+            "      ---\n",
             "      * Value\n",
             "      * {% code %}hosted-checkout.stripecdn.com{% /code %}\n",
             "      * This is what the new subdomain record points to-in this case, Stripe Checkout.\n",
+            "      ---\n",
+            "      * TTL\n",
+            "      * `5 min`\n",
+            "      * An expiration of 5 minutes (300 seconds) is OK.\n",
+            "      ---\n",
+            "      * Proxy status\n",
+            "      * `Off`\n",
+            "      * Set the proxy status to `off` to avoid issues during setup.\n",
             "      {% /table %}\n",
             "    1. foo\\\n",
             "       baz\n",
@@ -757,7 +713,8 @@ mod upstream {
             "         break\n",
             "       Markdoc uses…",
         );
-        let first = concat!(
+        let expected = concat!(
+            "\n",
             "* Create your CNAME record\n",
             "\n",
             "  1. Click **Add record**.\n",
@@ -770,19 +727,55 @@ mod upstream {
             "\n",
             "  1. Enter these values in the form that opens:\n",
             "\n",
-            "{% table /%}\n",
+            "     {% table %}\n",
+            "     - Field\n",
+            "     - Value to enter\n",
+            "     - Description\n",
+            "     ---\n",
+            "     - Type\n",
+            "     - Select `CNAME` from the dropdown\n",
+            "     - What kind of DNS record this is.\n",
+            "     ---\n",
+            "     - Target\n",
+            "     - If your custom subdomain is checkout.powdur.me, enter `checkout`\n",
+            "     - For CNAME records, this field is the first part of your subdomain (the part leading up to the first period).\n",
+            "     ---\n",
+            "     - Value\n",
+            "     - {% code %}hosted-checkout.stripecdn.com{% /code %}\n",
+            "     - This is what the new subdomain record points to-in this case, Stripe Checkout.\n",
+            "     ---\n",
+            "     - TTL\n",
+            "     - `5 min`\n",
+            "     - An expiration of 5 minutes (300 seconds) is OK.\n",
+            "     ---\n",
+            "     - Proxy status\n",
+            "     - `Off`\n",
+            "     - Set the proxy status to `off` to avoid issues during setup.\n",
+            "     {% /table %}\n",
             "\n",
-            "```\n",
-            "1. foo\\\n",
-            "   baz\n",
+            "  1. foo\\\n",
+            "     baz\n",
             "\n",
-            "   Soft \n",
+            "     Soft\n",
             "     break\n",
-            "   Markdoc uses…\n",
-            "```\n",
+            "     Markdoc uses…\n",
         );
-        check(source, first);
-        stable(first);
+
+        check(source, expected);
+        stable(expected);
+    }
+
+    /// A tag whose children print nothing self-closes, which is
+    /// `DIVERGENCES.md` entry 16.
+    ///
+    /// The rows are not a list, so the table rewrite leaves an empty `table`
+    /// node, which prints only a newline. Upstream asks whether the child list
+    /// is empty and writes `{% table %}` and `{% /table %}` with nothing
+    /// between, which re-parses as a tag with no children at all.
+    #[test]
+    fn a_tag_whose_children_print_nothing_self_closes() {
+        check("{% table %}\nfoo\n{% /table %}\n", "{% table /%}\n");
+        stable("{% table /%}\n");
     }
 
     #[test]

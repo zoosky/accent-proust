@@ -49,8 +49,10 @@
 ///
 /// The transform stage added two. The table rewrite was the first pass to look
 /// at what the segmenter does to a block tag indented inside a list item:
-/// upstream nests it in the item, and a segmenter that runs before the
-/// container parser cannot. And the tree walk is depth-limited, for the reason
+/// upstream nests it in the item, and a segmenter that ran before the container
+/// parser could not. The tokenizer now places such a tag, and the entry keeps
+/// only the places where upstream's rule ignores the container. And the tree
+/// walk is depth-limited, for the reason
 /// values are -- one stage further up, and with a schema hook's signature
 /// standing between the recursion and an iterative rewrite.
 const DECLARED_DIVERGENCES: usize = 16;

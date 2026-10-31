@@ -42,7 +42,7 @@ a case that fails because of a CommonMark difference is annotated with the
 divergence it exercises and counted separately from a failure.
 
 ```text
-conformance: 95 green, 10 annotated, 0 failing (of 105)
+conformance: 96 green, 9 annotated, 0 failing (of 105)
 ```
 
 That split is what makes "we chose this" distinguishable from "we have not done
@@ -66,7 +66,7 @@ list follows from that one decision, which is entry 2.
 | 6 | **GFM alerts and a `callout` tag coexist,** and neither is rewritten into the other |
 | 7 | **Metadata blocks are stripped** before the tag layer sees the document |
 | 11 | **Upstream's two disabled markdown-it rules are only half reachable** from this engine |
-| 13 | **A block tag inside a list item or a blockquote is not part of the container.** Upstream's block-tag rule is a markdown-it block rule, which changes where the boundary falls |
+| 13 | **A block tag inside a container is bounded by the container.** The CommonMark parser places the tag, so it closes with its list item or blockquote rather than running past it |
 
 ## Because a document is untrusted input
 

@@ -148,6 +148,10 @@ name = "html_block_placement"
 required-features = ["pulldown-cmark-tokenizer"]
 
 [[test]]
+name = "masked_text"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
 name = "links"
 required-features = ["pulldown-cmark-tokenizer"]
 

@@ -53,8 +53,25 @@ impl PulldownTokenizer {
 
 impl Tokenizer for PulldownTokenizer {
     fn tokenize<'s>(&self, source: &'s str) -> Vec<Spanned<'s>> {
+        // An indented HTML block opens with a text event holding its
+        // indentation, over an empty range. HTML block content arrives as
+        // `Html` events, so text inside one is only ever that, and it would
+        // otherwise surface as a stray text node beside the block.
+        let mut in_html_block = false;
         Parser::new_ext(source, PulldownTokenizer::options())
             .into_offset_iter()
+            .filter(|(event, _)| match event {
+                pulldown_cmark::Event::Start(Tag::HtmlBlock) => {
+                    in_html_block = true;
+                    true
+                }
+                pulldown_cmark::Event::End(TagEnd::HtmlBlock) => {
+                    in_html_block = false;
+                    true
+                }
+                pulldown_cmark::Event::Text(_) => !in_html_block,
+                _ => true,
+            })
             .filter_map(|(event, range)| convert(event).map(|event| (event, range)))
             .collect()
     }

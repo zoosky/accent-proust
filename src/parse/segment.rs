@@ -8,16 +8,23 @@
 //! which is the thing `DIVERGENCES.md` entry 2 exists to avoid.
 //!
 //! So tag syntax is resolved *before* the CommonMark parse instead, by scanning
-//! raw text. Three jobs, in one pass over the lines:
+//! raw text. Four jobs, in one pass over the lines:
 //!
-//! 1. **Block-level tags.** A line whose first non-whitespace content is `{%`
-//!    and whose `%}` ends a line is a block of its own. It splits the document,
+//! 1. **Block-level tags at the margin.** A line that begins with `{%`, and
+//!    whose `%}` ends a line, is a block of its own. It splits the document,
 //!    so the Markdown on either side is tokenized separately and a tag cannot
-//!    be swallowed by a paragraph that started above it.
-//! 2. **Fence interception.** Inside a fenced code block nothing is a tag.
+//!    be swallowed by a paragraph that started above it. No container holds
+//!    such a line: a list item's content is indented, a quote's is marked, and
+//!    upstream's rule interrupts the paragraph that would otherwise take it as
+//!    a lazy continuation.
+//! 2. **Block-level tags in containers.** The same tag behind indentation, a
+//!    `>` or a list marker may belong to a blockquote or a list item, which only
+//!    the CommonMark parse can tell. It is masked with a placeholder that the
+//!    parse places; see below.
+//! 3. **Fence interception.** Inside a fenced code block nothing is a tag.
 //!    `DIVERGENCES.md` entry 1 inverts upstream's default here: fence content is
 //!    literal unless the fence opts in.
-//! 3. **Inline tags, by masking.** A tag inside a text run is found, recorded,
+//! 4. **Inline tags, by masking.** A tag inside a text run is found, recorded,
 //!    and its interior overwritten with filler in a *copy* of the source that
 //!    is what the tokenizer actually reads.
 //!
@@ -33,16 +40,28 @@
 //! a buffer of identical length in which every tag's interior is `x`, so it
 //! cannot find markup that is not there, and every byte range it reports still
 //! indexes the original source. The parser above reads the real text back
-//! through those ranges.
+//! through those ranges, and never takes text from the tokenizer where a tag
+//! was.
 //!
-//! # What is deliberately not reproduced
+//! # Block tags inside containers
 //!
-//! markdown-it runs the tag rule at a specific point in its block ruler --
-//! after `list`, `heading` and `blockquote`, before `paragraph` -- so a tag
-//! indented inside a list item is a block tag *within the item*. Here a line
-//! that does not begin with `{%` is Markdown, so the same tag is inline. The
-//! corpus does not distinguish the two, and reproducing the ordering means
-//! reproducing the ruler.
+//! markdown-it runs the tag rule inside its block ruler, after `list` and
+//! `blockquote` have stripped their markers, so a tag written inside a list item
+//! or a quote is a block tag *within* it. Knowing which container a line is in
+//! means running CommonMark's container phase, and a second implementation of
+//! that phase would have to agree with the tokenizer's forever.
+//!
+//! So the tokenizer runs it. A tag alone on its lines behind container markers
+//! or indentation is masked with `<?` and `?>` in place of `{%` and `%}`. That
+//! is a processing instruction, which CommonMark reads as an HTML block: one
+//! that may interrupt a paragraph, as upstream's rule does, and that ends on
+//! the line holding `?>`, which is the tag's last line. The tokenizer reports
+//! the block inside whatever container holds it, and the parser turns it back
+//! into the tag. Where an HTML block cannot start -- a paragraph continuation
+//! line indented four columns, say -- the same placeholder is inline HTML. The
+//! parser still splits the paragraph at it when it is alone on its line, as
+//! upstream's corpus does (`DIVERGENCES.md` entry 13), and leaves the tag
+//! inline when text precedes it.
 
 use std::ops::Range;
 
@@ -58,6 +77,17 @@ pub(crate) struct TagSpan {
     /// The zero-based lines the tag spans, as `[first, last + 1]`, which is the
     /// half-open pair upstream records in `Node::lines`.
     pub lines: [usize; 2],
+    /// The `>` markers of the quotes the tag is written in, on every line after
+    /// its first, as byte offsets into the source.
+    ///
+    /// They are container syntax inside the tag's span, not tag syntax. Upstream
+    /// reads a quoted tag through `state.getLines`, which has already stripped
+    /// them, so the parser blanks them before the grammar sees the body.
+    pub quote_markers: Vec<usize>,
+    /// Whether the tag is alone on its lines behind container markers or
+    /// indentation, and was masked as `<?...?>` so that the tokenizer can place
+    /// it as a block inside its container.
+    pub nested: bool,
 }
 
 /// One top-level piece of a document.
@@ -71,16 +101,18 @@ pub(crate) enum Block {
 
 /// What one pass over the source produced.
 pub(crate) struct Segmentation {
-    /// The source with every inline tag's interior overwritten, byte for byte.
+    /// The source with every masked tag's interior overwritten, byte for byte.
     ///
-    /// The tokenizer reads this. Nothing else does: every range it reports is
-    /// resolved against the original source.
+    /// The tokenizer reads this. The parser reads it only to recognise what the
+    /// tokenizer made of a tag: every range is resolved against the original
+    /// source.
     pub masked: String,
     /// The document's blocks, in order.
     pub blocks: Vec<Block>,
-    /// Every inline tag, in source order. Block tags are not here; they are in
-    /// [`Segmentation::blocks`].
-    pub inline_tags: Vec<TagSpan>,
+    /// Every masked tag, in source order: the inline ones and the
+    /// [nested](TagSpan::nested) ones. Block tags at the margin are not here;
+    /// they are in [`Segmentation::blocks`].
+    pub tags: Vec<TagSpan>,
 }
 
 /// Scan a document.
@@ -90,7 +122,7 @@ pub(crate) fn segment(source: &str) -> Segmentation {
         source,
         masked: source.as_bytes().to_vec(),
         blocks: Vec::new(),
-        inline_tags: Vec::new(),
+        tags: Vec::new(),
         markdown_start: 0,
         fence: None,
     };
@@ -102,12 +134,12 @@ pub(crate) fn segment(source: &str) -> Segmentation {
     state.flush_markdown(source.len());
 
     Segmentation {
-        // Every replacement byte is ASCII `x`, so the buffer is still valid
-        // UTF-8 by construction. The fallback keeps the promise anyway rather
-        // than asserting it.
+        // Every replacement byte is ASCII, so the buffer is still valid UTF-8
+        // by construction. The fallback keeps the promise anyway rather than
+        // asserting it.
         masked: String::from_utf8(state.masked).unwrap_or_else(|_| source.to_string()),
         blocks: state.blocks,
-        inline_tags: state.inline_tags,
+        tags: state.tags,
     }
 }
 
@@ -121,7 +153,7 @@ struct Scan<'s> {
     source: &'s str,
     masked: Vec<u8>,
     blocks: Vec<Block>,
-    inline_tags: Vec<TagSpan>,
+    tags: Vec<TagSpan>,
     markdown_start: usize,
     fence: Option<Fence>,
 }
@@ -148,27 +180,28 @@ impl Scan<'_> {
             return index + 1;
         }
 
-        let content_start = line.start + indent_of(text);
-        if let Some(span) = self.block_tag(lines, index, content_start) {
-            let next = span.lines[1];
-            // Flush to the start of the line, not to the tag: a block tag's own
-            // indentation belongs to the tag line, and carrying it into the
-            // preceding Markdown run would leave a stray whitespace segment
-            // that CommonMark could read as an indented block.
+        let prefix = container_prefix(text);
+        if let Some(span) = self.block_tag(lines, index, line.start + prefix) {
+            let next = span.lines[1].max(index + 1);
+            if prefix > 0 {
+                let depth = quote_depth(text.get(..prefix).unwrap_or(""));
+                self.nest(lines, span, depth);
+                return next;
+            }
             self.flush_markdown(line.start);
             self.markdown_start = lines.get(next).map_or(self.source.len(), |line| line.start);
             self.blocks.push(Block::Tag(span));
-            return next.max(index + 1);
+            return next;
         }
 
         self.mask_inline_tags(lines, index)
     }
 
-    /// Whether the line at `index` is a block-level tag, and its span.
+    /// Whether the tag at `content_start` is a block-level tag, and its span.
     ///
     /// Three conditions, all upstream's:
     ///
-    /// - the line's first non-whitespace content is `{%`;
+    /// - the line's first content after its container markers is `{%`;
     /// - the tag closes somewhere (it may be several lines down);
     /// - nothing but whitespace follows `%}` on the line that closes it.
     ///
@@ -207,20 +240,43 @@ impl Scan<'_> {
             outer: content_start..outer_end,
             inner,
             lines: [index, last + 1],
+            quote_markers: Vec::new(),
+            nested: false,
         })
+    }
+
+    /// Mask a block-level tag inside a container with a placeholder, and record
+    /// it.
+    ///
+    /// `depth` is how many quotes the tag's first line opens with. The
+    /// placeholder keeps the delimiters' length, so every offset survives.
+    fn nest(&mut self, lines: &[Range<usize>], mut span: TagSpan, depth: usize) {
+        span.quote_markers = self.mask_body(lines, &span, depth);
+        self.overwrite(span.outer.start, b"<?");
+        self.overwrite(span.inner.end, b"?>");
+        span.nested = true;
+        self.tags.push(span);
     }
 
     /// Record and mask every tag on this line, and return the next line index.
     ///
-    /// A tag may close on a later line, so this returns the line after the one
-    /// the scan ended on rather than always `index + 1`.
+    /// A tag may close on a later line. The scan then carries on to the end of
+    /// that line, since another tag may follow on it, and returns the line
+    /// after the one it ended on.
+    ///
+    /// A tag that would span a blank line is not one: an inline tag lives in a
+    /// paragraph, and a blank line ends the paragraph first. Its `{%` is
+    /// ordinary text, as upstream's inline rule leaves it.
     fn mask_inline_tags(&mut self, lines: &[Range<usize>], index: usize) -> usize {
         let Some(line) = lines.get(index) else {
             return index + 1;
         };
+        let text = self.source.get(line.clone()).unwrap_or("");
+        let depth = quote_depth(text.get(..container_prefix(text)).unwrap_or(""));
         let mut pos = line.start;
+        let mut end = line.end;
         let mut last = index;
-        while pos < line.end {
+        while pos < end {
             if self
                 .source
                 .get(pos..)
@@ -235,32 +291,81 @@ impl Scan<'_> {
                 pos += OPEN.len();
                 continue;
             };
-            let inner = pos + OPEN.len()..tag_end;
             let outer_end = tag_end + CLOSE.len();
-            last = line_of(lines, index, outer_end);
-            self.mask(inner.clone());
-            self.inline_tags.push(TagSpan {
+            let closing = line_of(lines, last, outer_end);
+            let mut span = TagSpan {
                 outer: pos..outer_end,
-                inner,
-                lines: [index, last + 1],
-            });
+                inner: pos + OPEN.len()..tag_end,
+                lines: [last, closing + 1],
+                quote_markers: Vec::new(),
+                nested: false,
+            };
+            if self.spans_blank_line(lines, &span, depth) {
+                pos += OPEN.len();
+                continue;
+            }
+            span.quote_markers = self.mask_body(lines, &span, depth);
+            self.tags.push(span);
+            last = closing;
+            end = lines.get(closing).map_or(end, |line| line.end);
             pos = outer_end;
         }
         last + 1
     }
 
-    /// Overwrite a range with filler, preserving line structure.
+    /// Whether a line between the tag's first and last is blank once its
+    /// container markers are set aside.
+    fn spans_blank_line(&self, lines: &[Range<usize>], span: &TagSpan, depth: usize) -> bool {
+        let [first, end] = span.lines;
+        (first + 1..end.saturating_sub(1)).any(|index| {
+            lines.get(index).is_some_and(|line| {
+                let (content, _) = continuation_prefix(self.source, line.clone(), depth);
+                self.source
+                    .get(content..line.end)
+                    .is_none_or(|rest| rest.trim().is_empty())
+            })
+        })
+    }
+
+    /// Overwrite a tag's body with filler, and return the offsets of the quote
+    /// markers it kept.
     ///
-    /// Newlines survive: a multi-line tag still occupies the lines it occupies,
-    /// so the tokenizer's block structure around it is unchanged. Everything
-    /// else becomes `x`, which is inert in CommonMark and, being ASCII, keeps
-    /// the buffer the same length and still valid UTF-8.
-    fn mask(&mut self, range: Range<usize>) {
-        for index in range {
-            if let Some(byte) = self.masked.get_mut(index)
-                && *byte != b'\n'
-            {
-                *byte = b'x';
+    /// Newlines survive: a multi-line tag still occupies the lines it occupies.
+    /// So does the start of every line after the first, up to `depth` `>`
+    /// markers and the whitespace around them: a tag written inside a quote or
+    /// a list item continues on lines that carry the quote's markers and the
+    /// item's indentation, and without them the tokenizer would end the
+    /// container halfway through the tag. Everything else becomes `x`, which is
+    /// inert in CommonMark and, being ASCII, keeps the buffer the same length
+    /// and still valid UTF-8.
+    fn mask_body(&mut self, lines: &[Range<usize>], span: &TagSpan, depth: usize) -> Vec<usize> {
+        let mut markers = Vec::new();
+        let [first, end] = span.lines;
+        for index in first..end {
+            let Some(line) = lines.get(index) else {
+                break;
+            };
+            let stop = line.end.min(span.inner.end);
+            let mut start = line.start.max(span.inner.start);
+            if index > first {
+                let (content, quotes) = continuation_prefix(self.source, line.start..stop, depth);
+                markers.extend(quotes);
+                start = content;
+            }
+            for offset in start..stop {
+                if let Some(byte) = self.masked.get_mut(offset) {
+                    *byte = b'x';
+                }
+            }
+        }
+        markers
+    }
+
+    /// Write `bytes` into the masked buffer at `offset`.
+    fn overwrite(&mut self, offset: usize, bytes: &[u8]) {
+        for (index, &byte) in bytes.iter().enumerate() {
+            if let Some(slot) = self.masked.get_mut(offset + index) {
+                *slot = byte;
             }
         }
     }
@@ -272,6 +377,69 @@ impl Scan<'_> {
             ));
         }
     }
+}
+
+/// How far a line's container markers reach: its indentation, any blockquote
+/// `>`, and any list bullet or ordinal, in any order and with the whitespace
+/// after them.
+///
+/// This is a reading of the line's shape, not CommonMark's container phase. It
+/// only has to say whether a tag after it *could* be a block inside a
+/// container; the tokenizer decides whether it is, and where.
+fn container_prefix(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut pos = 0;
+    loop {
+        while matches!(bytes.get(pos), Some(b' ' | b'\t')) {
+            pos += 1;
+        }
+        let marker = match bytes.get(pos) {
+            Some(b'>' | b'-' | b'+' | b'*') => 1,
+            Some(byte) if byte.is_ascii_digit() => {
+                let digits = bytes.get(pos..).map_or(0, |rest| {
+                    rest.iter().take_while(|byte| byte.is_ascii_digit()).count()
+                });
+                if digits > 9 || !matches!(bytes.get(pos + digits), Some(b'.' | b')')) {
+                    return pos;
+                }
+                digits + 1
+            }
+            _ => return pos,
+        };
+        // A list marker needs whitespace after it; `-{%` is text.
+        let is_quote = bytes.get(pos) == Some(&b'>');
+        if !is_quote && !matches!(bytes.get(pos + marker), Some(b' ' | b'\t')) {
+            return pos;
+        }
+        pos += marker;
+    }
+}
+
+/// How many blockquotes a container prefix opens.
+fn quote_depth(prefix: &str) -> usize {
+    prefix.bytes().filter(|&byte| byte == b'>').count()
+}
+
+/// Where the content of a tag's continuation line starts, past its
+/// indentation and up to `depth` `>` markers, and the markers' offsets.
+///
+/// `line` is a byte range into `source` and the result never leaves it.
+fn continuation_prefix(source: &str, line: Range<usize>, depth: usize) -> (usize, Vec<usize>) {
+    let bytes = source.as_bytes();
+    let mut pos = line.start;
+    let mut markers = Vec::new();
+    let skip_whitespace = |pos: &mut usize| {
+        while *pos < line.end && matches!(bytes.get(*pos), Some(b' ' | b'\t')) {
+            *pos += 1;
+        }
+    };
+    skip_whitespace(&mut pos);
+    while markers.len() < depth && pos < line.end && bytes.get(pos) == Some(&b'>') {
+        markers.push(pos);
+        pos += 1;
+        skip_whitespace(&mut pos);
+    }
+    (pos, markers)
 }
 
 /// The line index containing `offset`, searching forward from `from`.
@@ -303,10 +471,6 @@ fn line_ranges(source: &str) -> Vec<Range<usize>> {
         out.push(start..source.len());
     }
     out
-}
-
-fn indent_of(line: &str) -> usize {
-    line.len() - line.trim_start_matches([' ', '\t']).len()
 }
 
 /// Whether a line opens a fenced code block, and with what.
@@ -378,7 +542,7 @@ mod tests {
             blocks("{% foo %} trailing\n"),
             ["markdown \"{% foo %} trailing\\n\""]
         );
-        assert_eq!(segment("{% foo %} trailing\n").inline_tags.len(), 1);
+        assert_eq!(segment("{% foo %} trailing\n").tags.len(), 1);
     }
 
     /// Upstream's one exclusion: `content[0] === '$'` is not a block tag.
@@ -409,21 +573,91 @@ mod tests {
     }
 
     #[test]
-    fn an_indented_block_tag_is_still_a_block_tag() {
-        assert_eq!(blocks("    {% foo %}\n"), ["tag \" foo \""]);
+    fn an_indented_block_tag_is_left_to_the_tokenizer_to_place() {
+        let source = "    {% foo %}\n";
+        let segmentation = segment(source);
+        assert_eq!(blocks(source), [format!("markdown {source:?}")]);
+        assert_eq!(segmentation.masked, "    <?xxxxx?>\n");
+        assert!(segmentation.tags.iter().all(|tag| tag.nested));
+    }
+
+    #[test]
+    fn a_block_tag_behind_container_markers_is_nested() {
+        for source in [
+            "> {% foo %}\n",
+            ">{% foo %}\n",
+            "- {% foo %}\n",
+            "12) {% foo %}\n",
+            "> - > {% foo %}\n",
+        ] {
+            let segmentation = segment(source);
+            assert_eq!(segmentation.tags.len(), 1, "{source:?}");
+            assert!(segmentation.tags[0].nested, "{source:?}");
+            assert_eq!(segmentation.masked.len(), source.len());
+            assert!(segmentation.masked.contains("<?xxxxx?>"), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn text_before_a_tag_keeps_it_inline() {
+        for source in [
+            "foo {% bar %}\n",
+            "-{% bar %}\n",
+            "# {% bar %}\n",
+            "1.{% bar %}\n",
+        ] {
+            let segmentation = segment(source);
+            assert_eq!(segmentation.tags.len(), 1, "{source:?}");
+            assert!(!segmentation.tags[0].nested, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn a_nested_tag_keeps_its_quote_markers_and_indentation() {
+        let source = "> - {% foo\n>     bar=1 %}\n";
+        let segmentation = segment(source);
+        assert_eq!(segmentation.masked, "> - <?xxxx\n>     xxxxxx?>\n");
+        assert_eq!(segmentation.tags[0].quote_markers, [11]);
+        assert_eq!(&source[11..12], ">");
+    }
+
+    #[test]
+    fn a_tag_outside_a_quote_masks_a_leading_marker() {
+        let source = "foo {% bar\n> baz %} qux\n";
+        let segmentation = segment(source);
+        assert_eq!(segmentation.masked, "foo {%xxxx\nxxxxxx%} qux\n");
+        assert_eq!(segmentation.tags[0].quote_markers, []);
+    }
+
+    #[test]
+    fn an_inline_tag_cannot_span_a_blank_line() {
+        for source in ["foo {% bar\n\nbaz %}\n", "> foo {% bar\n>\n> baz %}\n"] {
+            let segmentation = segment(source);
+            assert_eq!(segmentation.tags, [], "{source:?}");
+            assert_eq!(segmentation.masked, source);
+        }
+    }
+
+    #[test]
+    fn a_tag_after_a_multi_line_tag_on_its_closing_line_is_found() {
+        let source = "a {% foo\nbar %} b {% /foo %} c\n";
+        let segmentation = segment(source);
+        assert_eq!(segmentation.tags.len(), 2);
+        assert_eq!(segmentation.tags[1].lines, [1, 2]);
+        assert_eq!(segmentation.masked, "a {%xxxx\nxxxx%} b {%xxxxxx%} c\n");
     }
 
     #[test]
     fn tags_inside_a_fence_are_left_alone() {
         let source = "```\n{% foo %}\n```\n";
         assert_eq!(blocks(source), [format!("markdown {source:?}")]);
-        assert_eq!(segment(source).inline_tags, []);
+        assert_eq!(segment(source).tags, []);
     }
 
     #[test]
     fn a_tilde_fence_closes_only_on_tildes() {
         let source = "~~~\n{% foo %}\n```\n{% bar %}\n~~~\n";
-        assert_eq!(segment(source).inline_tags, []);
+        assert_eq!(segment(source).tags, []);
     }
 
     #[test]
@@ -444,9 +678,9 @@ mod tests {
         let segmentation = segment(source);
         assert_eq!(segmentation.masked.len(), source.len());
         assert_eq!(segmentation.masked, "Example {%xxxxxxxxxxxxxxxxx%} baz");
-        assert_eq!(segmentation.inline_tags.len(), 1);
+        assert_eq!(segmentation.tags.len(), 1);
         assert_eq!(
-            &source[segmentation.inline_tags[0].inner.clone()],
+            &source[segmentation.tags[0].inner.clone()],
             " foo bar=\"a*b*c\" "
         );
     }
@@ -461,7 +695,7 @@ mod tests {
     fn two_tags_in_succession_are_both_recorded() {
         let source = "a {% foo %}b{% /foo %} c";
         let segmentation = segment(source);
-        assert_eq!(segmentation.inline_tags.len(), 2);
+        assert_eq!(segmentation.tags.len(), 2);
         assert_eq!(segmentation.masked, "a {%xxxxx%}b{%xxxxxx%} c");
     }
 
@@ -469,7 +703,7 @@ mod tests {
     fn an_unclosed_tag_does_not_stall_the_scan() {
         let source = "hello {%\nworld\n";
         let segmentation = segment(source);
-        assert_eq!(segmentation.inline_tags, []);
+        assert_eq!(segmentation.tags, []);
         assert_eq!(segmentation.masked, source);
     }
 

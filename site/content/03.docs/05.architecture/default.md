@@ -188,7 +188,7 @@ that was not updated in the same commit. It is deliberately not an absolute
 until the port finished.
 
 ```text
-conformance: 95 green, 10 annotated, 0 failing (of 105)
+conformance: 96 green, 9 annotated, 0 failing (of 105)
 ```
 
 **Divergences.** A case that should stop being green is a *divergence*, which

@@ -211,8 +211,11 @@ pub enum Event<'s> {
     ///
     /// Markdoc runs markdown-it with `html: false`, so upstream never produces
     /// an HTML node -- raw HTML is literal text there. This port keeps the
-    /// event because an HTML comment arrives through it, and treats everything
-    /// else that comes this way as text, which is the same outcome.
+    /// event for two things that arrive through it: an HTML comment, and a
+    /// block tag inside a list item or a blockquote, which the segmenter masks
+    /// as a processing instruction, `<?...?>`, so that the tokenizer places it.
+    /// Everything else that comes this way is treated as text, which is the
+    /// same outcome as upstream's.
     ///
     /// Block and inline are separate variants rather than one, because the
     /// parser above has to place the node and cannot tell them apart after the
@@ -247,6 +250,11 @@ pub enum Event<'s> {
 ///   the parser above reads markers back out of the source: an emphasis node's
 ///   `marker` attribute is the `*` or `_` at the start of its span, not
 ///   something the event carries.
+/// - Raw HTML is reported as [`Event::Html`] or [`Event::InlineHtml`] where
+///   CommonMark has it. A block tag inside a container depends on this: it
+///   reaches the tokenizer as `<?...?>`, and is a block tag where that is an
+///   HTML block or alone on a paragraph's line. A tokenizer that reports raw
+///   HTML as text loses no tag, but such a tag is then inline.
 pub trait Tokenizer {
     /// Tokenize a run of CommonMark.
     fn tokenize<'s>(&self, source: &'s str) -> Vec<Spanned<'s>>;

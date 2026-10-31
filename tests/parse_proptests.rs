@@ -13,6 +13,7 @@
 //! actually drive this code -- the delimiters, the fences, and the newlines that
 //! decide where a block begins.
 
+use accent_proust::ast::{NodeType, Value};
 use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse, parse_with};
 use proptest::prelude::*;
 
@@ -64,6 +65,32 @@ fn document() -> impl Strategy<Value = String> {
     .prop_map(|parts| parts.concat())
 }
 
+/// Text from the same fragments, with no `x` and no `?` anywhere.
+///
+/// Masking writes `x` over a tag's body, and `<?` and `?>` over the delimiters
+/// of a tag nested in a container. In a tree parsed from this text, either
+/// character can only have come from the masked copy.
+fn unmaskable() -> impl Strategy<Value = String> {
+    prop::collection::vec(
+        prop_oneof![
+            2 => prop::sample::select(FRAGMENTS).prop_map(ToString::to_string),
+            1 => "[a-wyz ]{0,8}",
+        ],
+        0..40,
+    )
+    .prop_map(|parts| parts.concat())
+}
+
+/// Every string inside a value, however deeply nested.
+fn strings<'v>(value: &'v Value, out: &mut Vec<&'v str>) {
+    match value {
+        Value::String(text) => out.push(text),
+        Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+        Value::Hash(map) => map.values().for_each(|item| strings(item, out)),
+        _ => {}
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2048))]
 
@@ -111,6 +138,59 @@ proptest! {
             prop_assert!(location.start.offset <= location.end.offset);
             prop_assert!(location.end.offset <= source.len());
             prop_assert_eq!(source.get(location.span()), Some(location.text));
+        }
+    }
+
+    /// No text the tokenizer read masked reaches the tree: not in a text run,
+    /// a code block, a link destination or anywhere else an attribute holds a
+    /// string.
+    #[test]
+    fn masked_text_never_reaches_the_tree(source in unmaskable()) {
+        let document = parse(&source);
+        for node in document.walk() {
+            let mut found = Vec::new();
+            for value in node.attributes.values() {
+                strings(value, &mut found);
+            }
+            for text in found {
+                prop_assert!(
+                    !text.contains('x') && !text.contains('?'),
+                    "{:?} in {:?}",
+                    text,
+                    source
+                );
+            }
+        }
+    }
+
+    /// A paragraph, a heading or an inline run never holds a block.
+    ///
+    /// The parser splits paragraphs and synthesises them around tags, and each
+    /// of those has to be undone at the right container end. A paragraph left
+    /// open past its end takes in every block after it, which this catches.
+    #[test]
+    fn blocks_never_nest_inside_inline_content(source in document()) {
+        let document = parse(&source);
+        for node in document.walk() {
+            if !matches!(node.node_type, NodeType::Paragraph | NodeType::Heading | NodeType::Inline) {
+                continue;
+            }
+            for child in &node.children {
+                prop_assert!(
+                    !matches!(
+                        child.node_type,
+                        NodeType::Paragraph
+                            | NodeType::Heading
+                            | NodeType::List
+                            | NodeType::Blockquote
+                            | NodeType::Fence
+                    ),
+                    "{:?} in {:?} from {:?}",
+                    child.node_type,
+                    node.node_type,
+                    source
+                );
+            }
         }
     }
 }
