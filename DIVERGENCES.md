@@ -375,8 +375,10 @@ tokenizer's:
   above it, which would make the tag inline. Upstream's corpus runs with
   `allowIndentation` on (entry 8), which lets the tag interrupt the paragraph,
   and "Oddly indented paragraph in a tag" grades that reading, so the paragraph
-  is split at the tag. A tag in what pulldown-cmark reads as an indented code
-  block (entry 11) splits the block the same way.
+  is split at the tag. An emphasis or a link the tokenizer has already matched
+  across the tag's line cannot be split, and keeps the tag inline. A tag in
+  what pulldown-cmark reads as an indented code block (entry 11) splits the
+  block the same way.
 
 **Why:** knowing which container a line is in means running CommonMark's
 container phase. Running it in the segmenter would mean a second implementation

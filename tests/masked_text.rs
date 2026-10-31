@@ -176,6 +176,104 @@ document
 }
 
 #[test]
+fn a_hard_break_does_not_end_a_split_paragraph() {
+    for (source, before) in [
+        ("foo  \n    {% x /%}\nbar\n", "foo"),
+        ("foo\\\n    {% x /%}\nbar\n", "foo\\\\"),
+    ] {
+        assert_eq!(
+            outline(&parse(source)),
+            format!(
+                "\
+document
+  paragraph
+    inline
+      text content=\"{before}\"
+  tag[x]
+  paragraph
+    inline
+      text content=\"bar\"
+"
+            ),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn a_hard_break_after_a_split_tag_is_dropped() {
+    let source = "foo\n    {% x /%}  \nbar\n";
+    assert_eq!(
+        outline(&parse(source)),
+        "\
+document
+  paragraph
+    inline
+      text content=\"foo\"
+  tag[x]
+  paragraph
+    inline
+      text content=\"bar\"
+"
+    );
+}
+
+#[test]
+fn a_hard_break_can_still_open_a_paragraph() {
+    let source = "{% x /%}\n\\\nbar\n";
+    assert_eq!(
+        outline(&parse(source)),
+        "\
+document
+  tag[x]
+  paragraph
+    inline
+      hardbreak
+      text content=\"bar\"
+"
+    );
+}
+
+#[test]
+fn a_marker_read_as_text_keeps_the_tag_inline() {
+    // Four columns in, `>` cannot open a quote, so it is text before the tag.
+    let source = "foo\n    > {% x /%}\nbar\n";
+    assert_eq!(
+        outline(&parse(source)),
+        "\
+document
+  paragraph
+    inline
+      text content=\"foo\"
+      softbreak
+      text content=\"> \"
+      tag[x]
+      softbreak
+      text content=\"bar\"
+"
+    );
+}
+
+#[test]
+fn an_emphasis_across_the_tag_line_keeps_the_tag_inline() {
+    let source = "*foo\n    {% x /%}\nbar*\n";
+    assert_eq!(
+        outline(&parse(source)),
+        "\
+document
+  paragraph
+    inline
+      em marker=\"*\"
+        text content=\"foo\"
+        softbreak
+        tag[x]
+        softbreak
+        text content=\"bar\"
+"
+    );
+}
+
+#[test]
 fn an_indented_tag_line_in_a_setext_heading_stays_inline() {
     // The tokenizer ends a setext heading, not a paragraph, so there is no
     // paragraph end to resume from after a split.
@@ -263,6 +361,38 @@ fn a_tag_in_link_text_is_not_taken_for_one_in_the_destination() {
         .find(|node| node.node_type == NodeType::Link)
         .expect("a link");
     assert_eq!(attribute(link, "href"), "\"{%/%}{% b %}2\"");
+}
+
+#[test]
+fn a_title_gets_back_its_own_tag_when_two_mask_alike() {
+    let source = "[![a](s{% $b %} \"p {% $d %}\")](h{% $c %} \"t {% $e %}\")\n";
+    let document = parse(source);
+    let link = at(&document, &[0, 0, 0]);
+    assert_eq!(attribute(link, "href"), "\"h{% $c %}\"");
+    assert_eq!(attribute(link, "title"), "\"t {% $e %}\"");
+    let image = at(&document, &[0, 0, 0, 0]);
+    assert_eq!(attribute(image, "src"), "\"s{% $b %}\"");
+    assert_eq!(attribute(image, "title"), "\"p {% $d %}\"");
+}
+
+#[test]
+fn a_title_across_container_lines_gets_its_tag_back() {
+    for source in [
+        "[a](u \"t {% foo\n   b=1 /%}\")\n",
+        "> [a](u \"t {% foo\n> b=1 /%}\")\n",
+        "- [a](u \"t {% foo\n  b=1 /%}\")\n",
+    ] {
+        let document = parse(source);
+        let link = document
+            .walk()
+            .find(|node| node.node_type == NodeType::Link)
+            .expect("a link");
+        assert_eq!(
+            attribute(link, "title"),
+            "\"t {% foo\\nb=1 /%}\"",
+            "{source:?}"
+        );
+    }
 }
 
 #[test]

@@ -565,6 +565,9 @@ impl<'s, 'o> Builder<'s, 'o> {
         } else {
             text_end.min(span.end)..span.end
         };
+        if !overlaps(&segmentation.tags, &after) {
+            return;
+        }
         let Some(index) = self
             .stack
             .iter()
@@ -572,30 +575,42 @@ impl<'s, 'o> Builder<'s, 'o> {
         else {
             return;
         };
-        for name in ["href", "src", "title"] {
-            let value = match self.stack.get(index).and_then(|node| node.get(name)) {
-                Some(Value::String(value)) => value.clone(),
-                _ => continue,
-            };
-            let restored = self.unmasked(&value, &after, segmentation);
-            if let Some(node) = self.stack.get_mut(index) {
-                node.set(name, Value::String(restored));
+        let Some(node) = self.stack.get(index) else {
+            return;
+        };
+        // In source order: the destination is written before the title.
+        let (names, mut values): (Vec<&str>, Vec<String>) = ["href", "src", "title"]
+            .into_iter()
+            .filter_map(|name| match node.get(name) {
+                Some(Value::String(value)) => Some((name, value.clone())),
+                _ => None,
+            })
+            .unzip();
+        self.unmask(&mut values, &after, segmentation);
+        if let Some(node) = self.stack.get_mut(index) {
+            for (name, value) in names.into_iter().zip(values) {
+                node.set(name, Value::String(value));
             }
         }
     }
 
-    /// A string the tokenizer built from masked text, with every tag in `span`
-    /// put back as written.
+    /// Put every tag in `span` back into strings the tokenizer built from
+    /// masked text.
     ///
     /// A link destination, a title or a fence's info string is not a text run:
     /// the tokenizer builds it, resolving escapes, from text it read masked.
-    /// Each tag is found by its masked form, in order, one line at a time,
-    /// because a value may hold only some lines of a tag that spans several.
-    fn unmasked(&self, value: &str, span: &Range<usize>, segmentation: &Segmentation) -> String {
+    /// Each tag is found by its masked form one line at a time, because a value
+    /// may hold only some lines of a tag that spans several, and a line after
+    /// the first without the markers and indentation the tokenizer strips.
+    ///
+    /// `values` are in source order, and the search only moves forward through
+    /// them, so two tags that mask alike each go back where they were written.
+    fn unmask(&self, values: &mut [String], span: &Range<usize>, segmentation: &Segmentation) {
         let tags = &segmentation.tags;
         let first = tags.partition_point(|tag| tag.outer.end <= span.start);
-        let mut out = value.to_string();
-        let mut from = 0;
+        // Where the next line of a tag is looked for: a value, and an offset
+        // into it.
+        let (mut field, mut from) = (0, 0);
         for tag in tags
             .get(first..)
             .unwrap_or_default()
@@ -610,19 +625,39 @@ impl<'s, 'o> Builder<'s, 'o> {
                     .get(start..end)
                     .and_then(|rest| rest.find('\n'))
                     .map_or(end, |offset| start + offset);
+                // Masking keeps a continuation line's container prefix as
+                // written, and only there is a leading `>` or space unmasked.
+                let lead = if start > tag.outer.start {
+                    segmentation.masked.get(start..stop).map_or(0, |line| {
+                        line.len() - line.trim_start_matches([' ', '\t', '>']).len()
+                    })
+                } else {
+                    0
+                };
                 if let (Some(masked), Some(written)) = (
-                    segmentation.masked.get(start..stop),
-                    self.source.get(start..stop),
+                    segmentation.masked.get(start + lead..stop),
+                    self.source.get(start + lead..stop),
                 ) && masked != written
-                    && let Some(at) = find_masked(&out, from, masked)
+                    && let Some((index, at)) = values
+                        .get(field)
+                        .and_then(|value| find_masked(value, from, masked))
+                        .map(|at| (field, at))
+                        .or_else(|| {
+                            (field + 1..values.len()).find_map(|index| {
+                                values
+                                    .get(index)
+                                    .and_then(|value| find_masked(value, 0, masked))
+                                    .map(|at| (index, at))
+                            })
+                        })
+                    && let Some(value) = values.get_mut(index)
                 {
-                    out.replace_range(at..at + masked.len(), written);
-                    from = at + written.len();
+                    value.replace_range(at..at + masked.len(), written);
+                    (field, from) = (index, at + written.len());
                 }
                 start = stop + 1;
             }
         }
-        out
     }
 
     /// Close the innermost open tag of this name, or record that there is none.
@@ -778,9 +813,12 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let node = self.html_node(span);
                 self.attach(node);
             }
-            // A run never opens with a break. One that would has lost what came
-            // before it on its line: the body of a tag, or a tag split off.
+            // A run never opens with a soft break. One that would has lost what
+            // came before it on its line: the body of a tag, or a tag split
+            // off. A hard break can open one, as `\` alone on a paragraph's
+            // first line, so it is dropped only at the end of a tag's line.
             Event::SoftBreak if self.inline_parent.is_none() => {}
+            Event::HardBreak if self.inline_parent.is_none() && self.ends_tag_line(&span) => {}
             Event::SoftBreak => {
                 self.open_inline(&span);
                 let node = self.node(NodeType::Softbreak, span);
@@ -920,9 +958,12 @@ impl<'s, 'o> Builder<'s, 'o> {
                         .slice(&span)
                         .find('\n')
                         .map_or(span.end, |offset| span.start + offset);
-                let info = info
-                    .as_ref()
-                    .map(|info| self.unmasked(info, &opening, segmentation));
+                let info = info.as_ref().map(|info| {
+                    let mut values = [info.to_string()];
+                    self.unmask(&mut values, &opening, segmentation);
+                    let [info] = values;
+                    info
+                });
                 self.fence = Some(Fence {
                     content_end: span.start,
                     span,
@@ -1099,7 +1140,21 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     /// Whether nothing but indentation and quote markers precede a tag on its
     /// line.
+    ///
+    /// A `>` the tokenizer read as text rather than as a marker, past four
+    /// columns of indentation or on a lazy line, is a text node before the tag.
     fn begins_line(&self, tag: &TagSpan) -> bool {
+        if self.inline_parent.is_some()
+            && self
+                .stack
+                .last()
+                .and_then(|top| top.children.last())
+                .is_some_and(|child| {
+                    !matches!(child.node_type, NodeType::Softbreak | NodeType::Hardbreak)
+                })
+        {
+            return false;
+        }
         let head = self.source.get(..tag.outer.start).unwrap_or("");
         let line = head
             .rfind('\n')
@@ -1112,11 +1167,20 @@ impl<'s, 'o> Builder<'s, 'o> {
     ///
     /// A heading's run cannot be split, and neither can a paragraph that is
     /// really a setext heading: the tokenizer ends either with a heading, not a
-    /// paragraph, so there would be no paragraph end to resume from.
+    /// paragraph, so there would be no paragraph end to resume from. Nor can a
+    /// run with an emphasis or a link open across the tag's line, whose end the
+    /// tokenizer has already matched past it.
     fn splittable(&self) -> bool {
         let Some(owner) = self.inline_parent.and_then(|index| self.stack.get(index)) else {
             return true;
         };
+        if self
+            .stack
+            .last()
+            .is_none_or(|top| top.node_type != NodeType::Inline)
+        {
+            return false;
+        }
         match owner.node_type {
             NodeType::Paragraph => self.setext.is_none(),
             NodeType::Item => true,
@@ -1134,15 +1198,24 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// split at such a line. So the paragraph ends before the tag, and what
     /// follows the tag is a paragraph of its own.
     fn split_paragraph(&mut self, tag: &TagSpan) {
-        // The break before the tag's line ends the paragraph instead.
+        // The break before the tag's line ends the paragraph instead. No hard
+        // break ends a paragraph: two spaces go with it, and a backslash is
+        // text, as at the end of any paragraph.
         let top = self.top();
-        if top.node_type == NodeType::Inline
+        let hard = top.node_type == NodeType::Inline
             && top
                 .children
-                .last()
-                .is_some_and(|child| child.node_type == NodeType::Softbreak)
-        {
-            top.children.pop();
+                .pop_if(|child| {
+                    matches!(child.node_type, NodeType::Softbreak | NodeType::Hardbreak)
+                })
+                .is_some_and(|child| child.node_type == NodeType::Hardbreak);
+        let head = self.slice(&(0..tag.outer.start));
+        let previous = head.get(..head.rfind('\n').unwrap_or(0)).unwrap_or("");
+        let previous = previous.strip_suffix('\r').unwrap_or(previous);
+        if hard && previous.ends_with('\\') {
+            let slash = previous.len() - 1;
+            let node = self.text_node("\\".to_string(), slash..previous.len());
+            self.attach(node);
         }
         self.close_inline();
         // In a tight list item there is no paragraph to close, and no paragraph
@@ -1167,6 +1240,16 @@ impl<'s, 'o> Builder<'s, 'o> {
                 .source
                 .get(self.skip_to.min(span.end)..span.end)
                 .is_none_or(|rest| rest.trim().is_empty())
+    }
+
+    /// Whether a break follows the last tag emitted, with nothing but spaces
+    /// between them: the tag ends its line, and the break ends that.
+    fn ends_tag_line(&self, span: &Range<usize>) -> bool {
+        self.skip_to > 0
+            && self
+                .source
+                .get(self.skip_to..span.start)
+                .is_some_and(|gap| gap.bytes().all(|byte| matches!(byte, b' ' | b'\t')))
     }
 
     /// Close every block tag still open inside the container that is closing.
@@ -1576,8 +1659,6 @@ fn collect_text(node: &Node<'_>) -> String {
     out
 }
 
-/// Strip a code span's backticks and apply CommonMark's one-space rule.
-///
 /// Whether a container kind is inline.
 const fn is_inline(kind: ContainerKind) -> bool {
     matches!(
@@ -1642,6 +1723,8 @@ fn trim_blank_lines(content: &mut String) {
     content.truncate(keep);
 }
 
+/// Strip a code span's backticks and apply CommonMark's one-space rule.
+///
 /// Read from the source rather than taken from the tokenizer, because a tag
 /// inside a code span was masked and must come back literal -- which is also
 /// what markdown-it does, since its code rule consumes the span before its tag

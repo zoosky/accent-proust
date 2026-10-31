@@ -58,8 +58,10 @@
 //! the line holding `?>`, which is the tag's last line. The tokenizer reports
 //! the block inside whatever container holds it, and the parser turns it back
 //! into the tag. Where an HTML block cannot start -- a paragraph continuation
-//! line indented four columns, say -- the same placeholder is inline HTML and
-//! the tag is inline, which is upstream's reading of those lines too.
+//! line indented four columns, say -- the same placeholder is inline HTML. The
+//! parser still splits the paragraph at it when it is alone on its line, as
+//! upstream's corpus does (`DIVERGENCES.md` entry 13), and leaves the tag
+//! inline when text precedes it.
 
 use std::ops::Range;
 

@@ -253,8 +253,8 @@ pub enum Event<'s> {
 /// - Raw HTML is reported as [`Event::Html`] or [`Event::InlineHtml`] where
 ///   CommonMark has it. A block tag inside a container depends on this: it
 ///   reaches the tokenizer as `<?...?>`, and is a block tag where that is an
-///   HTML block. A tokenizer that reports raw HTML as text loses no tag, but
-///   such a tag is then inline.
+///   HTML block or alone on a paragraph's line. A tokenizer that reports raw
+///   HTML as text loses no tag, but such a tag is then inline.
 pub trait Tokenizer {
     /// Tokenize a run of CommonMark.
     fn tokenize<'s>(&self, source: &'s str) -> Vec<Spanned<'s>>;
