@@ -340,71 +340,58 @@ unchanged, so tooling reading `attribute-value-invalid` sees what it saw
 before. What is given up is the ability to paste a Markdoc schema's regular
 expression literal into a Rust schema and have it work without a matcher around
 it.
-## 13. A block tag inside a list item or a blockquote is not part of the container
+## 13. A block tag inside a container is bounded by the container
 
 **Upstream:** the Markdoc block-tag rule is a markdown-it *block rule*,
-registered after `list`, `heading` and `blockquote`. By the time it runs, the
-container parser has already stripped a list item's indentation, so a tag
-written two spaces in under `* Some content` opens inside that item:
+registered after `list` and `blockquote`, so it runs on a container's content
+with the markers already stripped. A tag alone on its line inside a list item or
+a blockquote is a block tag inside it. The rule then takes every line up to `%}`
+as the tag (`annotations.ts:80` reads them through `state.getLines`), whether or
+not those lines continue the container.
 
-```markdown
-{% table %}
-* Cell 1
-* Some content
+Nothing bounds the tag by its container afterwards either. A tag opened in a
+quote and closed after it leaves the quote open: the quote's closing token meets
+the tag on top of the parser's stack, becomes a `missing-opening` error, and the
+rest of the document lands inside the tag.
 
-  {% if $foo %}
-  Conditional block
-  {% /if %}
-{% /table %}
-```
+**Here:** the CommonMark parser places the tag. The segmenter masks a tag that
+is alone on its lines behind container markers or indentation as `<?...?>`, a
+processing instruction, which CommonMark reads as an HTML block wherever one may
+start. The parser turns that block back into the tag (`src/parse/segment.rs`).
+A tag inside a list item or a blockquote is therefore a block tag inside it, as
+upstream has it. Three differences follow from the container being the
+tokenizer's:
 
-Upstream reads the `{% if %}` as content of the second cell. The conditional's
-paragraphs render inside the `<td>`.
+- **A tag left open when its container closes closes with it** and reports
+  `missing-closing`, as an inline tag left open at the end of its paragraph
+  does. A closing tag after the container reports `missing-opening`.
+- **A tag's later lines must continue the container.** If a multi-line opening
+  drops the quote's `>` or the item's indentation on a later line, the
+  container ends at that line. The tag is still read whole, but what follows it
+  is outside the container. Upstream takes the line into the tag and keeps the
+  container going.
+- **A tag alone on its line is a block tag at any indentation.** pulldown-cmark,
+  like stock markdown-it, joins a line indented four columns to the paragraph
+  above it, which would make the tag inline. Upstream's corpus runs with
+  `allowIndentation` on (entry 8), which lets the tag interrupt the paragraph,
+  and "Oddly indented paragraph in a tag" grades that reading, so the paragraph
+  is split at the tag. A tag in what pulldown-cmark reads as an indented code
+  block (entry 11) splits the block the same way.
 
-A blockquote works the same way: the rule runs on the quote's content with the
-`> ` markers already stripped, so `> {% test %}` opens a block tag inside the
-quote. Since v0.5.10, an opening that spans several quoted lines does too
-(`annotations.ts:80` reads it through `state.getLines`).
+**Why:** knowing which container a line is in means running CommonMark's
+container phase. Running it in the segmenter would mean a second implementation
+of that phase, ahead of the parser it feeds, kept in agreement with it forever,
+and the failure mode when the two drift is silent. A placeholder lets the one
+parser decide. Each difference above is a place where upstream's rule ignores
+the container, which the tokenizer cannot be asked to do. Reproducing the first
+would mean reproducing an error cascade.
 
-**Here:** the segmenter resolves tag syntax *before* the CommonMark parse (the
-one redesign, `src/parse/segment.rs`), so it has no containers to consult. A
-line whose only content is a block tag splits the document wherever it appears,
-indented or not, and the list ends there. The tag becomes a sibling of the list
-rather than a child of its last item.
-
-In a blockquote, the tag shares its line with the `> ` marker, so it is not a
-line of its own. The segmenter reads a single-line opening as an inline tag
-inside the quote's paragraph, not as a block tag around it. An opening that
-spans several lines, in a quote or a list item, is not recognised at all. Its
-masked text currently reaches the output; that is a bug, not this entry, and
-is tracked in #73.
-
-**Why:** knowing that a line sits inside a list item means having parsed the
-list, and the segmenter runs first by construction -- that ordering is what
-reproduces markdown-it's "the tag rule consumed the tag before the emphasis rule
-saw it" without a ruler to hook (entry 2). Recovering the container structure
-means implementing CommonMark's container phase in the segmenter, ahead of the
-CommonMark parser it feeds, and then keeping the two in agreement forever. That
-is a second Markdown implementation to maintain, and the failure mode when they
-drift is silent: a document that segments one way and parses another. Guessing
-from indentation alone is worse than either -- four spaces inside a list item is
-item content, four spaces outside one is a code block, and the segmenter cannot
-tell which it is looking at.
-
-**What it costs, exactly.** One corpus case, "Advanced table with conditional
-inside cell", which is annotated against this entry. Its inline conditional
-(`* {% if $foo %}...{% /if %}`) is unaffected -- inline tags are masked, not
-split -- and only the indented block form diverges. Upstream's
-`transforms/table.test.ts` has the same shape in "does not produce errors for
-valid conditionals within a cell"; the ported test asserts what this crate
-produces and names this entry, so fixing the segmenter turns that test red
-rather than leaving it silently wrong.
-
-No corpus case puts a tag inside a blockquote. Upstream's tokenizer tests do:
-v0.5.10 added five cases to `annotations.test.ts`, from "inside a blockquote"
-on. They are not yet in `tests/annotations.rs`, because four of them meet the
-masked-text bug in #73 rather than this entry, and a test pinned to that output
-would assert the bug. They are ported with its fix.
+**What it costs, exactly.** No corpus case. Upstream's five tokenizer tests for
+tags in containers (`annotations.test.ts`, from "inside a blockquote") are
+ported to `tests/annotations.rs` and pass. The first difference changes only
+documents that already fail validation. The second needs a lazy continuation
+line inside a tag. The third differs from stock upstream only for a tag line
+indented four or more columns past a paragraph, and matches the corpus there.
 
 ## 14. Transform recursion is depth-limited
 

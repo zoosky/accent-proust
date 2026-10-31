@@ -291,7 +291,7 @@ tree compiles to, never a stale release.
 
 The prose on the site is documentation and is held to the same standard as the
 prose here: a claim about behaviour names the thing that enforces it. Where the
-site states a number -- 95 green, 16 divergences, 105 cases -- that number comes
+site states a number -- 96 green, 16 divergences, 105 cases -- that number comes
 from `conformance-baseline.txt` or `DIVERGENCES.md` and has to be updated with
 them.
 

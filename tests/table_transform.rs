@@ -122,19 +122,13 @@ fn does_not_produce_errors_for_valid_conditional_rows() {
     );
 }
 
-/// Upstream's "does not produce errors for valid conditionals within a cell",
-/// inverted by `DIVERGENCES.md` entry 13.
+/// Upstream's "does not produce errors for valid conditionals within a cell".
 ///
-/// The conditional is written two spaces in under `* Cell 2`, which upstream
-/// reads as that cell's content because its block-tag rule runs after the
-/// container parser. The segmenter here runs before one, so the tag splits the
-/// document and arrives at the row level, where a paragraph is not a row.
-///
-/// The assertion is the divergent outcome rather than upstream's, deliberately:
-/// a segmenter that ever learns about containers turns this test red, which is
-/// the notification the divergence entry is asking for.
+/// The conditional is written two spaces in under `* Cell 2`, which makes it
+/// that cell's content: the tokenizer places it in the list item, as
+/// markdown-it's container phase does upstream.
 #[test]
-fn a_conditional_indented_within_a_cell_leaves_the_cell() {
+fn does_not_produce_errors_for_valid_conditionals_within_a_cell() {
     let input = "{% table %}\n\
                  * Heading 1\n\
                  * Heading 2\n\
@@ -149,16 +143,10 @@ fn a_conditional_indented_within_a_cell_leaves_the_cell() {
                  {% /table %}";
 
     let document = parse_document(input);
-    let errors = table_syntax_errors(&document);
     assert_eq!(
-        errors.len(),
-        2,
-        "expected the two paragraphs of the escaped conditional to be rejected \
-         at the row level: {errors:#?}"
+        table_syntax_errors(&document),
+        Vec::<&ValidationError>::new()
     );
-    for error in &errors {
-        assert!(error.message.contains("paragraph"), "{}", error.message);
-    }
 }
 
 #[test]

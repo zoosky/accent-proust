@@ -6,6 +6,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A block tag inside a list item or a blockquote belongs to it** (#73). The
+  segmenter masks such a tag as `<?...?>`, which pulldown-cmark places as an
+  HTML block inside its container, and the parser turns it back into the tag.
+  "Advanced table with conditional inside cell" now passes: conformance is 96
+  green, 9 annotated. `DIVERGENCES.md` entry 13 now covers only what is left:
+  a tag left open closes with its container, and its later lines must
+  continue it.
+
+### Fixed
+
+- **Masked text no longer reaches the tree** (#73). A tag spanning lines was
+  never put back, so its filler (`{%xxxx`) became text. The same happened in a
+  code block inside a container, a fence's info string, and an inline link's
+  destination or title. A property test now checks this over generated
+  documents.
+- **An indented HTML block no longer adds a stray text node** before itself.
+
 ## [0.12.3] - 2026-10-30
 
 ### Changed

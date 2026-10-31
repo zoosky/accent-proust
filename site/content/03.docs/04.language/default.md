@@ -31,6 +31,21 @@ Tags nest, and their content is Markdoc all the way down.
 {% /callout %}
 ```
 
+A block tag works inside a list item or a blockquote too. Indent it with the
+item's content, or write it after the quote's `>`:
+
+```markdown
+- Install the package.
+
+  {% callout type="note" %}
+  This note belongs to the list item.
+  {% /callout %}
+
+> {% callout %}
+> Quoted.
+> {% /callout %}
+```
+
 An **inline tag** sits inside a paragraph:
 
 ```markdown

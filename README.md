@@ -157,7 +157,7 @@ giving something up stays visible.
 
 ```sh
 cargo test --test conformance -- --nocapture
-# conformance: 95 green, 10 annotated, 0 failing (of 105)
+# conformance: 96 green, 9 annotated, 0 failing (of 105)
 ```
 
 ## Contributing

@@ -6,7 +6,7 @@
 //! The node shapes are upstream's, because the conformance corpus and the
 //! schemas above both name them.
 //!
-//! # Four places this is not a straight transliteration
+//! # Five places this is not a straight transliteration
 //!
 //! - **The `inline` node is synthesised, not received.** markdown-it emits an
 //!   `inline` token inside every block that has inline content, and marks the
@@ -14,7 +14,8 @@
 //!   token. pulldown-cmark has no such event. So an `inline` node is opened
 //!   lazily, on the first inline-level event inside a block, and closed when the
 //!   block closes. One rule reproduces both shapes, `paragraph > inline > text`
-//!   and `item > inline > text`.
+//!   and `item > inline > text`. Inside a block tag in a tight item it opens a
+//!   paragraph too, because markdown-it hides only the item's own paragraphs.
 //! - **Markers are read back from the source.** markdown-it puts `*` or `**` in
 //!   `token.markup`; no pulldown-cmark event carries it. Container ranges cover
 //!   their delimiters, so the marker is the first byte or two of the span. This
@@ -29,7 +30,12 @@
 //! - **A fence's content is literal by default.** `DIVERGENCES.md` entry 1
 //!   inverts upstream: a fence opts *in* to tag processing with
 //!   `{% process=true %}` rather than out of it.
+//! - **A block tag inside a container arrives as HTML.** The segmenter masks it
+//!   as a processing instruction so that the tokenizer places it (see
+//!   [`segment`](super::segment)). An HTML block, inline HTML, or a line of an
+//!   indented code block that starts with one is turned back into the tag.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::ast::{AttributeLocation, Lines, Location, Node, NodeType, ValidationError, Value};
@@ -51,9 +57,20 @@ struct Fence {
     info: Option<String>,
     content: String,
     content_start: Option<usize>,
+    /// Where the last line with content ends.
+    content_end: usize,
+    /// Whether this is the part of an indented code block after a tag that
+    /// split it, whose span is the lines it ends up holding.
+    split: bool,
 }
 
 /// Builds one document.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag tracks a different structure the tokenizer does not \
+              report: the table head, the synthesised `tbody`, a synthesised \
+              paragraph and a split one; none is a state of another"
+)]
 pub(crate) struct Builder<'s, 'o> {
     source: &'s str,
     lines: Lines<'s>,
@@ -85,6 +102,28 @@ pub(crate) struct Builder<'s, 'o> {
     in_head: bool,
     /// Whether a synthesised `tbody` is open.
     in_body: bool,
+    /// Whether the open inline run sits in a paragraph synthesised for it.
+    wrapped: bool,
+    /// Whether the tokenizer's open paragraph was split at a tag, so that what
+    /// follows the tag goes into a paragraph of its own.
+    resumed: bool,
+    /// The end of the last tag emitted before its span was over.
+    ///
+    /// A tag that spans lines reaches the parser as several events: a text run
+    /// or an HTML block, a line at a time. The first emits the tag; the rest
+    /// carry its masked body, and every content event before this offset is
+    /// dropped. Containers still open and close, so the stack stays balanced.
+    skip_to: usize,
+    /// Where the text of each open link or image ends so far, innermost last.
+    ///
+    /// A destination and a title follow the text, so only a tag past this
+    /// point can be one of theirs.
+    links: Vec<usize>,
+    /// Where each open block container's span ends, innermost last.
+    ///
+    /// An inline tag that runs past the end of its block is not a tag: upstream
+    /// parses inline content one block at a time, so its `{%` is text there.
+    ends: Vec<usize>,
 }
 
 impl<'s, 'o> Builder<'s, 'o> {
@@ -103,6 +142,11 @@ impl<'s, 'o> Builder<'s, 'o> {
             column: 0,
             in_head: false,
             in_body: false,
+            wrapped: false,
+            resumed: false,
+            skip_to: 0,
+            links: Vec::new(),
+            ends: Vec::new(),
         }
     }
 
@@ -118,7 +162,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                     let text = segmentation.masked.get(range.clone()).unwrap_or("");
                     for (event, span) in tokenizer.tokenize(text) {
                         let span = range.start + span.start..range.start + span.end;
-                        self.event(&event, span, &segmentation.inline_tags);
+                        self.event(&event, span, segmentation);
                     }
                 }
                 Block::Tag(span) => {
@@ -257,10 +301,24 @@ impl<'s, 'o> Builder<'s, 'o> {
     // ---- inline runs -----------------------------------------------------
 
     /// Open the synthesised `inline` node, unless one is already open.
+    ///
+    /// Inline content directly inside a block tag gets a paragraph around it
+    /// as well. The tokenizer leaves the paragraph out because the list item
+    /// the tag sits in is tight; markdown-it hides only the paragraphs that are
+    /// the item's own children, so one inside the tag stays.
     fn open_inline(&mut self, span: &Range<usize>) {
         self.extend_inline_span(span);
         if self.inline_parent.is_some() {
             return;
+        }
+        let in_tag = {
+            let top = self.top();
+            top.node_type == NodeType::Tag && !top.inline
+        };
+        if in_tag || self.resumed {
+            let paragraph = self.node(NodeType::Paragraph, span.clone());
+            self.open(paragraph);
+            self.wrapped = true;
         }
         let owner = self.stack.len() - 1;
         let mut node = Node::new(NodeType::Inline);
@@ -292,6 +350,19 @@ impl<'s, 'o> Builder<'s, 'o> {
             if is_inline {
                 if let Some(span) = &span {
                     self.validate_links(&mut node, span);
+                }
+                if std::mem::take(&mut self.wrapped) {
+                    let mut paragraph = self.pop();
+                    if let Some(span) = span {
+                        paragraph.lines = self.line_pair(&span);
+                        node.lines.clone_from(&paragraph.lines);
+                        if self.options.location {
+                            paragraph.location = Some(self.locate(span));
+                        }
+                    }
+                    paragraph.push(node);
+                    self.attach(paragraph);
+                    return;
                 }
                 self.attach(node);
                 return;
@@ -394,7 +465,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// nothing else: the four things a tag body can be are the same in both
     /// positions.
     fn tag(&mut self, span: &TagSpan, inline: bool) {
-        let body = self.slice(&span.inner);
+        let body = self.body(span);
         let trimmed = body.trim();
         // The grammar is handed a trimmed body, as upstream's tokenizer hands
         // it one. Its error offsets are relative to that, so translating them
@@ -446,6 +517,112 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.attach(node);
             }
         }
+    }
+
+    /// A tag's body as the grammar reads it: the source, with the quote markers
+    /// of its continuation lines blanked.
+    ///
+    /// Blanking rather than removing keeps every offset in the body an offset
+    /// into the document, which is what error and attribute locations are
+    /// computed from.
+    fn body(&self, span: &TagSpan) -> Cow<'s, str> {
+        let raw = self.slice(&span.inner);
+        if span.quote_markers.is_empty() {
+            return Cow::Borrowed(raw);
+        }
+        let mut bytes = raw.as_bytes().to_vec();
+        for marker in &span.quote_markers {
+            if let Some(byte) = marker
+                .checked_sub(span.inner.start)
+                .and_then(|offset| bytes.get_mut(offset))
+            {
+                *byte = b' ';
+            }
+        }
+        // Only ASCII `>` was replaced, and by an ASCII space.
+        Cow::Owned(String::from_utf8(bytes).unwrap_or_else(|_| raw.to_string()))
+    }
+
+    /// Emit a tag that the tokenizer may report over several events, and drop
+    /// the rest of them.
+    fn emit_spanning(&mut self, tag: &TagSpan, inline: bool) {
+        self.tag(tag, inline);
+        self.skip_to = self.skip_to.max(tag.outer.end);
+    }
+
+    /// Put back the tags in a link's or an image's destination and title.
+    ///
+    /// The tokenizer built both from masked text. They follow the link text, so
+    /// only the tags between its end and the end of the link are theirs. An
+    /// autolink, `<...>`, is the exception: its destination *is* its text.
+    ///
+    /// The node is the innermost open link or image, which is not always the top
+    /// of the stack: an inline tag left open in the link text is above it.
+    fn restore_destination(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
+        let text_end = self.links.pop().unwrap_or(span.start);
+        let after = if self.slice(span).starts_with('<') {
+            span.clone()
+        } else {
+            text_end.min(span.end)..span.end
+        };
+        let Some(index) = self
+            .stack
+            .iter()
+            .rposition(|node| matches!(node.node_type, NodeType::Link | NodeType::Image))
+        else {
+            return;
+        };
+        for name in ["href", "src", "title"] {
+            let value = match self.stack.get(index).and_then(|node| node.get(name)) {
+                Some(Value::String(value)) => value.clone(),
+                _ => continue,
+            };
+            let restored = self.unmasked(&value, &after, segmentation);
+            if let Some(node) = self.stack.get_mut(index) {
+                node.set(name, Value::String(restored));
+            }
+        }
+    }
+
+    /// A string the tokenizer built from masked text, with every tag in `span`
+    /// put back as written.
+    ///
+    /// A link destination, a title or a fence's info string is not a text run:
+    /// the tokenizer builds it, resolving escapes, from text it read masked.
+    /// Each tag is found by its masked form, in order, one line at a time,
+    /// because a value may hold only some lines of a tag that spans several.
+    fn unmasked(&self, value: &str, span: &Range<usize>, segmentation: &Segmentation) -> String {
+        let tags = &segmentation.tags;
+        let first = tags.partition_point(|tag| tag.outer.end <= span.start);
+        let mut out = value.to_string();
+        let mut from = 0;
+        for tag in tags
+            .get(first..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|tag| tag.outer.start < span.end)
+        {
+            let end = tag.outer.end.min(span.end);
+            let mut start = tag.outer.start.max(span.start);
+            while start < end {
+                let stop = self
+                    .source
+                    .get(start..end)
+                    .and_then(|rest| rest.find('\n'))
+                    .map_or(end, |offset| start + offset);
+                if let (Some(masked), Some(written)) = (
+                    segmentation.masked.get(start..stop),
+                    self.source.get(start..stop),
+                ) && masked != written
+                    && let Some(at) = find_masked(&out, from, masked)
+                {
+                    out.replace_range(at..at + masked.len(), written);
+                    from = at + written.len();
+                }
+                start = stop + 1;
+            }
+        }
+        out
     }
 
     /// Close the innermost open tag of this name, or record that there is none.
@@ -513,33 +690,43 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     // ---- events ----------------------------------------------------------
 
-    fn event(&mut self, event: &Event<'_>, span: Range<usize>, inline_tags: &[TagSpan]) {
+    fn event(&mut self, event: &Event<'_>, span: Range<usize>, segmentation: &Segmentation) {
+        match event {
+            Event::Start(container) if !is_inline(container.kind()) => self.ends.push(span.end),
+            Event::End(kind) if !is_inline(*kind) => {
+                self.ends.pop();
+            }
+            _ => {}
+        }
+        if self.inside_emitted_tag(event, &span) {
+            return;
+        }
+        if !matches!(
+            event,
+            Event::End(ContainerKind::Link | ContainerKind::Image)
+        ) {
+            for end in &mut self.links {
+                *end = (*end).max(span.end);
+            }
+        }
         if !matches!(event, Event::Html(_)) {
             self.flush_html_block();
         }
         // A code block swallows its own text: the content is one attribute, and
         // whether it also has children is decided at the close.
-        if let Some(fence) = &mut self.fence {
+        if self.fence.is_some() {
             match event {
-                Event::Text(text) => {
-                    if fence.content_start.is_none() {
-                        fence.content_start = Some(span.start);
-                    }
-                    fence.content.push_str(text);
-                    return;
-                }
-                Event::End(ContainerKind::CodeBlock) => {
-                    self.close_fence();
-                    return;
-                }
-                _ => return,
+                Event::Text(text) => self.code_text(text, span, &segmentation.tags),
+                Event::End(ContainerKind::CodeBlock) => self.close_fence(),
+                _ => {}
             }
+            return;
         }
 
         match event {
-            Event::Start(container) => self.start(container, span),
-            Event::End(kind) => self.end(*kind, span),
-            Event::Text(text) => self.text(text, span, inline_tags),
+            Event::Start(container) => self.start(container, span, segmentation),
+            Event::End(kind) => self.end(*kind, span, segmentation),
+            Event::Text(text) => self.text(text, span, &segmentation.tags),
             Event::Code(_) => {
                 self.open_inline(&span);
                 let content = code_span_content(self.slice(&span));
@@ -548,6 +735,12 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.attach(node);
             }
             Event::Html(_) => {
+                if let Some(tag) = nested_at(self.source, &segmentation.tags, &span) {
+                    self.flush_html_block();
+                    self.close_inline();
+                    self.emit_spanning(tag, false);
+                    return;
+                }
                 self.close_inline();
                 match self.html_block.take() {
                     // A tokenizer reports an HTML block one line at a time, so
@@ -572,10 +765,22 @@ impl<'s, 'o> Builder<'s, 'o> {
                 }
             }
             Event::InlineHtml(_) => {
+                if let Some(tag) = nested_at(self.source, &segmentation.tags, &span) {
+                    if self.begins_line(tag) && self.splittable() {
+                        self.split_paragraph(tag);
+                    } else {
+                        self.open_inline(&span);
+                        self.emit_spanning(tag, true);
+                    }
+                    return;
+                }
                 self.open_inline(&span);
                 let node = self.html_node(span);
                 self.attach(node);
             }
+            // A run never opens with a break. One that would has lost what came
+            // before it on its line: the body of a tag, or a tag split off.
+            Event::SoftBreak if self.inline_parent.is_none() => {}
             Event::SoftBreak => {
                 self.open_inline(&span);
                 let node = self.node(NodeType::Softbreak, span);
@@ -678,7 +883,12 @@ impl<'s, 'o> Builder<'s, 'o> {
         self.text_node(raw, span)
     }
 
-    fn start(&mut self, container: &Container<'_>, span: Range<usize>) {
+    fn start(
+        &mut self,
+        container: &Container<'_>,
+        span: Range<usize>,
+        segmentation: &Segmentation,
+    ) {
         match container {
             Container::Emphasis
             | Container::Strong
@@ -704,11 +914,22 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
             }
             Container::CodeBlock { info } => {
+                // The info string is on the opening line.
+                let opening = span.start
+                    ..self
+                        .slice(&span)
+                        .find('\n')
+                        .map_or(span.end, |offset| span.start + offset);
+                let info = info
+                    .as_ref()
+                    .map(|info| self.unmasked(info, &opening, segmentation));
                 self.fence = Some(Fence {
+                    content_end: span.start,
                     span,
-                    info: info.as_ref().map(ToString::to_string),
+                    info,
                     content: String::new(),
                     content_start: None,
+                    split: false,
                 });
             }
             Container::Emphasis => {
@@ -728,6 +949,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
             }
             Container::Link { destination, title } => {
+                self.links.push(span.start);
                 let mut node = self.node(NodeType::Link, span);
                 node.set("href", Value::String(destination.to_string()));
                 if !title.is_empty() {
@@ -736,6 +958,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
             }
             Container::Image { destination, title } => {
+                self.links.push(span.start);
                 let mut node = self.node(NodeType::Image, span);
                 node.set("alt", Value::String(String::new()));
                 node.set("src", Value::String(destination.to_string()));
@@ -813,17 +1036,21 @@ impl<'s, 'o> Builder<'s, 'o> {
             .unwrap_or(0..0)
     }
 
-    fn end(&mut self, kind: ContainerKind, span: Range<usize>) {
+    fn end(&mut self, kind: ContainerKind, span: Range<usize>, segmentation: &Segmentation) {
         match kind {
-            ContainerKind::Emphasis
-            | ContainerKind::Strong
-            | ContainerKind::Strikethrough
-            | ContainerKind::Link => {
+            ContainerKind::Emphasis | ContainerKind::Strong | ContainerKind::Strikethrough => {
+                let node = self.pop();
+                self.attach(node);
+                return;
+            }
+            ContainerKind::Link => {
+                self.restore_destination(&span, segmentation);
                 let node = self.pop();
                 self.attach(node);
                 return;
             }
             ContainerKind::Image => {
+                self.restore_destination(&span, segmentation);
                 // Upstream treats an image as a leaf: its children become the
                 // `alt` text and are then dropped.
                 let mut node = self.pop();
@@ -855,12 +1082,107 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let node = self.pop();
                 self.attach(node);
             }
+            // The tokenizer's paragraph was closed where a tag split it.
+            ContainerKind::Paragraph if self.resumed => self.resumed = false,
             _ => {
+                self.close_block_tags();
                 let node = self.pop();
+                // A container the tokenizer opened inside a tag's span held only
+                // the tag's masked body, which was dropped.
+                if node.children.is_empty() && span.start < self.skip_to {
+                    return;
+                }
                 self.attach(node);
             }
         }
-        let _ = span;
+    }
+
+    /// Whether nothing but indentation and quote markers precede a tag on its
+    /// line.
+    fn begins_line(&self, tag: &TagSpan) -> bool {
+        let head = self.source.get(..tag.outer.start).unwrap_or("");
+        let line = head
+            .rfind('\n')
+            .map_or(head, |newline| head.get(newline + 1..).unwrap_or(""));
+        line.bytes().all(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+    }
+
+    /// Whether the open inline run belongs to a paragraph the parser can split,
+    /// or to a tight list item, which has no paragraph to split.
+    ///
+    /// A heading's run cannot be split, and neither can a paragraph that is
+    /// really a setext heading: the tokenizer ends either with a heading, not a
+    /// paragraph, so there would be no paragraph end to resume from.
+    fn splittable(&self) -> bool {
+        let Some(owner) = self.inline_parent.and_then(|index| self.stack.get(index)) else {
+            return true;
+        };
+        match owner.node_type {
+            NodeType::Paragraph => self.setext.is_none(),
+            NodeType::Item => true,
+            _ => false,
+        }
+    }
+
+    /// Split the open paragraph at a tag alone on one of its continuation
+    /// lines.
+    ///
+    /// The tokenizer reads a line indented four columns past a paragraph as
+    /// part of it, and so does stock markdown-it. Upstream's corpus runs with
+    /// `allowIndentation` on (`DIVERGENCES.md` entry 8), which lets the tag
+    /// interrupt the paragraph there, and the segmenter this replaced always
+    /// split at such a line. So the paragraph ends before the tag, and what
+    /// follows the tag is a paragraph of its own.
+    fn split_paragraph(&mut self, tag: &TagSpan) {
+        // The break before the tag's line ends the paragraph instead.
+        let top = self.top();
+        if top.node_type == NodeType::Inline
+            && top
+                .children
+                .last()
+                .is_some_and(|child| child.node_type == NodeType::Softbreak)
+        {
+            top.children.pop();
+        }
+        self.close_inline();
+        // In a tight list item there is no paragraph to close, and no paragraph
+        // end will come to resume from.
+        if !self.resumed && self.top().node_type == NodeType::Paragraph {
+            let node = self.pop();
+            self.attach(node);
+            self.resumed = true;
+        }
+        self.emit_spanning(tag, false);
+    }
+
+    /// Whether an event carries nothing but the body of a tag already emitted.
+    ///
+    /// An HTML block line runs on past the tag to its newline, so only what
+    /// follows the tag decides. Containers never qualify: dropping one would
+    /// unbalance the stack.
+    fn inside_emitted_tag(&self, event: &Event<'_>, span: &Range<usize>) -> bool {
+        span.start < self.skip_to
+            && !matches!(event, Event::Start(_) | Event::End(_))
+            && self
+                .source
+                .get(self.skip_to.min(span.end)..span.end)
+                .is_none_or(|rest| rest.trim().is_empty())
+    }
+
+    /// Close every block tag still open inside the container that is closing.
+    ///
+    /// Upstream's parser closes only the node on top of its stack, so there the
+    /// container's closing token becomes a `missing-opening` error, the
+    /// container stays open, and the rest of the document lands inside the tag.
+    /// Here the tag closes with its container and reports `missing-closing`, as
+    /// an inline tag left open at the end of its paragraph does.
+    fn close_block_tags(&mut self) {
+        while self.stack.len() > 1 && self.top().node_type == NodeType::Tag {
+            let mut node = self.pop();
+            let name = node.name().to_string();
+            node.errors.push(ValidationError::missing_closing(&name));
+            self.attach(node);
+        }
     }
 
     // ---- headings --------------------------------------------------------
@@ -940,11 +1262,89 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     // ---- fences ----------------------------------------------------------
 
-    /// Build the code-block node now that its content is known.
-    fn close_fence(&mut self) {
-        let Some(fence) = self.fence.take() else {
+    /// Add one line of a code block's content.
+    ///
+    /// The tokenizer's text is used, as everywhere, unless a tag overlaps the
+    /// line. Then the line is read from the source: the tokenizer saw the tag
+    /// masked, and a code block's content is literal.
+    fn code_text(&mut self, text: &str, span: Range<usize>, tags: &[TagSpan]) {
+        let indented = self
+            .fence
+            .as_ref()
+            .is_some_and(|fence| fence.info.is_none());
+        if indented && let Some(tag) = nested_at(self.source, tags, &span) {
+            self.split_code(tag);
+            return;
+        }
+        let piece = if overlaps(tags, &span) {
+            self.slice(&span)
+        } else {
+            text
+        };
+        let Some(fence) = &mut self.fence else {
             return;
         };
+        let blank = piece.trim().is_empty();
+        // A part split off after a tag starts at its first line with content, as
+        // any indented code block does.
+        if fence.split && fence.content.is_empty() && blank {
+            return;
+        }
+        if fence.content_start.is_none() {
+            fence.content_start = Some(span.start);
+            if fence.split {
+                fence.span.start = span.start;
+            }
+        }
+        fence.content.push_str(piece);
+        if !blank {
+            fence.content_end = span.end;
+        }
+    }
+
+    /// Split an indented code block at a tag alone on one of its lines.
+    ///
+    /// Upstream has no indented code block -- it disables markdown-it's `code`
+    /// rule -- so a tag alone on its line is a block tag at any indentation.
+    /// pulldown-cmark reads four columns in as code (`DIVERGENCES.md` entry 11).
+    /// The lines around the tag stay code, and the tag is a tag.
+    fn split_code(&mut self, tag: &TagSpan) {
+        let Some(mut before) = self.fence.take() else {
+            return;
+        };
+        let end = before.span.end;
+        trim_blank_lines(&mut before.content);
+        if !before.content.is_empty() {
+            before.span.end = before.content_end;
+            self.fence = Some(before);
+            self.close_fence();
+        }
+        self.emit_spanning(tag, false);
+        self.fence = Some(Fence {
+            span: tag.outer.end..end,
+            info: None,
+            content: String::new(),
+            content_start: None,
+            content_end: tag.outer.end,
+            split: true,
+        });
+    }
+
+    /// Build the code-block node now that its content is known.
+    fn close_fence(&mut self) {
+        let Some(mut fence) = self.fence.take() else {
+            return;
+        };
+        if fence.split {
+            trim_blank_lines(&mut fence.content);
+            fence.span.end = fence.content_end;
+        }
+        // An indented code block is never empty as the tokenizer reports it. One
+        // that is empty here held nothing but the masked body of a tag, or
+        // nothing after a tag that split it.
+        if fence.info.is_none() && fence.content.is_empty() {
+            return;
+        }
         let mut node = self.node(NodeType::Fence, fence.span.clone());
         node.set("content", Value::String(fence.content.clone()));
 
@@ -1043,6 +1443,8 @@ impl<'s, 'o> Builder<'s, 'o> {
                     pair.first().copied().unwrap_or(0),
                     pair.get(1).copied().unwrap_or(0),
                 ],
+                quote_markers: Vec::new(),
+                nested: false,
             };
             self.tag(&span, false);
             cursor = outer.end;
@@ -1068,19 +1470,22 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// Emit a text run, splitting it around any inline tags it contains.
     ///
     /// With no tag in it the tokenizer's own string is used, so backslash
-    /// escapes and character entities are already resolved. With a tag in it the
-    /// pieces come from the original source instead -- the tokenizer only ever
-    /// saw filler there -- and carry a backslash unescape of their own. Entity
-    /// references inside such a run are left as written, which is the one place
-    /// the two paths differ and is why the fast path is the default rather than
-    /// an optimisation.
-    fn text(&mut self, text: &str, span: Range<usize>, inline_tags: &[TagSpan]) {
+    /// escapes and character entities are already resolved. With any part of a
+    /// tag in it the pieces come from the original source instead -- the
+    /// tokenizer only ever saw filler there -- and carry a backslash unescape of
+    /// their own. Entity references inside such a run are left as written, which
+    /// is the one place the two paths differ and is why the fast path is the
+    /// default rather than an optimisation.
+    ///
+    /// A tag that spans lines reaches here in pieces, one per line. It is
+    /// emitted from the run it starts in, and the pieces after it are dropped.
+    fn text(&mut self, text: &str, span: Range<usize>, tags: &[TagSpan]) {
+        // A run that starts inside a tag already emitted carries the tag's
+        // masked tail first; only what follows the tag is text.
+        let tail = span.start < self.skip_to;
+        let span = if tail { self.skip_to..span.end } else { span };
         self.open_inline(&span);
-        let tags: Vec<&TagSpan> = inline_tags
-            .iter()
-            .filter(|tag| tag.outer.start >= span.start && tag.outer.end <= span.end)
-            .collect();
-        if tags.is_empty() {
+        if !tail && !overlaps(tags, &span) {
             if !text.is_empty() {
                 let node = self.text_node(text.to_string(), span);
                 self.attach(node);
@@ -1088,9 +1493,25 @@ impl<'s, 'o> Builder<'s, 'o> {
             return;
         }
 
+        let limit = self.ends.last().copied().unwrap_or(self.source.len());
+        let first = tags.partition_point(|tag| tag.outer.end <= span.start);
         let mut cursor = span.start;
-        for tag in tags {
+        for tag in tags
+            .get(first..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|tag| tag.outer.start < span.end)
+        {
+            // A tag that began before this run, or that runs past the end of the
+            // block, was never one: its text is literal.
+            if tag.outer.start < span.start || tag.outer.end > limit {
+                continue;
+            }
             self.push_source_text(cursor..tag.outer.start);
+            if tag.outer.end > span.end {
+                self.emit_spanning(tag, true);
+                return;
+            }
             self.tag(tag, true);
             cursor = tag.outer.end;
         }
@@ -1157,6 +1578,70 @@ fn collect_text(node: &Node<'_>) -> String {
 
 /// Strip a code span's backticks and apply CommonMark's one-space rule.
 ///
+/// Whether a container kind is inline.
+const fn is_inline(kind: ContainerKind) -> bool {
+    matches!(
+        kind,
+        ContainerKind::Emphasis
+            | ContainerKind::Strong
+            | ContainerKind::Strikethrough
+            | ContainerKind::Link
+            | ContainerKind::Image
+    )
+}
+
+/// The nested tag whose placeholder starts the content of `span`, if one does.
+///
+/// An HTML block line or a code line may begin with indentation the tokenizer
+/// kept, so whitespace before the placeholder is allowed.
+fn nested_at<'t>(source: &str, tags: &'t [TagSpan], span: &Range<usize>) -> Option<&'t TagSpan> {
+    let tag = tags.get(tags.partition_point(|tag| tag.outer.start < span.start))?;
+    let lead = source.get(span.start..tag.outer.start)?;
+    (tag.nested && tag.outer.start < span.end && lead.trim().is_empty()).then_some(tag)
+}
+
+/// Whether any tag overlaps `span`.
+fn overlaps(tags: &[TagSpan], span: &Range<usize>) -> bool {
+    tags.get(tags.partition_point(|tag| tag.outer.end <= span.start))
+        .is_some_and(|tag| tag.outer.start < span.end)
+}
+
+/// Where `masked`, one line of a masked tag, occurs in `text` at or after
+/// `from`.
+///
+/// A run of filler is as long as the tag's body on that line, so an occurrence
+/// that runs on into more filler is part of a longer tag, not this one.
+fn find_masked(text: &str, from: usize, masked: &str) -> Option<usize> {
+    let mut start = from;
+    while let Some(offset) = text.get(start..).and_then(|rest| rest.find(masked)) {
+        let at = start + offset;
+        let end = at + masked.len();
+        let before = text.get(..at).and_then(|head| head.bytes().last());
+        let after = text.get(end..).and_then(|tail| tail.bytes().next());
+        let joined = (masked.starts_with('x') && before == Some(b'x'))
+            || (masked.ends_with('x') && after == Some(b'x'));
+        if !joined {
+            return Some(at);
+        }
+        start = at + 1;
+    }
+    None
+}
+
+/// Drop the blank lines at the end of a code block's content.
+fn trim_blank_lines(content: &mut String) {
+    let end = content.trim_end().len();
+    if end == 0 {
+        content.clear();
+        return;
+    }
+    let keep = content
+        .get(end..)
+        .and_then(|rest| rest.find('\n'))
+        .map_or(content.len(), |offset| end + offset + 1);
+    content.truncate(keep);
+}
+
 /// Read from the source rather than taken from the tokenizer, because a tag
 /// inside a code span was masked and must come back literal -- which is also
 /// what markdown-it does, since its code rule consumes the span before its tag
