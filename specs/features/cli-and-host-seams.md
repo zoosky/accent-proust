@@ -1,3 +1,9 @@
+---
+uid: 01a19249-edd0-73de-b65d-15a23dac4027
+alias: p2
+model: feature
+---
+
 # A command-line host, and the two seams it needs
 
 Status: implemented, in pull requests #45 through #49; released in 0.11.0.

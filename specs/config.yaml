@@ -1,0 +1,14 @@
+# The spec corpus as an accent site: identity declarations checked by
+# `accent validate`, and the self-declared origin other repositories
+# import this corpus under.
+site:
+  name: accent-proust specs
+  origin: accent-proust
+content:
+  directory: "."
+  models_directory: "./models"
+theme:
+  name: plain
+  directory: "./themes"
+llms:
+  enabled: false

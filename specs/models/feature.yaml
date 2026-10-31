@@ -1,0 +1,9 @@
+name: Feature
+description: One engine feature spec, with the identity the federated corpus shares.
+uid:
+  required: true
+alias:
+  grammar: "p{number}"
+  scope: global
+  renumber: retire
+  allocation: local
