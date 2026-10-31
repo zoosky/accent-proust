@@ -1,3 +1,9 @@
+---
+uid: 01a19249-edd0-7d8a-86a2-5c27dedc81ec
+alias: p1
+model: feature
+---
+
 # Attribute spans: where each attribute was written
 
 Status: implemented in pull request #54; released in 0.12.0.
