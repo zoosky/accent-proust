@@ -81,6 +81,57 @@ fn unmaskable() -> impl Strategy<Value = String> {
     .prop_map(|parts| parts.concat())
 }
 
+/// Pieces of link syntax, and of destinations that try to hide a script scheme
+/// behind case, entities, whitespace, controls or a tag.
+const LINK_FRAGMENTS: &[&str] = &[
+    "[a](",
+    "![a](",
+    "[a](<",
+    "<",
+    ">",
+    ")",
+    "]",
+    "[r]",
+    "\n\n[r]: ",
+    "\n",
+    "javascript:",
+    "JaVaScRiPt:",
+    "jav&#x61;script:",
+    "java",
+    "script:",
+    "vbscript:",
+    "file:",
+    "data:",
+    "data:image/png;",
+    "data:text/html,",
+    " ",
+    "\t",
+    "&#9;",
+    "&#10;",
+    "\u{1}",
+    "\\",
+    "{% $y %}",
+    "alert(1)",
+];
+
+fn links() -> impl Strategy<Value = String> {
+    prop::collection::vec(
+        prop::sample::select(LINK_FRAGMENTS).prop_map(ToString::to_string),
+        0..16,
+    )
+    .prop_map(|parts| parts.concat())
+}
+
+/// A URL as a browser reads its scheme: without leading and trailing controls
+/// and spaces, without tabs and newlines anywhere, and in lower case.
+fn as_a_browser_reads_it(url: &str) -> String {
+    url.trim_matches(|character: char| character <= ' ')
+        .chars()
+        .filter(|character| !matches!(character, '\t' | '\n' | '\r'))
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
 /// Every string inside a value, however deeply nested.
 fn strings<'v>(value: &'v Value, out: &mut Vec<&'v str>) {
     match value {
@@ -159,6 +210,28 @@ proptest! {
                     text,
                     source
                 );
+            }
+        }
+    }
+
+    /// No `href` or `src` runs script or loads a document: no `javascript:`,
+    /// `vbscript:`, `file:` or `data:` URL but a bitmap image's.
+    #[test]
+    fn no_link_points_at_script(source in links()) {
+        let document = parse(&source);
+        for node in document.walk() {
+            for name in ["href", "src"] {
+                let Some(Value::String(url)) = node.get(name) else {
+                    continue;
+                };
+                let url = as_a_browser_reads_it(url);
+                let bitmap = ["gif", "png", "jpeg", "webp"]
+                    .iter()
+                    .any(|format| url.starts_with(&format!("data:image/{format};")));
+                let refused = ["javascript:", "vbscript:", "file:", "data:"]
+                    .iter()
+                    .any(|scheme| url.starts_with(scheme));
+                prop_assert!(bitmap || !refused, "{:?} from {:?}", url, source);
             }
         }
     }

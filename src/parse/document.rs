@@ -6,7 +6,7 @@
 //! The node shapes are upstream's, because the conformance corpus and the
 //! schemas above both name them.
 //!
-//! # Five places this is not a straight transliteration
+//! # Six places this is not a straight transliteration
 //!
 //! - **The `inline` node is synthesised, not received.** markdown-it emits an
 //!   `inline` token inside every block that has inline content, and marks the
@@ -34,6 +34,10 @@
 //!   as a processing instruction so that the tokenizer places it (see
 //!   [`segment`](super::segment)). An HTML block, inline HTML, or a line of an
 //!   indented code block that starts with one is turned back into the tag.
+//! - **A link to an unsafe URL is text.** markdown-it refuses a `javascript:`
+//!   destination and its like before the link exists; pulldown-cmark has no
+//!   such check and reports the link. So the parser refuses it instead, and
+//!   writes the link's syntax out as text around its content.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -62,6 +66,16 @@ struct Fence {
     /// Whether this is the part of an indented code block after a tag that
     /// split it, whose span is the lines it ends up holding.
     split: bool,
+}
+
+/// A link or image the tokenizer has opened and not yet closed.
+struct OpenLink {
+    /// Where its text ends so far. A destination and a title follow the text,
+    /// so only a tag past this point can be one of theirs.
+    text_end: usize,
+    /// Whether its destination is unsafe, so that its syntax is text and its
+    /// content belongs to the run around it.
+    refused: bool,
 }
 
 /// Builds one document.
@@ -114,11 +128,8 @@ pub(crate) struct Builder<'s, 'o> {
     /// carry its masked body, and every content event before this offset is
     /// dropped. Containers still open and close, so the stack stays balanced.
     skip_to: usize,
-    /// Where the text of each open link or image ends so far, innermost last.
-    ///
-    /// A destination and a title follow the text, so only a tag past this
-    /// point can be one of theirs.
-    links: Vec<usize>,
+    /// Every open link or image, innermost last.
+    links: Vec<OpenLink>,
     /// Where each open block container's span ends, innermost last.
     ///
     /// An inline tag that runs past the end of its block is not a tag: upstream
@@ -559,7 +570,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// The node is the innermost open link or image, which is not always the top
     /// of the stack: an inline tag left open in the link text is above it.
     fn restore_destination(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
-        let text_end = self.links.pop().unwrap_or(span.start);
+        let text_end = self.links.pop().map_or(span.start, |link| link.text_end);
         let after = if self.slice(span).starts_with('<') {
             span.clone()
         } else {
@@ -592,6 +603,40 @@ impl<'s, 'o> Builder<'s, 'o> {
                 node.set(name, Value::String(value));
             }
         }
+    }
+
+    /// Open a link or image whose destination is unsafe as text instead.
+    ///
+    /// markdown-it refuses such a link outright, so upstream reads its syntax
+    /// as text and its content as part of the run around it. The content still
+    /// arrives here inside the link, so only the syntax around it is written
+    /// out: the opening `[` or `![` now, and the rest at the link's end.
+    ///
+    /// An autolink's content is not inline content: `\` is not an escape in
+    /// it. Text that is no longer an autolink is, so a refused autolink is read
+    /// again as text, whole, and its content events are dropped.
+    fn refuse_link(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
+        if self.slice(span).starts_with('<') {
+            self.links.push(OpenLink {
+                text_end: span.end,
+                refused: true,
+            });
+            let text = unescape(self.slice(span));
+            self.text(&text, span.clone(), &segmentation.tags);
+            self.skip_to = self.skip_to.max(span.end);
+            return;
+        }
+        let opening = if self.slice(span).starts_with('!') {
+            2
+        } else {
+            1
+        };
+        let opening = span.start..(span.start + opening).min(span.end);
+        self.links.push(OpenLink {
+            text_end: opening.end,
+            refused: true,
+        });
+        self.push_source_text(opening);
     }
 
     /// Put every tag in `span` back into strings the tokenizer built from
@@ -740,8 +785,8 @@ impl<'s, 'o> Builder<'s, 'o> {
             event,
             Event::End(ContainerKind::Link | ContainerKind::Image)
         ) {
-            for end in &mut self.links {
-                *end = (*end).max(span.end);
+            for link in &mut self.links {
+                link.text_end = link.text_end.max(span.end);
             }
         }
         if !matches!(event, Event::Html(_)) {
@@ -989,8 +1034,16 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let node = self.node(NodeType::S, span);
                 self.open(node);
             }
+            Container::Link { destination, .. } | Container::Image { destination, .. }
+                if !safe_destination(destination) =>
+            {
+                self.refuse_link(&span, segmentation);
+            }
             Container::Link { destination, title } => {
-                self.links.push(span.start);
+                self.links.push(OpenLink {
+                    text_end: span.start,
+                    refused: false,
+                });
                 let mut node = self.node(NodeType::Link, span);
                 node.set("href", Value::String(destination.to_string()));
                 if !title.is_empty() {
@@ -999,7 +1052,10 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
             }
             Container::Image { destination, title } => {
-                self.links.push(span.start);
+                self.links.push(OpenLink {
+                    text_end: span.start,
+                    refused: false,
+                });
                 let mut node = self.node(NodeType::Image, span);
                 node.set("alt", Value::String(String::new()));
                 node.set("src", Value::String(destination.to_string()));
@@ -1082,6 +1138,17 @@ impl<'s, 'o> Builder<'s, 'o> {
             ContainerKind::Emphasis | ContainerKind::Strong | ContainerKind::Strikethrough => {
                 let node = self.pop();
                 self.attach(node);
+                return;
+            }
+            ContainerKind::Link | ContainerKind::Image
+                if self.links.last().is_some_and(|link| link.refused) =>
+            {
+                // What follows the text -- `](`, the destination and the title
+                // -- is text too.
+                let text_end = self.links.pop().map_or(span.start, |link| link.text_end);
+                let closing = text_end.min(span.end)..span.end;
+                let text = unescape(self.slice(&closing));
+                self.text(&text, closing, &segmentation.tags);
                 return;
             }
             ContainerKind::Link => {
@@ -1657,6 +1724,34 @@ fn collect_text(node: &Node<'_>) -> String {
         }
     }
     out
+}
+
+/// Whether a link or image may point at `destination`.
+///
+/// Ports markdown-it's `validateLink`, which upstream relies on to keep script
+/// out of `href` and `src`: no `javascript:`, `vbscript:`, `file:` or `data:`
+/// URL, except a `data:` URL of a GIF, PNG, JPEG or WebP image. markdown-it
+/// checks the percent-encoded destination, in which no tab, newline or other
+/// control character survives. This crate passes destinations through
+/// unencoded, and a browser drops those characters from a URL before reading
+/// its scheme, so they are dropped here before the check too.
+fn safe_destination(destination: &str) -> bool {
+    /// The longest prefix compared, `data:image/jpeg;`.
+    const PREFIX: usize = 16;
+    let head: String = destination
+        .trim_matches(|character: char| character <= ' ')
+        .chars()
+        .filter(|character| !matches!(character, '\t' | '\n' | '\r'))
+        .take(PREFIX)
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+    let unsafe_scheme = ["javascript:", "vbscript:", "file:", "data:"]
+        .iter()
+        .any(|scheme| head.starts_with(scheme));
+    !unsafe_scheme
+        || ["gif", "png", "jpeg", "webp"]
+            .iter()
+            .any(|format| head.starts_with(&format!("data:image/{format};")))
 }
 
 /// Whether a container kind is inline.

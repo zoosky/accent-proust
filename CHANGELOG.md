@@ -6,6 +6,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **A link or image to a `javascript:`, `vbscript:`, `file:` or `data:` URL is
+  text** (GHSA-cchw-px5q-45w5). Every earlier release rendered
+  `[a](javascript:alert(1))` as a working link, so a host rendering untrusted
+  documents served script to anyone who clicked it. The parser now refuses
+  the destinations upstream's markdown-it refuses (`validateLink`), allowing
+  only a GIF, PNG, JPEG or WebP `data:` image, and writes the link out as
+  text, as upstream does. Case, entities, whitespace and control characters
+  do not hide the scheme. A property test checks every `href` and `src`.
+
 ### Changed
 
 - **A block tag inside a list item or a blockquote belongs to it** (#73). The

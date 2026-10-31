@@ -156,6 +156,10 @@ name = "links"
 required-features = ["pulldown-cmark-tokenizer"]
 
 [[test]]
+name = "unsafe_links"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
 name = "node"
 required-features = ["pulldown-cmark-tokenizer"]
 
