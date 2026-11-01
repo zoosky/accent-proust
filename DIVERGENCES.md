@@ -77,6 +77,15 @@ also maintain a CommonMark implementation". The consequence is that CommonMark
 edge behaviour differs wherever the two engines differ; entries 5-7 are the
 specific cases where that difference is decided rather than incidental.
 
+One markdown-it check is ported rather than left to the engine, because
+upstream relies on it for safety: `validateLink`, which refuses a
+`javascript:`, `vbscript:`, `file:` or `data:` destination, so that the link is
+text. Three details differ. A tab or control character inside the scheme is
+refused here, where upstream percent-encodes it into a harmless link, because
+destinations are not percent-encoded here. An entity in a refused link stays as
+written. And a reference definition whose destination is refused disappears, as
+every definition does, where upstream shows it as a paragraph.
+
 ## 3. Schema hooks are synchronous
 
 **Upstream:** every schema hook returns a `MaybePromise`. `Schema.transform`
