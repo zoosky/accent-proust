@@ -274,9 +274,9 @@ document
 }
 
 #[test]
-fn an_indented_tag_line_in_a_setext_heading_stays_inline() {
-    // The tokenizer ends a setext heading, not a paragraph, so there is no
-    // paragraph end to resume from after a split.
+fn an_indented_tag_line_over_an_underline_splits_the_paragraph() {
+    // The underline is undone before the parse, so this is a paragraph like
+    // any other, split at the tag as `DIVERGENCES.md` entry 13 has it.
     let source = "foo\n    {% x /%}\n---\n\nafter\n";
     assert_eq!(
         outline(&parse(source)),
@@ -285,8 +285,7 @@ document
   paragraph
     inline
       text content=\"foo\"
-      softbreak
-      tag[x]
+  tag[x]
   hr
   paragraph
     inline

@@ -100,13 +100,6 @@ fn indented_equals_continue_the_paragraph_without_their_indent() {
         outline(&parse("  Foo\n  ===\n")),
         format!("document\n{}", continued("  ", "Foo", "softbreak"))
     );
-    assert_eq!(
-        outline(&parse("- Foo\n  ===\n")),
-        format!(
-            "document\n  list ordered=false marker=\"-\"\n    item\n{}",
-            continued("      ", "Foo", "softbreak")
-        )
-    );
 }
 
 #[test]
@@ -136,7 +129,71 @@ fn the_rule_covers_only_the_underline() {
     let document = parse("#a\r---\r");
     let rule = &document.children[1];
     let location = rule.location.as_ref().expect("a location");
-    assert_eq!(location.text, "---\r");
+    assert_eq!(location.text.trim_end(), "---");
+
+    let document = parse("> #a\n> ---\n");
+    let rule = &document.children[0].children[1];
+    let location = rule.location.as_ref().expect("a location");
+    assert_eq!(location.text.trim_end(), "---");
+}
+
+#[test]
+fn lines_after_equals_continue_the_paragraph() {
+    assert_eq!(
+        outline(&parse("Foo\n===\nbar\n")),
+        "\
+document
+  paragraph
+    inline
+      text content=\"Foo\"
+      softbreak
+      text content=\"===\"
+      softbreak
+      text content=\"bar\"
+"
+    );
+}
+
+#[test]
+fn short_dashes_continue_the_paragraph() {
+    for dashes in ["-", "--"] {
+        assert_eq!(
+            outline(&parse(&format!("Foo\n{dashes}\n"))),
+            format!(
+                "document\n  paragraph\n    inline\n      text content=\"Foo\"\n      \
+                 softbreak\n      text content=\"{dashes}\"\n"
+            )
+        );
+    }
+}
+
+#[test]
+fn a_backslash_before_equals_inside_a_tag_is_spent_on_the_break() {
+    assert_eq!(
+        outline(&parse("{% x %}a\\\n===\n{% /x %}\n")),
+        outline(&parse("{% x %}a\\\nb\n{% /x %}\n")).replace("\"b\"", "\"===\"")
+    );
+}
+
+#[test]
+fn an_undone_heading_in_a_tight_item_has_no_paragraph() {
+    // #87: the item stays tight, so its text sits directly in it.
+    for (source, rest) in [
+        ("- Foo\n  ---\n", "      hr\n"),
+        (
+            "- Foo\n  ===\n",
+            "        softbreak\n        text content=\"===\"\n",
+        ),
+    ] {
+        assert_eq!(
+            outline(&parse(source)),
+            format!(
+                "document\n  list ordered=false marker=\"-\"\n    item\n      inline\n        \
+                 text content=\"Foo\"\n{rest}"
+            ),
+            "{source:?}"
+        );
+    }
 }
 
 #[test]

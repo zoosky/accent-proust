@@ -20,11 +20,12 @@
 //!   `token.markup`; no pulldown-cmark event carries it. Container ranges cover
 //!   their delimiters, so the marker is the first byte or two of the span. This
 //!   is the borrow in [`Location`](crate::ast::Location) earning its place.
-//! - **Setext headings are rewritten.** Upstream disables markdown-it's
+//! - **Setext headings are tokenized again.** Upstream disables markdown-it's
 //!   `lheading` rule, so `Testing\n-------` is a paragraph followed by a
 //!   thematic break. pulldown-cmark has no such switch, but a setext heading is
-//!   recognisable after the fact -- its span covers more than one line -- and
-//!   its underline is recoverable from that span. The sibling case, upstream's
+//!   recognisable in its output -- its span covers more than one line -- so
+//!   [`undo_setext`] rewrites the underline so that it cannot be one, and the
+//!   run is tokenized again. The sibling case, upstream's
 //!   disabled `code` rule, is *not* recoverable that way, and is
 //!   `DIVERGENCES.md` entry 11.
 //! - **A fence's content is literal by default.** `DIVERGENCES.md` entry 1
@@ -48,7 +49,7 @@ use crate::parse::ParseOptions;
 use crate::parse::annotate::annotate;
 use crate::parse::scan::{CLOSE, OPEN, contains_markdoc_tag_in_url, find_tag_end};
 use crate::parse::segment::{Block, Segmentation, TagSpan};
-use crate::parse::tokenizer::{Alignment, Container, ContainerKind, Event, Tokenizer};
+use crate::parse::tokenizer::{Alignment, Container, ContainerKind, Event, Spanned, Tokenizer};
 
 /// A fenced or indented code block being accumulated.
 ///
@@ -100,8 +101,6 @@ pub(crate) struct Builder<'s, 'o> {
     inline_parent: Option<usize>,
     /// The source span of the open inline run, for link validation.
     inline_span: Option<Range<usize>>,
-    /// The underline of the open setext heading, when the open block is one.
-    setext: Option<Range<usize>>,
     fence: Option<Fence>,
     /// Consecutive block-level HTML events, waiting to be read as one thing.
     ///
@@ -146,7 +145,6 @@ impl<'s, 'o> Builder<'s, 'o> {
             stack: vec![Node::new(NodeType::Document)],
             inline_parent: None,
             inline_span: None,
-            setext: None,
             fence: None,
             html_block: None,
             alignments: Vec::new(),
@@ -171,7 +169,18 @@ impl<'s, 'o> Builder<'s, 'o> {
             match block {
                 Block::Markdown(range) => {
                     let text = segmentation.masked.get(range.clone()).unwrap_or("");
-                    for (event, span) in tokenizer.tokenize(text) {
+                    let mut rewritten: Option<String> = None;
+                    let events = loop {
+                        let buffer = rewritten.as_deref().unwrap_or(text);
+                        let events = tokenizer.tokenize(buffer);
+                        match undo_setext(buffer, &events) {
+                            Some(next) => rewritten = Some(next),
+                            None => break events,
+                        }
+                    };
+                    let buffer = rewritten.as_deref().unwrap_or(text);
+                    for (event, span) in events {
+                        let event = restore_underline(event, &span, text, buffer);
                         let span = range.start + span.start..range.start + span.end;
                         self.event(&event, span, segmentation);
                     }
@@ -1232,11 +1241,9 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// Whether the open inline run belongs to a paragraph the parser can split,
     /// or to a tight list item, which has no paragraph to split.
     ///
-    /// A heading's run cannot be split, and neither can a paragraph that is
-    /// really a setext heading: the tokenizer ends either with a heading, not a
-    /// paragraph, so there would be no paragraph end to resume from. Nor can a
-    /// run with an emphasis or a link open across the tag's line, whose end the
-    /// tokenizer has already matched past it.
+    /// A heading's run cannot be split. Nor can a run with an emphasis or a
+    /// link open across the tag's line, whose end the tokenizer has already
+    /// matched past it.
     fn splittable(&self) -> bool {
         let Some(owner) = self.inline_parent.and_then(|index| self.stack.get(index)) else {
             return true;
@@ -1248,11 +1255,7 @@ impl<'s, 'o> Builder<'s, 'o> {
         {
             return false;
         }
-        match owner.node_type {
-            NodeType::Paragraph => self.setext.is_none(),
-            NodeType::Item => true,
-            _ => false,
-        }
+        matches!(owner.node_type, NodeType::Paragraph | NodeType::Item)
     }
 
     /// Split the open paragraph at a tag alone on one of its continuation
@@ -1337,91 +1340,17 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     // ---- headings --------------------------------------------------------
 
-    /// Open a heading, or a paragraph if it is really a setext heading.
-    ///
-    /// Upstream disables markdown-it's `lheading` rule, so `Testing\n---` is a
-    /// paragraph and a thematic break. A setext heading is the one pulldown-cmark
-    /// node whose rule can be undone after the fact.
-    ///
-    /// An ATX heading is always one line and a setext heading never is, so a
-    /// line break inside the span tells them apart. Whether the span starts
-    /// with `#` does not: `#a` over `---` is a setext heading, because `#a` is
-    /// not an ATX opening. Only a break before the span's own line ending
-    /// counts, since the tokenizer's ATX span includes it (`# a\n`).
+    /// Open a heading. Every heading that reaches here is an ATX heading:
+    /// [`tokenize_without_setext`] has already undone the setext ones.
     fn open_heading(&mut self, level: u8, span: Range<usize>) {
-        if !self
-            .slice(&span)
-            .trim_end_matches(LINE_BREAK)
-            .contains(LINE_BREAK)
-        {
-            let mut node = self.node(NodeType::Heading, span);
-            node.set("level", Value::Number(f64::from(level)));
-            self.open(node);
-            return;
-        }
-        let underline = last_line(self.source, &span);
-        let node = self.node(NodeType::Paragraph, span);
+        let mut node = self.node(NodeType::Heading, span);
+        node.set("level", Value::Number(f64::from(level)));
         self.open(node);
-        self.setext = Some(underline);
     }
 
     fn close_heading(&mut self) {
-        let Some(underline) = self.setext.take() else {
-            let node = self.pop();
-            self.attach(node);
-            return;
-        };
-        // The underline's line still carries its container's prefix (`> `, an
-        // item's indent), but the underline itself is one run of `=` or `-`
-        // at the end of it.
-        let text = self.slice(&underline).trim_end();
-        let mut node = self.pop();
-        if text.ends_with('=') {
-            // `Testing\n===` is one paragraph: the underline is a continuation
-            // line, joined to it by the break the line above ends in.
-            let marker = &text[text.trim_end_matches('=').len()..];
-            let above = line_before(self.source, underline.start);
-            let hard_spaces = above.ends_with("  ");
-            let escaped =
-                !hard_spaces && (above.len() - above.trim_end_matches('\\').len()) % 2 == 1;
-            let mut breaker = Node::new(if hard_spaces || escaped {
-                NodeType::Hardbreak
-            } else {
-                NodeType::Softbreak
-            });
-            breaker.inline = true;
-            let mut trailing = Node::new(NodeType::Text);
-            trailing.inline = true;
-            trailing.set("content", Value::String(marker.to_string()));
-            if let Some(inline) = node
-                .children
-                .iter_mut()
-                .find(|child| child.node_type == NodeType::Inline)
-            {
-                // A heading keeps a final `\` as text; a paragraph line spends
-                // it on the hard break.
-                if escaped
-                    && let Some(last) = inline.children.last_mut()
-                    && let Some(Value::String(content)) = last.get("content")
-                    && let Some(kept) = content.strip_suffix('\\')
-                {
-                    let kept = kept.to_string();
-                    if kept.is_empty() {
-                        inline.children.pop();
-                    } else {
-                        last.set("content", Value::String(kept));
-                    }
-                }
-                inline.push(breaker);
-                inline.push(trailing);
-            }
-            self.attach(node);
-            return;
-        }
-        // `Testing\n---` is a paragraph and a thematic break.
+        let node = self.pop();
         self.attach(node);
-        let rule = self.node(NodeType::Hr, underline);
-        self.attach(rule);
     }
 
     // ---- lists -----------------------------------------------------------
@@ -1740,24 +1669,68 @@ fn list_marker(span: &str, ordered: bool) -> String {
 /// What ends a line: `\n`, `\r\n`, or a bare `\r`, as CommonMark has it.
 const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
-/// The range of the last line of `span`.
-fn last_line(source: &str, span: &Range<usize>) -> Range<usize> {
-    let end = span.end;
-    let start = source
-        .get(span.start..end)
-        .and_then(|text| text.trim_end().rfind(LINE_BREAK))
-        .map_or(span.start, |offset| span.start + offset + 1);
-    start..end
+/// `buffer` with the underline of every setext heading in `events` rewritten
+/// so that it cannot be one, or [`None`] when there is no setext heading.
+///
+/// An ATX heading is always one line and a setext heading never is, so a line
+/// break inside the span tells them apart. Whether the span starts with `#`
+/// does not: `#a` is not an ATX opening, so `#a` over `---` is setext (#81).
+///
+/// The underline is the run of `=` or `-` that ends the span. The rewrite
+/// keeps every offset. A run of three or more `-` becomes `*`, a thematic
+/// break that is never an underline, which is how upstream reads it. Any other
+/// run gets an `x` in its first byte and is left a line of text continuing the
+/// paragraph; [`restore_underline`] puts the byte back.
+fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
+    let mut out: Option<String> = None;
+    for (event, span) in events {
+        if !matches!(event, Event::Start(Container::Heading { .. })) {
+            continue;
+        }
+        let Some(text) = buffer.get(span.clone()).map(str::trim_end) else {
+            continue;
+        };
+        if !text.contains(LINE_BREAK) {
+            continue;
+        }
+        let Some(marker) = text.chars().last().filter(|c| matches!(c, '=' | '-')) else {
+            continue;
+        };
+        let run = text.len() - text.trim_end_matches(marker).len();
+        let start = span.start + text.len() - run;
+        let replacement = if marker == '-' && run >= 3 {
+            "*".repeat(run)
+        } else {
+            format!("x{}", marker.to_string().repeat(run - 1))
+        };
+        out.get_or_insert_with(|| buffer.to_string())
+            .replace_range(start..start + run, &replacement);
+    }
+    out
 }
 
-/// The line that ends where the line starting at `start` begins, without its
-/// line ending.
-fn line_before(source: &str, start: usize) -> &str {
-    let above = source.get(..start).unwrap_or_default();
-    let above = above.trim_end_matches(LINE_BREAK);
-    above
-        .rfind(LINE_BREAK)
-        .map_or(above, |offset| &above[offset + 1..])
+/// Put back an underline byte that [`undo_setext`] replaced with `x`.
+///
+/// The underline is plain text after the rewrite, so its text event is the
+/// bytes it covers. Where those differ between the rewritten buffer and the
+/// masked text, the event is read from the masked text instead.
+fn restore_underline<'e>(
+    event: Event<'e>,
+    span: &Range<usize>,
+    text: &'e str,
+    buffer: &str,
+) -> Event<'e> {
+    match event {
+        Event::Text(content)
+            if buffer.get(span.clone()) == Some(&*content)
+                && text
+                    .get(span.clone())
+                    .is_some_and(|written| written != content) =>
+        {
+            Event::Text(Cow::Borrowed(text.get(span.clone()).unwrap_or_default()))
+        }
+        other => other,
+    }
 }
 
 /// Every text descendant of a node, concatenated.
