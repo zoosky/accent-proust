@@ -571,9 +571,11 @@ international host as a full link to its punycode form.
 
 **Here:** the syntax tree keeps each destination as written, and the transform
 encodes a link's `href` and an image's `src` with a port of the same function
-(`src/transform/link.rs`). The renderable tree and the HTML carry upstream's
-bytes. A schema with a `render` gets the encoded value; a `transform` hook that
-reads the node's attribute itself gets the written one.
+(`src/transform/link.rs`). The destination is encoded as it is read from the
+node, so a custom attribute type is handed the encoded value, as upstream's is,
+and a schema default is not encoded. The renderable tree and the HTML carry
+upstream's bytes. A `transform` hook that reads the node's attribute itself
+gets the written one.
 
 **Why:** the formatter is this crate's round trip, and its first consumer
 rewrites authors' files with it. Encoding in the syntax tree would make every
@@ -585,5 +587,11 @@ receives does it.
 **What it costs, exactly.** No corpus case: none has a destination that
 encoding changes. A host that reads `href` from the syntax tree, or a
 `transform` hook for `link` or `image` that does, sees the destination as
-written and encodes it itself if it needs to. The port's unit tests and 40,000
+written and encodes it itself if it needs to. Validation runs on the syntax
+tree, so a `matches` pattern or a custom `validate` on `href` or `src` sees the
+written destination where upstream's sees the encoded one. And an autolink's
+text is its destination as written: upstream decodes it for display
+(`normalizeLinkText`, punycode back to Unicode and escapes back to
+characters), which differs only for an autolink written already encoded, such
+as `<https://xn--bcher-kva.de/%C3%A4>`. The port's unit tests and 40,000
 generated URLs give markdown-it 15.0.1's output byte for byte.

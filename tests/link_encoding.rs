@@ -114,3 +114,48 @@ fn an_autolink_keeps_its_text_readable() {
     let html = render::render_all(&transform::transform(&document, &builtins::config()).into_vec());
     assert!(html.contains(">https://bücher.de/ä</a>"), "{html}");
 }
+
+/// A custom `href` type that records the value it is handed.
+struct Seen;
+
+impl accent_proust::validate::AttributeType for Seen {
+    fn name(&self) -> &'static str {
+        "Seen"
+    }
+
+    fn transform(
+        &self,
+        value: Option<&Value>,
+        _config: &accent_proust::validate::Config<'_>,
+    ) -> Option<Scalar> {
+        match value {
+            Some(Value::String(url)) => Some(Scalar::String(format!("{url}|"))),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn a_custom_type_is_handed_the_encoded_destination() {
+    use std::sync::Arc;
+
+    use accent_proust::validate::{MapSchemaSource, Schema, SchemaAttribute, ValidationType};
+
+    let mut schemas = MapSchemaSource::builtin();
+    schemas.insert_node(
+        NodeType::Link,
+        Schema::new().render("a").attribute(
+            "href",
+            SchemaAttribute {
+                attribute_type: Some(ValidationType::Custom(Arc::new(Seen))),
+                ..SchemaAttribute::default()
+            },
+        ),
+    );
+    let config = builtins::config_with(Arc::new(schemas));
+    let document = parse("[a](</ä b>)\n");
+    let html = render::render_all(&transform::transform(&document, &config).into_vec());
+    // Upstream's custom type sees what its tokenizer stored, the encoded form,
+    // and what it returns is not encoded again: the `|` stays.
+    assert!(html.contains("href=\"/%C3%A4%20b|\""), "{html}");
+}

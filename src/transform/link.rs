@@ -249,9 +249,10 @@ impl Url {
 }
 
 /// JavaScript's `String.prototype.trim`: Unicode white space and the byte
-/// order mark.
+/// order mark, but not U+0085, which Unicode counts as white space and
+/// JavaScript does not.
 fn trim(text: &str) -> &str {
-    text.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+    text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
 }
 
 /// The first offset of any of `bytes` in `text`.
@@ -280,17 +281,11 @@ fn split_host(hostname: &str) -> Option<(String, String)> {
         if part.is_empty() || is_host_part(part) {
             continue;
         }
-        let ascii: String = part
-            .chars()
-            .flat_map(|c| {
-                if c.is_ascii() {
-                    vec![c]
-                } else {
-                    vec!['x'; c.len_utf16()]
-                }
-            })
-            .collect();
-        if is_host_part(&ascii) {
+        let passes_as_ascii = part.encode_utf16().count() <= 63
+            && part.chars().all(|c| {
+                !c.is_ascii() || c.is_ascii_alphanumeric() || matches!(c, '+' | '_' | '-')
+            });
+        if passes_as_ascii {
             continue;
         }
         let owned = |slice: Option<&[&str]>| -> Vec<String> {
@@ -459,6 +454,8 @@ mod tests {
             ("/x{%$y%}z", "/x%7B%25$y%25%7Dz"),
             ("https://BÜCHER.de/", "https://xn--BCHER-2pa.de/"),
             ("https://ｂücher．de/", "https://xn--cher-zra77610b.de/"),
+            ("\u{85}/x", "%C2%85/x"),
+            ("\u{feff} /x\u{a0}", "/x"),
         ] {
             assert_eq!(normalize_link(written), encoded, "{written:?}");
         }

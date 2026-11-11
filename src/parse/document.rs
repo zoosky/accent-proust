@@ -1873,9 +1873,11 @@ fn collect_text(node: &Node<'_>) -> String {
 /// out of `href` and `src`: no `javascript:`, `vbscript:`, `file:` or `data:`
 /// URL, except a `data:` URL of a GIF, PNG, JPEG or WebP image. markdown-it
 /// checks the percent-encoded destination, in which no tab, newline or other
-/// control character survives. This crate passes destinations through
-/// unencoded, and a browser drops those characters from a URL before reading
-/// its scheme, so they are dropped here before the check too.
+/// control character survives. The syntax tree here keeps the destination as
+/// written (`DIVERGENCES.md` entry 17), and a browser drops those characters
+/// from a URL before reading its scheme, so they are dropped before the check
+/// too. That refuses a few destinations upstream renders encoded, such as
+/// `java\tscript:`, which errs on the side of refusing.
 fn safe_destination(destination: &str) -> bool {
     /// The longest prefix compared, `data:image/jpeg;`.
     const PREFIX: usize = 16;
