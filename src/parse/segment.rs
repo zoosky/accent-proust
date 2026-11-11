@@ -37,11 +37,12 @@
 //! emphasis rule reaches them. A pull parser has no cursor to move.
 //!
 //! Masking reproduces that property exactly and cheaply: the tokenizer is given
-//! a buffer of identical length in which every tag's interior is `x`, so it
-//! cannot find markup that is not there, and every byte range it reports still
-//! indexes the original source. The parser above reads the real text back
-//! through those ranges, and never takes text from the tokenizer where a tag
-//! was.
+//! a buffer of identical length in which every tag's interior is `x` but for
+//! its spaces and tabs, so it cannot find markup that is not there, and
+//! whitespace still ends a link destination as it does upstream. Every byte
+//! range it reports still indexes the original source. The parser above reads
+//! the real text back through those ranges, and never takes text from the
+//! tokenizer where a tag was.
 //!
 //! # Block tags inside containers
 //!
@@ -335,9 +336,11 @@ impl Scan<'_> {
     /// markers and the whitespace around them: a tag written inside a quote or
     /// a list item continues on lines that carry the quote's markers and the
     /// item's indentation, and without them the tokenizer would end the
-    /// container halfway through the tag. Everything else becomes `x`, which is
-    /// inert in CommonMark and, being ASCII, keeps the buffer the same length
-    /// and still valid UTF-8.
+    /// container halfway through the tag. So do spaces and tabs (#80): a link
+    /// destination cannot hold whitespace, so `[a](/x{% $y %}z)` is not a link
+    /// upstream, and a tokenizer that saw `{%xxxx%}` would make one.
+    /// Everything else becomes `x`, which is inert in CommonMark and, being
+    /// ASCII, keeps the buffer the same length and still valid UTF-8.
     fn mask_body(&mut self, lines: &[Range<usize>], span: &TagSpan, depth: usize) -> Vec<usize> {
         let mut markers = Vec::new();
         let [first, end] = span.lines;
@@ -353,7 +356,9 @@ impl Scan<'_> {
                 start = content;
             }
             for offset in start..stop {
-                if let Some(byte) = self.masked.get_mut(offset) {
+                if let Some(byte) = self.masked.get_mut(offset)
+                    && !matches!(*byte, b' ' | b'\t')
+                {
                     *byte = b'x';
                 }
             }
@@ -577,7 +582,7 @@ mod tests {
         let source = "    {% foo %}\n";
         let segmentation = segment(source);
         assert_eq!(blocks(source), [format!("markdown {source:?}")]);
-        assert_eq!(segmentation.masked, "    <?xxxxx?>\n");
+        assert_eq!(segmentation.masked, "    <? xxx ?>\n");
         assert!(segmentation.tags.iter().all(|tag| tag.nested));
     }
 
@@ -594,7 +599,7 @@ mod tests {
             assert_eq!(segmentation.tags.len(), 1, "{source:?}");
             assert!(segmentation.tags[0].nested, "{source:?}");
             assert_eq!(segmentation.masked.len(), source.len());
-            assert!(segmentation.masked.contains("<?xxxxx?>"), "{source:?}");
+            assert!(segmentation.masked.contains("<? xxx ?>"), "{source:?}");
         }
     }
 
@@ -616,7 +621,7 @@ mod tests {
     fn a_nested_tag_keeps_its_quote_markers_and_indentation() {
         let source = "> - {% foo\n>     bar=1 %}\n";
         let segmentation = segment(source);
-        assert_eq!(segmentation.masked, "> - <?xxxx\n>     xxxxxx?>\n");
+        assert_eq!(segmentation.masked, "> - <? xxx\n>     xxxxx ?>\n");
         assert_eq!(segmentation.tags[0].quote_markers, [11]);
         assert_eq!(&source[11..12], ">");
     }
@@ -625,7 +630,7 @@ mod tests {
     fn a_tag_outside_a_quote_masks_a_leading_marker() {
         let source = "foo {% bar\n> baz %} qux\n";
         let segmentation = segment(source);
-        assert_eq!(segmentation.masked, "foo {%xxxx\nxxxxxx%} qux\n");
+        assert_eq!(segmentation.masked, "foo {% xxx\nx xxx %} qux\n");
         assert_eq!(segmentation.tags[0].quote_markers, []);
     }
 
@@ -644,7 +649,7 @@ mod tests {
         let segmentation = segment(source);
         assert_eq!(segmentation.tags.len(), 2);
         assert_eq!(segmentation.tags[1].lines, [1, 2]);
-        assert_eq!(segmentation.masked, "a {%xxxx\nxxxx%} b {%xxxxxx%} c\n");
+        assert_eq!(segmentation.masked, "a {% xxx\nxxx %} b {% xxxx %} c\n");
     }
 
     #[test]
@@ -677,7 +682,7 @@ mod tests {
         let source = "Example {% foo bar=\"a*b*c\" %} baz";
         let segmentation = segment(source);
         assert_eq!(segmentation.masked.len(), source.len());
-        assert_eq!(segmentation.masked, "Example {%xxxxxxxxxxxxxxxxx%} baz");
+        assert_eq!(segmentation.masked, "Example {% xxx xxxxxxxxxxx %} baz");
         assert_eq!(segmentation.tags.len(), 1);
         assert_eq!(
             &source[segmentation.tags[0].inner.clone()],
@@ -688,7 +693,7 @@ mod tests {
     #[test]
     fn masking_preserves_newlines_so_block_structure_survives() {
         let source = "Example {% foo\n#bar %} baz";
-        assert_eq!(segment(source).masked, "Example {%xxxx\nxxxxx%} baz");
+        assert_eq!(segment(source).masked, "Example {% xxx\nxxxx %} baz");
     }
 
     #[test]
@@ -696,7 +701,7 @@ mod tests {
         let source = "a {% foo %}b{% /foo %} c";
         let segmentation = segment(source);
         assert_eq!(segmentation.tags.len(), 2);
-        assert_eq!(segmentation.masked, "a {%xxxxx%}b{%xxxxxx%} c");
+        assert_eq!(segmentation.masked, "a {% xxx %}b{% xxxx %} c");
     }
 
     #[test]

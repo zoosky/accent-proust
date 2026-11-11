@@ -77,6 +77,9 @@ struct OpenLink {
     /// Whether its destination is unsafe, so that its syntax is text and its
     /// content belongs to the run around it.
     refused: bool,
+    /// Where the definition a reference link resolves to is written, when the
+    /// tokenizer reports it. Its destination and title come from there.
+    definition: Option<Range<usize>>,
 }
 
 /// Builds one document.
@@ -589,8 +592,11 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// The node is the innermost open link or image, which is not always the top
     /// of the stack: an inline tag left open in the link text is above it.
     fn restore_destination(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
-        let text_end = self.links.pop().map_or(span.start, |link| link.text_end);
-        let after = if self.slice(span).starts_with('<') {
+        let link = self.links.pop();
+        let text_end = link.as_ref().map_or(span.start, |link| link.text_end);
+        let after = if let Some(definition) = link.and_then(|link| link.definition) {
+            definition
+        } else if self.slice(span).starts_with('<') {
             span.clone()
         } else {
             text_end.min(span.end)..span.end
@@ -639,6 +645,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             self.links.push(OpenLink {
                 text_end: span.end,
                 refused: true,
+                definition: None,
             });
             let text = unescape(self.slice(span));
             self.text(&text, span.clone(), &segmentation.tags);
@@ -654,6 +661,7 @@ impl<'s, 'o> Builder<'s, 'o> {
         self.links.push(OpenLink {
             text_end: opening.end,
             refused: true,
+            definition: None,
         });
         self.push_source_text(opening);
     }
@@ -790,6 +798,14 @@ impl<'s, 'o> Builder<'s, 'o> {
     // ---- events ----------------------------------------------------------
 
     fn event(&mut self, event: &Event<'_>, span: Range<usize>, segmentation: &Segmentation) {
+        // Not a position in the stream: where the link that just opened takes
+        // its destination and title from.
+        if matches!(event, Event::LinkDefinition) {
+            if let Some(link) = self.links.last_mut() {
+                link.definition = Some(span);
+            }
+            return;
+        }
         match event {
             Event::Start(container) if !is_inline(container.kind()) => self.ends.push(span.end),
             Event::End(kind) if !is_inline(*kind) => {
@@ -898,6 +914,8 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let node = self.node(NodeType::Hr, span);
                 self.attach(node);
             }
+            // Taken at the top of `event`.
+            Event::LinkDefinition => {}
         }
     }
 
@@ -1062,6 +1080,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.links.push(OpenLink {
                     text_end: span.start,
                     refused: false,
+                    definition: None,
                 });
                 let mut node = self.node(NodeType::Link, span);
                 node.set("href", Value::String(destination.to_string()));
@@ -1074,6 +1093,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.links.push(OpenLink {
                     text_end: span.start,
                     refused: false,
+                    definition: None,
                 });
                 let mut node = self.node(NodeType::Image, span);
                 node.set("alt", Value::String(String::new()));

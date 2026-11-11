@@ -230,6 +230,14 @@ pub enum Event<'s> {
     HardBreak,
     /// A thematic break.
     Rule,
+    /// The link reference definition the link or image that just opened
+    /// resolves to. Its range is the definition's, `[r]: /dest "title"`,
+    /// wherever that is written, and not a position in the stream.
+    ///
+    /// The parser reads a destination's or a title's tags back from that
+    /// range. Reporting it is optional: without it, a tag in a definition
+    /// reaches the link only as masked text.
+    LinkDefinition,
 }
 
 /// Turns CommonMark into events.
