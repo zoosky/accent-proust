@@ -1,8 +1,8 @@
 //! The tokenizer reads a masked copy of the document; the tree never does.
 //!
 //! The segmenter overwrites every tag's body with `x` before the CommonMark
-//! parse, and a tag inside a container gets `<?` and `?>` for delimiters as
-//! well. Each test here is a shape where that filler used to reach the tree --
+//! parse, all but its spaces and tabs, and a tag inside a container gets `<?`
+//! and `?>` for delimiters as well. Each test here is a shape where that filler used to reach the tree --
 //! a tag across a line break, a tag in a quote, a code block or a link
 //! destination -- or where a tag inside a container used to leave it.
 //!
@@ -452,6 +452,30 @@ fn a_reference_link_gets_the_tags_of_its_definition_back() {
             .unwrap_or_else(|| panic!("{source:?}:\n{}", outline(&document)));
         assert_eq!(attribute(node, url), "\"/x{%$y%}z\"", "{source:?}");
         assert_eq!(attribute(node, "title"), "\"t{% $z %}\"", "{source:?}");
+    }
+}
+
+#[test]
+fn a_tag_in_a_definitions_label_is_not_its_destinations() {
+    for (source, name, expected) in [
+        ("[a{%$p%}]\n\n[a{%$p%}]: /y{%$q%}\n", "href", "\"/y{%$q%}\""),
+        (
+            "[a{%$p%}][]\n\n[a{%$p%}]: /y \"{%$q%}\"\n",
+            "title",
+            "\"{%$q%}\"",
+        ),
+        (
+            "[a][b\\]{%$p%}]\n\n[b\\]{%$p%}]: /y{%$q%}\n",
+            "href",
+            "\"/y{%$q%}\"",
+        ),
+    ] {
+        let document = parse(source);
+        let link = document
+            .walk()
+            .find(|node| node.node_type == NodeType::Link)
+            .unwrap_or_else(|| panic!("{source:?}:\n{}", outline(&document)));
+        assert_eq!(attribute(link, name), expected, "{source:?}");
     }
 }
 
