@@ -229,3 +229,17 @@ document
 "
     );
 }
+
+#[test]
+fn a_title_over_an_undone_underline_keeps_its_marker() {
+    for (source, expected) in [
+        ("[x](/u 'a\n===\n')\n", "title=\"a\\n===\\n\""),
+        ("![a](/u 'a\n===\n')\n", "title=\"a\\n===\\n\""),
+        ("[x](/u 'a\n--\n')\n", "title=\"a\\n--\\n\""),
+        ("[x]\n\n[x]: /u 'a\n===\n'\n", "title=\"a\\n===\\n\""),
+    ] {
+        let tree = outline(&parse(source));
+        assert!(tree.contains(expected), "{source:?}:\n{tree}");
+        assert!(!tree.contains('\u{1}'), "{source:?}:\n{tree}");
+    }
+}

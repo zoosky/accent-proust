@@ -169,18 +169,26 @@ impl<'s, 'o> Builder<'s, 'o> {
             match block {
                 Block::Markdown(range) => {
                     let text = segmentation.masked.get(range.clone()).unwrap_or("");
+                    // Each pass turns at least one underline-shaped line
+                    // into one that is not, so there are never more passes
+                    // than lines.
                     let mut rewritten: Option<String> = None;
+                    let mut passes = text.lines().count() + 1;
                     let events = loop {
                         let buffer = rewritten.as_deref().unwrap_or(text);
                         let events = tokenizer.tokenize(buffer);
+                        passes -= 1;
                         match undo_setext(buffer, &events) {
-                            Some(next) => rewritten = Some(next),
-                            None => break events,
+                            Some(next) if passes > 0 => rewritten = Some(next),
+                            _ => break events,
                         }
                     };
-                    let buffer = rewritten.as_deref().unwrap_or(text);
                     for (event, span) in events {
-                        let event = restore_underline(event, &span, text, buffer);
+                        let event = if rewritten.is_some() {
+                            restore_underline(event)
+                        } else {
+                            event
+                        };
                         let span = range.start + span.start..range.start + span.end;
                         self.event(&event, span, segmentation);
                     }
@@ -1341,7 +1349,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     // ---- headings --------------------------------------------------------
 
     /// Open a heading. Every heading that reaches here is an ATX heading:
-    /// [`tokenize_without_setext`] has already undone the setext ones.
+    /// [`undo_setext`] has already undone the setext ones.
     fn open_heading(&mut self, level: u8, span: Range<usize>) {
         let mut node = self.node(NodeType::Heading, span);
         node.set("level", Value::Number(f64::from(level)));
@@ -1669,8 +1677,15 @@ fn list_marker(span: &str, ordered: bool) -> String {
 /// What ends a line: `\n`, `\r\n`, or a bare `\r`, as CommonMark has it.
 const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
-/// `buffer` with the underline of every setext heading in `events` rewritten
-/// so that it cannot be one, or [`None`] when there is no setext heading.
+/// What [`undo_setext`] writes over the first byte of an underline that must
+/// stay text, one for each marker. Control characters: CommonMark gives them
+/// no meaning, so the line still continues the paragraph, and an author has
+/// no reason to write one.
+const SENTINELS: [(char, char); 2] = [('\u{1}', '='), ('\u{2}', '-')];
+
+/// Rewrite the underline of every setext heading in `events` so that it
+/// cannot be one. Returns the rewritten buffer, or [`None`] when there is no
+/// setext heading.
 ///
 /// An ATX heading is always one line and a setext heading never is, so a line
 /// break inside the span tells them apart. Whether the span starts with `#`
@@ -1679,8 +1694,8 @@ const LINE_BREAK: [char; 2] = ['\n', '\r'];
 /// The underline is the run of `=` or `-` that ends the span. The rewrite
 /// keeps every offset. A run of three or more `-` becomes `*`, a thematic
 /// break that is never an underline, which is how upstream reads it. Any other
-/// run gets an `x` in its first byte and is left a line of text continuing the
-/// paragraph; [`restore_underline`] puts the byte back.
+/// run starts with its marker's sentinel instead, which leaves a line of text
+/// that continues the paragraph; [`restore_underline`] puts the marker back.
 fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
     let mut out: Option<String> = None;
     for (event, span) in events {
@@ -1693,7 +1708,11 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
         if !text.contains(LINE_BREAK) {
             continue;
         }
-        let Some(marker) = text.chars().last().filter(|c| matches!(c, '=' | '-')) else {
+        let Some((sentinel, marker)) = text
+            .chars()
+            .last()
+            .and_then(|last| SENTINELS.into_iter().find(|&(_, marker)| marker == last))
+        else {
             continue;
         };
         let run = text.len() - text.trim_end_matches(marker).len();
@@ -1701,7 +1720,7 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
         let replacement = if marker == '-' && run >= 3 {
             "*".repeat(run)
         } else {
-            format!("x{}", marker.to_string().repeat(run - 1))
+            format!("{sentinel}{}", marker.to_string().repeat(run - 1))
         };
         out.get_or_insert_with(|| buffer.to_string())
             .replace_range(start..start + run, &replacement);
@@ -1709,26 +1728,40 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
     out
 }
 
-/// Put back an underline byte that [`undo_setext`] replaced with `x`.
+/// Put back the markers [`undo_setext`] overwrote, in every string `event`
+/// carries.
 ///
-/// The underline is plain text after the rewrite, so its text event is the
-/// bytes it covers. Where those differ between the rewritten buffer and the
-/// masked text, the event is read from the masked text instead.
-fn restore_underline<'e>(
-    event: Event<'e>,
-    span: &Range<usize>,
-    text: &'e str,
-    buffer: &str,
-) -> Event<'e> {
-    match event {
-        Event::Text(content)
-            if buffer.get(span.clone()) == Some(&*content)
-                && text
-                    .get(span.clone())
-                    .is_some_and(|written| written != content) =>
-        {
-            Event::Text(Cow::Borrowed(text.get(span.clone()).unwrap_or_default()))
+/// Not only text: a link title can span the underline's line, and a reference
+/// link takes its title from a definition anywhere in the run.
+fn restore_underline(event: Event<'_>) -> Event<'_> {
+    fn fix(value: Cow<'_, str>) -> Cow<'_, str> {
+        let sentinel_of = |c: char| SENTINELS.iter().find(|&&(sentinel, _)| sentinel == c);
+        if !value.contains(|c| sentinel_of(c).is_some()) {
+            return value;
         }
+        Cow::Owned(
+            value
+                .chars()
+                .map(|c| sentinel_of(c).map_or(c, |&(_, marker)| marker))
+                .collect(),
+        )
+    }
+    match event {
+        Event::Text(content) => Event::Text(fix(content)),
+        Event::Code(content) => Event::Code(fix(content)),
+        Event::Html(content) => Event::Html(fix(content)),
+        Event::InlineHtml(content) => Event::InlineHtml(fix(content)),
+        Event::Start(Container::Link { destination, title }) => Event::Start(Container::Link {
+            destination: fix(destination),
+            title: fix(title),
+        }),
+        Event::Start(Container::Image { destination, title }) => Event::Start(Container::Image {
+            destination: fix(destination),
+            title: fix(title),
+        }),
+        Event::Start(Container::CodeBlock { info }) => Event::Start(Container::CodeBlock {
+            info: info.map(fix),
+        }),
         other => other,
     }
 }
