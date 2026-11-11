@@ -55,7 +55,12 @@
 /// walk is depth-limited, for the reason
 /// values are -- one stage further up, and with a schema hook's signature
 /// standing between the recursion and an iterative rewrite.
-const DECLARED_DIVERGENCES: usize = 16;
+///
+/// Link encoding added one (#78): upstream percent-encodes a destination in the
+/// syntax tree, which its formatter then writes into the source. Here the
+/// transform encodes it, so the renderable tree is upstream's and the source is
+/// the author's.
+const DECLARED_DIVERGENCES: usize = 17;
 
 const DIVERGENCES: &str = include_str!("../DIVERGENCES.md");
 

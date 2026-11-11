@@ -2,7 +2,7 @@
 title: Divergences
 template: docs
 lead: >-
-  The sixteen places this implementation deliberately behaves differently from
+  The seventeen places this implementation deliberately behaves differently from
   upstream Markdoc, why each one was chosen, and the rule that keeps the list
   complete.
 menu:
@@ -104,6 +104,16 @@ dropped.
 |---|---|
 | 4 | **The React renderers are unimplemented.** Upstream ships `renderers/react`, dynamic and static. Here, `transform` returns the same tree and the host renders it |
 | 8 | **The `allowIndentation` tokenizer option is not implemented** |
+
+## Kept as the author wrote it
+
+| # | Divergence |
+|---|---|
+| 17 | **A link's destination is encoded in the renderable tree, not the syntax tree.** The HTML carries upstream's percent-encoded, punycoded URL; the syntax tree, and so `fmt`, keep the URL as written |
+
+Upstream encodes while it parses, so its formatter writes `/%C3%A4.png` back
+where the author wrote `/ä.png`. Here the transform encodes instead, and the
+encoder is a byte-exact port of markdown-it's.
 
 ## Fixed rather than reproduced
 

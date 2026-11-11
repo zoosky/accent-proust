@@ -12,6 +12,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reference link or image opens, spanning the definition it resolves to. The
   bundled tokenizer does.
 
+### Changed
+
+- **A link's `href` and an image's `src` are encoded as upstream encodes them**
+  (#78), in the renderable tree and the HTML: `/a b` is `/a%20b`, `/ä.png` is
+  `/%C3%A4.png`, and `https://bücher.de/` is `https://xn--bcher-kva.de/`. The
+  syntax tree, and so `fmt`, keep the destination as written
+  (`DIVERGENCES.md` entry 17).
+
 ### Fixed
 
 - **A reference link keeps the tags of its definition** (#79). `[a][r]` with

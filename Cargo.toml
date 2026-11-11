@@ -156,6 +156,10 @@ name = "setext"
 required-features = ["pulldown-cmark-tokenizer"]
 
 [[test]]
+name = "link_encoding"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
 name = "links"
 required-features = ["pulldown-cmark-tokenizer"]
 

@@ -26,6 +26,7 @@
 //! why the one case where the configuration changes mid-tree, `{% partial %}`,
 //! agrees too.
 
+mod link;
 mod node;
 pub mod resolve;
 pub mod table;

@@ -22,8 +22,9 @@ use std::sync::{Arc, OnceLock};
 
 use indexmap::IndexMap;
 
-use crate::ast::Node;
+use crate::ast::{Node, NodeType};
 use crate::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
+use crate::transform::link::normalize_link;
 use crate::transform::resolve::resolve;
 use crate::validate::schema_types::{Class, Id};
 use crate::validate::{Config, Schema, SchemaAttribute, ValidationType};
@@ -244,12 +245,30 @@ fn render_attribute<'a>(
         _ => resolved.as_ref().and_then(Scalar::from_value),
     };
     let value = value.or_else(|| declared.default.as_ref().and_then(Scalar::from_value));
+    let value = match value {
+        Some(Scalar::String(ref url)) if is_destination(node, key) => {
+            Some(Scalar::String(normalize_link(url)))
+        }
+        other => other,
+    };
     if let Some(value) = value {
         output.insert(
             name.to_string(),
             RenderableTreeNodes::One(RenderableTreeNode::Scalar(value)),
         );
     }
+}
+
+/// Whether `key` is the destination of a link or an image, which upstream's
+/// tokenizer percent-encodes before the tree is built. Here the tree keeps the
+/// destination as written and this stage encodes it (`DIVERGENCES.md` entry
+/// 17), so a schema hook that reads the node directly sees what the author
+/// wrote, and one that renders [`attributes`] sees upstream's value.
+fn is_destination(node: &Node<'_>, key: &str) -> bool {
+    matches!(
+        (node.node_type, key),
+        (NodeType::Link, "href") | (NodeType::Image, "src")
+    )
 }
 
 /// The schema for a node, or [`None`].
