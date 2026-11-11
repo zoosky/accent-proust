@@ -28,7 +28,7 @@
 
 use std::borrow::Cow;
 
-use pulldown_cmark::{CodeBlockKind, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, LinkType, Options, Parser, Tag, TagEnd};
 
 use crate::parse::tokenizer::{Alignment, Container, ContainerKind, Event, Spanned, Tokenizer};
 
@@ -58,22 +58,38 @@ impl Tokenizer for PulldownTokenizer {
         // `Html` events, so text inside one is only ever that, and it would
         // otherwise surface as a stray text node beside the block.
         let mut in_html_block = false;
-        Parser::new_ext(source, PulldownTokenizer::options())
-            .into_offset_iter()
-            .filter(|(event, _)| match event {
-                pulldown_cmark::Event::Start(Tag::HtmlBlock) => {
-                    in_html_block = true;
-                    true
+        let mut parser = Parser::new_ext(source, PulldownTokenizer::options()).into_offset_iter();
+        let mut out = Vec::new();
+        while let Some((event, range)) = parser.next() {
+            match &event {
+                pulldown_cmark::Event::Start(Tag::HtmlBlock) => in_html_block = true,
+                pulldown_cmark::Event::End(TagEnd::HtmlBlock) => in_html_block = false,
+                pulldown_cmark::Event::Text(_) if in_html_block => continue,
+                _ => {}
+            }
+            let definition = match &event {
+                pulldown_cmark::Event::Start(
+                    Tag::Link { link_type, id, .. } | Tag::Image { link_type, id, .. },
+                ) if matches!(
+                    link_type,
+                    LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                ) =>
+                {
+                    parser
+                        .reference_definitions()
+                        .get(id)
+                        .map(|definition| definition.span.clone())
                 }
-                pulldown_cmark::Event::End(TagEnd::HtmlBlock) => {
-                    in_html_block = false;
-                    true
-                }
-                pulldown_cmark::Event::Text(_) => !in_html_block,
-                _ => true,
-            })
-            .filter_map(|(event, range)| convert(event).map(|event| (event, range)))
-            .collect()
+                _ => None,
+            };
+            if let Some(event) = convert(event) {
+                out.push((event, range));
+            }
+            if let Some(span) = definition {
+                out.push((Event::LinkDefinition, span));
+            }
+        }
+        out
     }
 }
 

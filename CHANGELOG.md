@@ -6,7 +6,19 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`Event::LinkDefinition`**, which a tokenizer may report right after a
+  reference link or image opens, spanning the definition it resolves to. The
+  bundled tokenizer does.
+
 ### Fixed
+
+- **A reference link keeps the tags of its definition** (#79). `[a][r]` with
+  `[r]: /x{%$y%}z "t{% $z %}"` gave `href="/x{%xx%}z"`: the masked text.
+- **A tag with spaces in a link destination makes no link** (#80), as upstream:
+  `[a](/x{% $y %}z)` is text and a variable. Masking now keeps a tag's
+  whitespace.
 
 - **A line starting with `#` over `---` or `===` is no longer a heading**
   (#81). `#a` and `#5 bolt` are not ATX headings, so, as upstream, the pair is

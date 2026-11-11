@@ -77,6 +77,9 @@ struct OpenLink {
     /// Whether its destination is unsafe, so that its syntax is text and its
     /// content belongs to the run around it.
     refused: bool,
+    /// Where the definition a reference link resolves to is written, when the
+    /// tokenizer reports it. Its destination and title come from there.
+    definition: Option<Range<usize>>,
 }
 
 /// Builds one document.
@@ -120,6 +123,9 @@ pub(crate) struct Builder<'s, 'o> {
     /// Whether the tokenizer's open paragraph was split at a tag, so that what
     /// follows the tag goes into a paragraph of its own.
     resumed: bool,
+    /// Whether the last event opened a link or an image, which is then the
+    /// one a [`Event::LinkDefinition`] that follows belongs to.
+    link_just_opened: bool,
     /// The end of the last tag emitted before its span was over.
     ///
     /// A tag that spans lines reaches the parser as several events: a text run
@@ -153,6 +159,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             in_body: false,
             wrapped: false,
             resumed: false,
+            link_just_opened: false,
             skip_to: 0,
             links: Vec::new(),
             ends: Vec::new(),
@@ -174,20 +181,32 @@ impl<'s, 'o> Builder<'s, 'o> {
                     // than lines.
                     let mut rewritten: Option<String> = None;
                     let mut passes = text.lines().count() + 1;
+                    let mut sentinels = None;
                     let events = loop {
                         let buffer = rewritten.as_deref().unwrap_or(text);
                         let events = tokenizer.tokenize(buffer);
                         passes -= 1;
-                        match undo_setext(buffer, &events) {
+                        // Sentinels are picked once, and only for a run that
+                        // has a heading to look at.
+                        if sentinels.is_none()
+                            && events.iter().any(|(event, _)| {
+                                matches!(event, Event::Start(Container::Heading { .. }))
+                            })
+                        {
+                            sentinels = Some(sentinels_for(text));
+                        }
+                        match sentinels
+                            .flatten()
+                            .and_then(|sentinels| undo_setext(buffer, &events, sentinels))
+                        {
                             Some(next) if passes > 0 => rewritten = Some(next),
                             _ => break events,
                         }
                     };
                     for (event, span) in events {
-                        let event = if rewritten.is_some() {
-                            restore_underline(event)
-                        } else {
-                            event
+                        let event = match (&rewritten, sentinels.flatten()) {
+                            (Some(_), Some(sentinels)) => restore_underline(event, sentinels),
+                            _ => event,
                         };
                         let span = range.start + span.start..range.start + span.end;
                         self.event(&event, span, segmentation);
@@ -587,8 +606,11 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// The node is the innermost open link or image, which is not always the top
     /// of the stack: an inline tag left open in the link text is above it.
     fn restore_destination(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
-        let text_end = self.links.pop().map_or(span.start, |link| link.text_end);
-        let after = if self.slice(span).starts_with('<') {
+        let link = self.links.pop();
+        let text_end = link.as_ref().map_or(span.start, |link| link.text_end);
+        let after = if let Some(definition) = link.and_then(|link| link.definition) {
+            definition
+        } else if self.slice(span).starts_with('<') {
             span.clone()
         } else {
             text_end.min(span.end)..span.end
@@ -637,7 +659,9 @@ impl<'s, 'o> Builder<'s, 'o> {
             self.links.push(OpenLink {
                 text_end: span.end,
                 refused: true,
+                definition: None,
             });
+            self.link_just_opened = true;
             let text = unescape(self.slice(span));
             self.text(&text, span.clone(), &segmentation.tags);
             self.skip_to = self.skip_to.max(span.end);
@@ -652,7 +676,9 @@ impl<'s, 'o> Builder<'s, 'o> {
         self.links.push(OpenLink {
             text_end: opening.end,
             refused: true,
+            definition: None,
         });
+        self.link_just_opened = true;
         self.push_source_text(opening);
     }
 
@@ -688,7 +714,8 @@ impl<'s, 'o> Builder<'s, 'o> {
                     .and_then(|rest| rest.find('\n'))
                     .map_or(end, |offset| start + offset);
                 // Masking keeps a continuation line's container prefix as
-                // written, and only there is a leading `>` or space unmasked.
+                // written. It keeps every space too, but only a prefix's
+                // leading `>` and whitespace are dropped by the tokenizer.
                 let lead = if start > tag.outer.start {
                     segmentation.masked.get(start..stop).map_or(0, |line| {
                         line.len() - line.trim_start_matches([' ', '\t', '>']).len()
@@ -787,7 +814,25 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     // ---- events ----------------------------------------------------------
 
+    /// Record where the link that just opened takes its destination and title
+    /// from. Only the link the previous event opened can own it: one whose
+    /// opening was dropped pushed nothing, and the top would be another.
+    fn link_definition(&mut self, span: Range<usize>, segmentation: &Segmentation) {
+        if self.link_just_opened
+            && let Some(link) = self.links.last_mut()
+        {
+            link.definition = Some(after_label(&segmentation.masked, span));
+        }
+    }
+
     fn event(&mut self, event: &Event<'_>, span: Range<usize>, segmentation: &Segmentation) {
+        // Not a position in the stream: where the link that just opened takes
+        // its destination and title from.
+        if matches!(event, Event::LinkDefinition) {
+            self.link_definition(span, segmentation);
+            return;
+        }
+        self.link_just_opened = false;
         match event {
             Event::Start(container) if !is_inline(container.kind()) => self.ends.push(span.end),
             Event::End(kind) if !is_inline(*kind) => {
@@ -896,6 +941,8 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let node = self.node(NodeType::Hr, span);
                 self.attach(node);
             }
+            // Taken at the top of `event`.
+            Event::LinkDefinition => {}
         }
     }
 
@@ -1060,7 +1107,9 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.links.push(OpenLink {
                     text_end: span.start,
                     refused: false,
+                    definition: None,
                 });
+                self.link_just_opened = true;
                 let mut node = self.node(NodeType::Link, span);
                 node.set("href", Value::String(destination.to_string()));
                 if !title.is_empty() {
@@ -1072,7 +1121,9 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.links.push(OpenLink {
                     text_end: span.start,
                     refused: false,
+                    definition: None,
                 });
+                self.link_just_opened = true;
                 let mut node = self.node(NodeType::Image, span);
                 node.set("alt", Value::String(String::new()));
                 node.set("src", Value::String(destination.to_string()));
@@ -1678,10 +1729,21 @@ fn list_marker(span: &str, ordered: bool) -> String {
 const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
 /// What [`undo_setext`] writes over the first byte of an underline that must
-/// stay text, one for each marker. Control characters: CommonMark gives them
-/// no meaning, so the line still continues the paragraph, and an author has
-/// no reason to write one.
-const SENTINELS: [(char, char); 2] = [('\u{1}', '='), ('\u{2}', '-')];
+/// stay text, paired with the marker it stands for: `=`, then `-`.
+type Sentinels = [(char, char); 2];
+
+/// Two control characters that do not occur in `text`, as [`Sentinels`].
+///
+/// CommonMark gives a control character no meaning, so a line that starts
+/// with one still continues the paragraph. One the author wrote would be
+/// mistaken for a sentinel, so only absent ones are used. A run that holds
+/// them all is left with its setext headings, which no document does.
+fn sentinels_for(text: &str) -> Option<Sentinels> {
+    let mut free = ('\u{1}'..='\u{8}')
+        .chain('\u{e}'..='\u{1f}')
+        .filter(|candidate| !text.contains(*candidate));
+    Some([(free.next()?, '='), (free.next()?, '-')])
+}
 
 /// Rewrite the underline of every setext heading in `events` so that it
 /// cannot be one. Returns the rewritten buffer, or [`None`] when there is no
@@ -1696,7 +1758,7 @@ const SENTINELS: [(char, char); 2] = [('\u{1}', '='), ('\u{2}', '-')];
 /// break that is never an underline, which is how upstream reads it. Any other
 /// run starts with its marker's sentinel instead, which leaves a line of text
 /// that continues the paragraph; [`restore_underline`] puts the marker back.
-fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
+fn undo_setext(buffer: &str, events: &[Spanned<'_>], sentinels: Sentinels) -> Option<String> {
     let mut out: Option<String> = None;
     for (event, span) in events {
         if !matches!(event, Event::Start(Container::Heading { .. })) {
@@ -1711,7 +1773,7 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
         let Some((sentinel, marker)) = text
             .chars()
             .last()
-            .and_then(|last| SENTINELS.into_iter().find(|&(_, marker)| marker == last))
+            .and_then(|last| sentinels.into_iter().find(|&(_, marker)| marker == last))
         else {
             continue;
         };
@@ -1733,19 +1795,8 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
 ///
 /// Not only text: a link title can span the underline's line, and a reference
 /// link takes its title from a definition anywhere in the run.
-fn restore_underline(event: Event<'_>) -> Event<'_> {
-    fn fix(value: Cow<'_, str>) -> Cow<'_, str> {
-        let sentinel_of = |c: char| SENTINELS.iter().find(|&&(sentinel, _)| sentinel == c);
-        if !value.contains(|c| sentinel_of(c).is_some()) {
-            return value;
-        }
-        Cow::Owned(
-            value
-                .chars()
-                .map(|c| sentinel_of(c).map_or(c, |&(_, marker)| marker))
-                .collect(),
-        )
-    }
+fn restore_underline(event: Event<'_>, sentinels: Sentinels) -> Event<'_> {
+    let fix = |value| restore(value, sentinels);
     match event {
         Event::Text(content) => Event::Text(fix(content)),
         Event::Code(content) => Event::Code(fix(content)),
@@ -1764,6 +1815,42 @@ fn restore_underline(event: Event<'_>) -> Event<'_> {
         }),
         other => other,
     }
+}
+
+/// `value` with each of the [`Sentinels`] replaced by the marker it stands for.
+fn restore(value: Cow<'_, str>, sentinels: Sentinels) -> Cow<'_, str> {
+    let sentinel_of = |c: char| sentinels.iter().find(|&&(sentinel, _)| sentinel == c);
+    if !value.contains(|c| sentinel_of(c).is_some()) {
+        return value;
+    }
+    Cow::Owned(
+        value
+            .chars()
+            .map(|c| sentinel_of(c).map_or(c, |&(_, marker)| marker))
+            .collect(),
+    )
+}
+
+/// The part of a link reference definition after its label: `/dest "title"`
+/// of `[r]: /dest "title"`.
+///
+/// The label is not the destination's or the title's, and a tag in it would
+/// otherwise be the first one found for them. It ends at the first `]` that
+/// is not escaped, read in the masked text, where no tag can hide one.
+fn after_label(masked: &str, span: Range<usize>) -> Range<usize> {
+    let Some(text) = masked.get(span.clone()) else {
+        return span;
+    };
+    let mut escaped = false;
+    for (offset, byte) in text.bytes().enumerate() {
+        match byte {
+            _ if escaped => escaped = false,
+            b'\\' => escaped = true,
+            b']' => return span.start + offset + 1..span.end,
+            _ => {}
+        }
+    }
+    span
 }
 
 /// Every text descendant of a node, concatenated.

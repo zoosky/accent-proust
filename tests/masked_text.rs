@@ -1,8 +1,8 @@
 //! The tokenizer reads a masked copy of the document; the tree never does.
 //!
 //! The segmenter overwrites every tag's body with `x` before the CommonMark
-//! parse, and a tag inside a container gets `<?` and `?>` for delimiters as
-//! well. Each test here is a shape where that filler used to reach the tree --
+//! parse, all but its spaces and tabs, and a tag inside a container gets `<?`
+//! and `?>` for delimiters as well. Each test here is a shape where that filler used to reach the tree --
 //! a tag across a line break, a tag in a quote, a code block or a link
 //! destination -- or where a tag inside a container used to leave it.
 //!
@@ -353,24 +353,24 @@ fn a_link_keeps_the_tags_in_its_destination_and_title() {
 
 #[test]
 fn a_tag_in_link_text_is_not_taken_for_one_in_the_destination() {
-    let source = "[{% a %}]({%/%}{% b %}2)\n";
+    let source = "[{% a %}]({%/%}{%b%}2)\n";
     let document = parse(source);
     let link = document
         .walk()
         .find(|node| node.node_type == NodeType::Link)
         .expect("a link");
-    assert_eq!(attribute(link, "href"), "\"{%/%}{% b %}2\"");
+    assert_eq!(attribute(link, "href"), "\"{%/%}{%b%}2\"");
 }
 
 #[test]
 fn a_title_gets_back_its_own_tag_when_two_mask_alike() {
-    let source = "[![a](s{% $b %} \"p {% $d %}\")](h{% $c %} \"t {% $e %}\")\n";
+    let source = "[![a](s{%$b%} \"p {% $d %}\")](h{%$c%} \"t {% $e %}\")\n";
     let document = parse(source);
     let link = at(&document, &[0, 0, 0]);
-    assert_eq!(attribute(link, "href"), "\"h{% $c %}\"");
+    assert_eq!(attribute(link, "href"), "\"h{%$c%}\"");
     assert_eq!(attribute(link, "title"), "\"t {% $e %}\"");
     let image = at(&document, &[0, 0, 0, 0]);
-    assert_eq!(attribute(image, "src"), "\"s{% $b %}\"");
+    assert_eq!(attribute(image, "src"), "\"s{%$b%}\"");
     assert_eq!(attribute(image, "title"), "\"p {% $d %}\"");
 }
 
@@ -390,6 +390,132 @@ fn a_title_across_container_lines_gets_its_tag_back() {
             attribute(link, "title"),
             "\"t {% foo\\nb=1 /%}\"",
             "{source:?}"
+        );
+    }
+}
+
+/// A reference link takes its destination and title from a definition
+/// elsewhere in the document, and its tags come back from there (#79).
+#[test]
+fn a_reference_link_gets_the_tags_of_its_definition_back() {
+    for (source, kind, url) in [
+        (
+            "[a][r]\n\n[r]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "[r][]\n\n[r]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "[r]\n\n[r]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "![i][r]\n\n[r]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Image,
+            "src",
+        ),
+        (
+            "[r]: /x{%$y%}z\n  \"t{% $z %}\"\n\n[a][r]\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "[a][R]\n\n[r]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "[a][r  s]\n\n[r s]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "> [a][r]\n>\n> [r]: /x{%$y%}z\n> \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+        (
+            "[a](<\n\n[a]: /x{%$y%}z \"t{% $z %}\"\n",
+            NodeType::Link,
+            "href",
+        ),
+    ] {
+        let document = parse(source);
+        let node = document
+            .walk()
+            .find(|node| node.node_type == kind)
+            .unwrap_or_else(|| panic!("{source:?}:\n{}", outline(&document)));
+        assert_eq!(attribute(node, url), "\"/x{%$y%}z\"", "{source:?}");
+        assert_eq!(attribute(node, "title"), "\"t{% $z %}\"", "{source:?}");
+    }
+}
+
+#[test]
+fn a_tag_in_a_definitions_label_is_not_its_destinations() {
+    for (source, name, expected) in [
+        ("[a{%$p%}]\n\n[a{%$p%}]: /y{%$q%}\n", "href", "\"/y{%$q%}\""),
+        (
+            "[a{%$p%}][]\n\n[a{%$p%}]: /y \"{%$q%}\"\n",
+            "title",
+            "\"{%$q%}\"",
+        ),
+        (
+            "[a][b\\]{%$p%}]\n\n[b\\]{%$p%}]: /y{%$q%}\n",
+            "href",
+            "\"/y{%$q%}\"",
+        ),
+    ] {
+        let document = parse(source);
+        let link = document
+            .walk()
+            .find(|node| node.node_type == NodeType::Link)
+            .unwrap_or_else(|| panic!("{source:?}:\n{}", outline(&document)));
+        assert_eq!(attribute(link, name), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn two_definitions_that_mask_alike_keep_their_own_tags() {
+    let source = "[a][p] [b][q]\n\n[p]: /{%$a%}\n[q]: /{%$b%}\n";
+    let document = parse(source);
+    let links: Vec<_> = document
+        .walk()
+        .filter(|node| node.node_type == NodeType::Link)
+        .map(|node| attribute(node, "href"))
+        .collect();
+    assert_eq!(links, ["\"/{%$a%}\"", "\"/{%$b%}\""]);
+}
+
+/// A destination cannot hold whitespace, and a tag's spaces count (#80).
+#[test]
+fn a_tag_with_spaces_in_a_destination_makes_no_link() {
+    for source in [
+        "[a](/x{% $y %}z)\n",
+        "![a](/x{% $y %}z)\n",
+        "<https://a.b/{% $y %}>\n",
+        "[r]\n\n[r]: /x{% $y %}z\n",
+        "[a](/x{%\t$y%}z)\n",
+    ] {
+        let document = parse(source);
+        assert!(
+            !document
+                .walk()
+                .any(|node| matches!(node.node_type, NodeType::Link | NodeType::Image)),
+            "{source:?}:\n{}",
+            outline(&document)
+        );
+        assert!(
+            document.walk().any(|node| matches!(
+                node.get("content"),
+                Some(accent_proust::ast::Value::Variable(_))
+            )),
+            "{source:?}: the tag is a variable in the text:\n{}",
+            outline(&document)
         );
     }
 }
