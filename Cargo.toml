@@ -152,6 +152,10 @@ name = "masked_text"
 required-features = ["pulldown-cmark-tokenizer"]
 
 [[test]]
+name = "setext"
+required-features = ["pulldown-cmark-tokenizer"]
+
+[[test]]
 name = "links"
 required-features = ["pulldown-cmark-tokenizer"]
 

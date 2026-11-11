@@ -23,8 +23,8 @@
 //! - **Setext headings are rewritten.** Upstream disables markdown-it's
 //!   `lheading` rule, so `Testing\n-------` is a paragraph followed by a
 //!   thematic break. pulldown-cmark has no such switch, but a setext heading is
-//!   recognisable after the fact -- its span does not begin with `#` -- and its
-//!   underline is recoverable from that span. The sibling case, upstream's
+//!   recognisable after the fact -- its span covers more than one line -- and
+//!   its underline is recoverable from that span. The sibling case, upstream's
 //!   disabled `code` rule, is *not* recoverable that way, and is
 //!   `DIVERGENCES.md` entry 11.
 //! - **A fence's content is literal by default.** `DIVERGENCES.md` entry 1
@@ -1341,10 +1341,19 @@ impl<'s, 'o> Builder<'s, 'o> {
     ///
     /// Upstream disables markdown-it's `lheading` rule, so `Testing\n---` is a
     /// paragraph and a thematic break. A setext heading is the one pulldown-cmark
-    /// node whose rule can be undone after the fact: nothing else can produce a
-    /// heading whose span does not begin with `#`.
+    /// node whose rule can be undone after the fact.
+    ///
+    /// An ATX heading is always one line and a setext heading never is, so a
+    /// line break inside the span tells them apart. Whether the span starts
+    /// with `#` does not: `#a` over `---` is a setext heading, because `#a` is
+    /// not an ATX opening. Only a break before the span's own line ending
+    /// counts, since the tokenizer's ATX span includes it (`# a\n`).
     fn open_heading(&mut self, level: u8, span: Range<usize>) {
-        if self.slice(&span).trim_start().starts_with('#') {
+        if !self
+            .slice(&span)
+            .trim_end_matches(['\n', '\r'])
+            .contains(['\n', '\r'])
+        {
             let mut node = self.node(NodeType::Heading, span);
             node.set("level", Value::Number(f64::from(level)));
             self.open(node);

@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A line starting with `#` over `---` or `===` is no longer a heading**
+  (#81). `#a` and `#5 bolt` are not ATX headings, so, as upstream, the pair is
+  a paragraph and a rule, or one paragraph.
+
 ## [0.12.4] - 2026-11-01
 
 ### Security
