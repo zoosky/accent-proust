@@ -22,8 +22,9 @@ use std::sync::{Arc, OnceLock};
 
 use indexmap::IndexMap;
 
-use crate::ast::Node;
+use crate::ast::{Node, NodeType, Value};
 use crate::renderable::{RenderableTreeNode, RenderableTreeNodes, Scalar, Tag};
+use crate::transform::link::normalize_link;
 use crate::transform::resolve::resolve;
 use crate::validate::schema_types::{Class, Id};
 use crate::validate::{Config, Schema, SchemaAttribute, ValidationType};
@@ -235,6 +236,14 @@ fn render_attribute<'a>(
         return;
     };
     let resolved = node.get(key).and_then(|value| resolve(value, config));
+    // Upstream encodes the destination its tokenizer read, so a custom type
+    // receives the encoded value, and a default is never encoded.
+    let resolved = match &resolved {
+        Some(Value::String(url)) if is_destination(node, key) => {
+            Some(Value::String(normalize_link(url)))
+        }
+        _ => resolved,
+    };
     let value = match &declared.attribute_type {
         // Upstream constructs the declared type and calls `transform` if the
         // instance has one. The built-in types have none, so only a custom type
@@ -250,6 +259,18 @@ fn render_attribute<'a>(
             RenderableTreeNodes::One(RenderableTreeNode::Scalar(value)),
         );
     }
+}
+
+/// Whether `key` is the destination of a link or an image, which upstream's
+/// tokenizer percent-encodes before the tree is built. Here the tree keeps the
+/// destination as written and this stage encodes it (`DIVERGENCES.md` entry
+/// 17), so a schema hook that reads the node directly sees what the author
+/// wrote, and one that renders [`attributes`] sees upstream's value.
+fn is_destination(node: &Node<'_>, key: &str) -> bool {
+    matches!(
+        (node.node_type, key),
+        (NodeType::Link, "href") | (NodeType::Image, "src")
+    )
 }
 
 /// The schema for a node, or [`None`].
