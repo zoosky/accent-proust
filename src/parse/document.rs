@@ -1351,8 +1351,8 @@ impl<'s, 'o> Builder<'s, 'o> {
     fn open_heading(&mut self, level: u8, span: Range<usize>) {
         if !self
             .slice(&span)
-            .trim_end_matches(['\n', '\r'])
-            .contains(['\n', '\r'])
+            .trim_end_matches(LINE_BREAK)
+            .contains(LINE_BREAK)
         {
             let mut node = self.node(NodeType::Heading, span);
             node.set("level", Value::Number(f64::from(level)));
@@ -1371,21 +1371,47 @@ impl<'s, 'o> Builder<'s, 'o> {
             self.attach(node);
             return;
         };
-        let text = self.slice(&underline);
+        // The underline's line still carries its container's prefix (`> `, an
+        // item's indent), but the underline itself is one run of `=` or `-`
+        // at the end of it.
+        let text = self.slice(&underline).trim_end();
         let mut node = self.pop();
-        if text.trim_start().starts_with('=') {
+        if text.ends_with('=') {
             // `Testing\n===` is one paragraph: the underline is a continuation
-            // line, joined to it by a soft break.
-            let mut breaker = Node::new(NodeType::Softbreak);
+            // line, joined to it by the break the line above ends in.
+            let marker = &text[text.trim_end_matches('=').len()..];
+            let above = line_before(self.source, underline.start);
+            let hard_spaces = above.ends_with("  ");
+            let escaped =
+                !hard_spaces && (above.len() - above.trim_end_matches('\\').len()) % 2 == 1;
+            let mut breaker = Node::new(if hard_spaces || escaped {
+                NodeType::Hardbreak
+            } else {
+                NodeType::Softbreak
+            });
             breaker.inline = true;
             let mut trailing = Node::new(NodeType::Text);
             trailing.inline = true;
-            trailing.set("content", Value::String(text.trim_end().to_string()));
+            trailing.set("content", Value::String(marker.to_string()));
             if let Some(inline) = node
                 .children
                 .iter_mut()
                 .find(|child| child.node_type == NodeType::Inline)
             {
+                // A heading keeps a final `\` as text; a paragraph line spends
+                // it on the hard break.
+                if escaped
+                    && let Some(last) = inline.children.last_mut()
+                    && let Some(Value::String(content)) = last.get("content")
+                    && let Some(kept) = content.strip_suffix('\\')
+                {
+                    let kept = kept.to_string();
+                    if kept.is_empty() {
+                        inline.children.pop();
+                    } else {
+                        last.set("content", Value::String(kept));
+                    }
+                }
                 inline.push(breaker);
                 inline.push(trailing);
             }
@@ -1711,14 +1737,27 @@ fn list_marker(span: &str, ordered: bool) -> String {
         .map_or_else(|| ".".to_string(), String::from)
 }
 
+/// What ends a line: `\n`, `\r\n`, or a bare `\r`, as CommonMark has it.
+const LINE_BREAK: [char; 2] = ['\n', '\r'];
+
 /// The range of the last line of `span`.
 fn last_line(source: &str, span: &Range<usize>) -> Range<usize> {
     let end = span.end;
     let start = source
         .get(span.start..end)
-        .and_then(|text| text.trim_end().rfind('\n'))
+        .and_then(|text| text.trim_end().rfind(LINE_BREAK))
         .map_or(span.start, |offset| span.start + offset + 1);
     start..end
+}
+
+/// The line that ends where the line starting at `start` begins, without its
+/// line ending.
+fn line_before(source: &str, start: usize) -> &str {
+    let above = source.get(..start).unwrap_or_default();
+    let above = above.trim_end_matches(LINE_BREAK);
+    above
+        .rfind(LINE_BREAK)
+        .map_or(above, |offset| &above[offset + 1..])
 }
 
 /// Every text descendant of a node, concatenated.

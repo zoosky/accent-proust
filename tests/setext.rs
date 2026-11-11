@@ -70,6 +70,75 @@ document
     );
 }
 
+/// The tree upstream gives `Foo` over `===`: one paragraph, the underline a
+/// continuation line after a break of the given kind.
+fn continued(indent: &str, text: &str, breaker: &str) -> String {
+    format!(
+        "{indent}paragraph\n{indent}  inline\n{indent}    text content=\"{text}\"\n\
+         {indent}    {breaker}\n{indent}    text content=\"===\"\n"
+    )
+}
+
+#[test]
+fn equals_in_a_blockquote_continue_the_paragraph() {
+    for source in ["> Foo\n> ===\n", "> #a\n> ===\n"] {
+        let text = if source.contains("#a") { "#a" } else { "Foo" };
+        assert_eq!(
+            outline(&parse(source)),
+            format!(
+                "document\n  blockquote\n{}",
+                continued("    ", text, "softbreak")
+            ),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn indented_equals_continue_the_paragraph_without_their_indent() {
+    assert_eq!(
+        outline(&parse("  Foo\n  ===\n")),
+        format!("document\n{}", continued("  ", "Foo", "softbreak"))
+    );
+    assert_eq!(
+        outline(&parse("- Foo\n  ===\n")),
+        format!(
+            "document\n  list ordered=false marker=\"-\"\n    item\n{}",
+            continued("      ", "Foo", "softbreak")
+        )
+    );
+}
+
+#[test]
+fn equals_after_a_hard_break_keep_it() {
+    let hard = format!("document\n{}", continued("  ", "Foo", "hardbreak"));
+    assert_eq!(outline(&parse("Foo  \n===\n")), hard);
+    assert_eq!(outline(&parse("Foo\\\n===\n")), hard);
+    // An escaped backslash is text, and the break is soft.
+    assert_eq!(
+        outline(&parse("Foo\\\\\n===\n")),
+        format!("document\n{}", continued("  ", "Foo\\\\", "softbreak"))
+    );
+}
+
+#[test]
+fn bare_carriage_returns_end_lines() {
+    assert_eq!(
+        outline(&parse("Foo\r===\r")),
+        format!("document\n{}", continued("  ", "Foo", "softbreak"))
+    );
+    assert_eq!(outline(&parse("#a\r---\r")), paragraph_then_hr("#a"));
+    assert_eq!(outline(&parse("#a\r\n---\r\n")), paragraph_then_hr("#a"));
+}
+
+#[test]
+fn the_rule_covers_only_the_underline() {
+    let document = parse("#a\r---\r");
+    let rule = &document.children[1];
+    let location = rule.location.as_ref().expect("a location");
+    assert_eq!(location.text, "---\r");
+}
+
 #[test]
 fn an_atx_heading_stays_a_heading() {
     for (source, level) in [
