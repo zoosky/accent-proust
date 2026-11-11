@@ -243,3 +243,16 @@ fn a_title_over_an_undone_underline_keeps_its_marker() {
         assert!(!tree.contains('\u{1}'), "{source:?}:\n{tree}");
     }
 }
+
+#[test]
+fn a_control_character_the_author_wrote_is_kept() {
+    for c in ['\u{1}', '\u{2}'] {
+        let source = format!("a{c}b\n\nFoo\n===\n");
+        let tree = outline(&parse(&source));
+        assert!(
+            tree.contains(&format!("text content=\"a{}b\"", c.escape_debug())),
+            "{source:?}:\n{tree}"
+        );
+        assert!(tree.contains("text content=\"===\""), "{source:?}:\n{tree}");
+    }
+}

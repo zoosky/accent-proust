@@ -174,20 +174,22 @@ impl<'s, 'o> Builder<'s, 'o> {
                     // than lines.
                     let mut rewritten: Option<String> = None;
                     let mut passes = text.lines().count() + 1;
+                    let sentinels = sentinels_for(text);
                     let events = loop {
                         let buffer = rewritten.as_deref().unwrap_or(text);
                         let events = tokenizer.tokenize(buffer);
                         passes -= 1;
-                        match undo_setext(buffer, &events) {
+                        match sentinels
+                            .and_then(|sentinels| undo_setext(buffer, &events, sentinels))
+                        {
                             Some(next) if passes > 0 => rewritten = Some(next),
                             _ => break events,
                         }
                     };
                     for (event, span) in events {
-                        let event = if rewritten.is_some() {
-                            restore_underline(event)
-                        } else {
-                            event
+                        let event = match (&rewritten, sentinels) {
+                            (Some(_), Some(sentinels)) => restore_underline(event, sentinels),
+                            _ => event,
                         };
                         let span = range.start + span.start..range.start + span.end;
                         self.event(&event, span, segmentation);
@@ -1678,10 +1680,21 @@ fn list_marker(span: &str, ordered: bool) -> String {
 const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
 /// What [`undo_setext`] writes over the first byte of an underline that must
-/// stay text, one for each marker. Control characters: CommonMark gives them
-/// no meaning, so the line still continues the paragraph, and an author has
-/// no reason to write one.
-const SENTINELS: [(char, char); 2] = [('\u{1}', '='), ('\u{2}', '-')];
+/// stay text, paired with the marker it stands for: `=`, then `-`.
+type Sentinels = [(char, char); 2];
+
+/// Two control characters that do not occur in `text`, as [`Sentinels`].
+///
+/// CommonMark gives a control character no meaning, so a line that starts
+/// with one still continues the paragraph. One the author wrote would be
+/// mistaken for a sentinel, so only absent ones are used. A run that holds
+/// them all is left with its setext headings, which no document does.
+fn sentinels_for(text: &str) -> Option<Sentinels> {
+    let mut free = ('\u{1}'..='\u{8}')
+        .chain('\u{e}'..='\u{1f}')
+        .filter(|candidate| !text.contains(*candidate));
+    Some([(free.next()?, '='), (free.next()?, '-')])
+}
 
 /// Rewrite the underline of every setext heading in `events` so that it
 /// cannot be one. Returns the rewritten buffer, or [`None`] when there is no
@@ -1696,7 +1709,7 @@ const SENTINELS: [(char, char); 2] = [('\u{1}', '='), ('\u{2}', '-')];
 /// break that is never an underline, which is how upstream reads it. Any other
 /// run starts with its marker's sentinel instead, which leaves a line of text
 /// that continues the paragraph; [`restore_underline`] puts the marker back.
-fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
+fn undo_setext(buffer: &str, events: &[Spanned<'_>], sentinels: Sentinels) -> Option<String> {
     let mut out: Option<String> = None;
     for (event, span) in events {
         if !matches!(event, Event::Start(Container::Heading { .. })) {
@@ -1711,7 +1724,7 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
         let Some((sentinel, marker)) = text
             .chars()
             .last()
-            .and_then(|last| SENTINELS.into_iter().find(|&(_, marker)| marker == last))
+            .and_then(|last| sentinels.into_iter().find(|&(_, marker)| marker == last))
         else {
             continue;
         };
@@ -1733,19 +1746,8 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>]) -> Option<String> {
 ///
 /// Not only text: a link title can span the underline's line, and a reference
 /// link takes its title from a definition anywhere in the run.
-fn restore_underline(event: Event<'_>) -> Event<'_> {
-    fn fix(value: Cow<'_, str>) -> Cow<'_, str> {
-        let sentinel_of = |c: char| SENTINELS.iter().find(|&&(sentinel, _)| sentinel == c);
-        if !value.contains(|c| sentinel_of(c).is_some()) {
-            return value;
-        }
-        Cow::Owned(
-            value
-                .chars()
-                .map(|c| sentinel_of(c).map_or(c, |&(_, marker)| marker))
-                .collect(),
-        )
-    }
+fn restore_underline(event: Event<'_>, sentinels: Sentinels) -> Event<'_> {
+    let fix = |value| restore(value, sentinels);
     match event {
         Event::Text(content) => Event::Text(fix(content)),
         Event::Code(content) => Event::Code(fix(content)),
@@ -1764,6 +1766,20 @@ fn restore_underline(event: Event<'_>) -> Event<'_> {
         }),
         other => other,
     }
+}
+
+/// `value` with each of the [`Sentinels`] replaced by the marker it stands for.
+fn restore(value: Cow<'_, str>, sentinels: Sentinels) -> Cow<'_, str> {
+    let sentinel_of = |c: char| sentinels.iter().find(|&&(sentinel, _)| sentinel == c);
+    if !value.contains(|c| sentinel_of(c).is_some()) {
+        return value;
+    }
+    Cow::Owned(
+        value
+            .chars()
+            .map(|c| sentinel_of(c).map_or(c, |&(_, marker)| marker))
+            .collect(),
+    )
 }
 
 /// Every text descendant of a node, concatenated.
