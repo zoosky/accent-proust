@@ -6,6 +6,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A line starting with `#` over `---` or `===` is no longer a heading**
+  (#81). `#a` and `#5 bolt` are not ATX headings, so, as upstream, the pair is
+  a paragraph and a rule, or one paragraph.
+- **An undone setext heading reads as upstream's paragraph** (#87). The
+  underline is now rewritten and the text tokenized again, rather than the
+  heading patched afterwards. `===` keeps the line break written above it, a
+  hard one included, drops its indent and `> `, and lets the lines below it
+  continue the paragraph. A tight list item keeps its text bare.
+
 ## [0.12.4] - 2026-11-01
 
 ### Security
