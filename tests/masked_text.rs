@@ -659,6 +659,52 @@ fn a_kept_comment_in_a_reference_label_stays_a_comment() {
     );
 }
 
+/// A whole comment inside other markup is a comment when comments are nodes,
+/// as upstream's inline comment rule finds one anywhere.
+#[test]
+fn a_comment_inside_markup_is_a_comment_when_comments_are_nodes() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with(
+        "<a title=\"<!-- c -->\"> x",
+        &PulldownTokenizer::new(),
+        &options,
+    );
+    let kinds: Vec<NodeType> = at(&document, &[0, 0])
+        .children
+        .iter()
+        .map(|child| child.node_type)
+        .collect();
+    assert_eq!(
+        kinds,
+        [NodeType::Text, NodeType::Comment, NodeType::Text],
+        "{}",
+        outline(&document)
+    );
+}
+
+/// Neither references nor kept comments make a run's reading quadratic.
+#[test]
+fn many_references_and_comments_are_read_in_linear_time() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let started = std::time::Instant::now();
+    let _ = parse(&format!("<b> {}", "&amp;".repeat(40_000)));
+    let options = ParseOptions::new().allow_comments(true);
+    let source = format!(
+        "x {}{}",
+        "<!-- c --> ".repeat(10_000),
+        "<b> ".repeat(10_000)
+    );
+    let _ = parse_with(&source, &PulldownTokenizer::new(), &options);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
 /// Markup nested in markup is undone in one pass, not one per level.
 #[test]
 fn nested_inline_html_is_read_in_linear_time() {
