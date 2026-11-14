@@ -1221,8 +1221,24 @@ mod destinations {
     }
 
     #[test]
-    fn a_line_ending_is_written_as_a_reference() {
-        check("[a](/a&#10;b)\n", "[a](</a&#10;b>)\n");
+    fn a_line_ending_is_written_as_a_reference_and_needs_no_brackets() {
+        stable("[a](/a&#10;b)\n");
+        check("[a](</a&#10;b c>)\n", "[a](</a&#10;b c>)\n");
+    }
+
+    #[test]
+    fn an_empty_destination_before_a_title_is_written_as_brackets() {
+        stable("[a](<> \"t\")\n");
+        stable("![a](<> \"t\")\n");
+        stable("[a]()\n");
+    }
+
+    #[test]
+    fn a_title_reads_back_as_written() {
+        stable("[a](a \"t\\\"u\")\n");
+        check("[a](a 't\"u')\n", "[a](a \"t\\\"u\")\n");
+        check("[a](a \"t\\\\\")\n", "[a](a \"t\\\\\")\n");
+        check("[a](a \"&amp;amp;\")\n", "[a](a \"\\&amp;\")\n");
     }
 
     /// Pieces of destinations, including every character the writer treats
@@ -1256,7 +1272,30 @@ mod destinations {
     ];
 
     fn destination() -> impl Strategy<Value = String> {
-        prop::collection::vec(prop::sample::select(PIECES), 1..8).prop_map(|parts| parts.concat())
+        prop::collection::vec(prop::sample::select(PIECES), 0..8).prop_map(|parts| parts.concat())
+    }
+
+    /// Pieces of a title, as written between `"`.
+    const TITLE_PIECES: &[&str] = &[
+        "t",
+        " ",
+        "\\\"",
+        "\\",
+        "\\\\",
+        "&amp;",
+        "&amp;amp;",
+        "(",
+        ")",
+        "'",
+        "&#10;",
+        "\u{a0}",
+    ];
+
+    fn title() -> impl Strategy<Value = Option<String>> {
+        prop::option::of(
+            prop::collection::vec(prop::sample::select(TITLE_PIECES), 0..6)
+                .prop_map(|parts| parts.concat()),
+        )
     }
 
     proptest! {
@@ -1270,6 +1309,7 @@ mod destinations {
             bracketed in any::<bool>(),
             same_text in any::<bool>(),
             image in any::<bool>(),
+            title in title(),
         ) {
             let written = if bracketed { format!("<{destination}>") } else { destination.clone() };
             // Text escaping is not under test: text that holds a reference, a
@@ -1278,7 +1318,8 @@ mod destinations {
             let plain = !destination.contains(['&', '\\', '*', '_']);
             let text = if same_text && plain { destination.as_str() } else { "x" };
             let bang = if image { "!" } else { "" };
-            let source = format!("{bang}[{text}]({written})\n");
+            let title = title.map(|title| format!(" \"{title}\"")).unwrap_or_default();
+            let source = format!("{bang}[{text}]({written}{title})\n");
             let document = parse(&source);
             // Only a source that is one link and nothing else: text left over
             // beside it is the text arm's again.

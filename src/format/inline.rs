@@ -26,7 +26,7 @@ impl Formatter<'_> {
         }
         out.text("]");
         out.text("(");
-        self.destination(node.get("src"), no, out);
+        self.destination(node, node.get("src"), no, out);
         self.title(node, out);
         out.text(")");
     }
@@ -52,7 +52,7 @@ impl Formatter<'_> {
         out.text(children);
         out.text("]");
         out.text("(");
-        self.destination(node.get("href"), no, out);
+        self.destination(node, node.get("href"), no, out);
         self.title(node, out);
         out.text(")");
     }
@@ -106,20 +106,28 @@ impl Formatter<'_> {
 
     /// A link or image destination: written so that it reads back as the same
     /// string when it is one, formatted as a value when it is not.
-    fn destination(&mut self, value: Option<&Value>, ctx: Ctx, out: &mut Out) {
+    ///
+    /// An empty destination before a title is `<>`: written as nothing, the
+    /// title would read back as the destination.
+    fn destination(&mut self, node: &Node<'_>, value: Option<&Value>, ctx: Ctx, out: &mut Out) {
         match value {
-            Some(Value::String(text)) => out.text(written_destination(text)),
+            Some(Value::String(text)) if !text.is_empty() => out.text(written_destination(text)),
+            Some(Value::String(_)) | None => {
+                if title_of(node).is_some() {
+                    out.text("<>");
+                }
+            }
             Some(other) => self.value(other, ctx, out),
-            None => {}
         }
     }
 
-    /// The optional `"title"` after a destination.
+    /// The optional `"title"` after a destination, escaped so that it reads
+    /// back as written.
     fn title(&mut self, node: &Node<'_>, out: &mut Out) {
-        let Some(title) = node.get("title").filter(|value| value.is_truthy()) else {
+        let Some(title) = title_of(node) else {
             return;
         };
-        let title = self.text_of(title);
+        let title = escape_url_part(&self.text_of(title), &['"']);
         out.text(format!("{SPACE}\"{title}\""));
     }
 }
@@ -144,6 +152,11 @@ fn is_absolute_uri(href: &str) -> bool {
             .any(|character| character.is_ascii_control() || matches!(character, ' ' | '<' | '>'))
 }
 
+/// The title a link or image has, if any.
+fn title_of<'n>(node: &'n Node<'_>) -> Option<&'n Value> {
+    node.get("title").filter(|value| value.is_truthy())
+}
+
 /// A destination string, written so that it reads back as itself (#91).
 ///
 /// The bare form holds no space or control character and does not start with
@@ -151,46 +164,52 @@ fn is_absolute_uri(href: &str) -> bool {
 /// goes between `<` and `>`, inside which `<` and `>` are escaped. Upstream
 /// needs only the bare form because its tree holds the encoded destination,
 /// which has no space in it; the tree here keeps it as written
-/// (`DIVERGENCES.md` entry 17).
-///
-/// In either form:
+/// (`DIVERGENCES.md` entry 17). A line ending is written as a reference, so
+/// it needs no brackets.
+fn written_destination(text: &str) -> String {
+    let bracketed = text.starts_with('<')
+        || text.chars().any(|character| {
+            (character.is_ascii_control() && !matches!(character, '\n' | '\r')) || character == ' '
+        });
+    if bracketed {
+        format!("<{}>", escape_url_part(text, &['<', '>']))
+    } else {
+        escape_url_part(text, &['(', ')'])
+    }
+}
+
+/// A destination or title, with `special` -- what would close it -- escaped,
+/// and so that every other character reads back as itself:
 ///
 /// - a backslash is escaped where it would otherwise escape what follows it:
 ///   before anything written with leading ASCII punctuation, and at the end,
-///   where the next character written is the `)` or `>` that closes the
-///   destination;
+///   where the next character written is the one that closes the part;
 /// - an `&` that would start a character reference is escaped;
-/// - a line ending, which neither form can hold, and U+00A0, which upstream
+/// - a line ending, which a destination cannot hold, and U+00A0, which upstream
 ///   writes as `&nbsp;` everywhere, are written as references.
-fn written_destination(text: &str) -> String {
-    let bracketed = text.starts_with('<')
-        || text
-            .chars()
-            .any(|character| character.is_ascii_control() || character == ' ');
-    let special: &[char] = if bracketed { &['<', '>'] } else { &['(', ')'] };
-    let mut out = String::with_capacity(text.len() + 2);
-    if bracketed {
-        out.push('<');
-    }
-    for (at, character) in text.char_indices() {
-        let rest = text.get(at + character.len_utf8()..).unwrap_or_default();
+fn escape_url_part(text: &str, special: &[char]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut characters = text.char_indices().peekable();
+    while let Some((at, character)) = characters.next() {
         match character {
             '\n' => out.push_str("&#10;"),
             '\r' => out.push_str("&#13;"),
             '\u{a0}' => out.push_str("&nbsp;"),
-            '\\' if rest.chars().next().is_none_or(writes_punctuation) => {
+            '\\' if characters
+                .peek()
+                .is_none_or(|&(_, next)| writes_punctuation(next)) =>
+            {
                 out.push_str("\\\\");
             }
-            '&' if starts_reference(rest) => out.push_str("\\&"),
+            '&' if starts_reference(text.get(at + 1..).unwrap_or_default()) => {
+                out.push_str("\\&");
+            }
             _ if special.contains(&character) => {
                 out.push('\\');
                 out.push(character);
             }
             _ => out.push(character),
         }
-    }
-    if bracketed {
-        out.push('>');
     }
     out
 }

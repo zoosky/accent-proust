@@ -542,9 +542,9 @@ what this crate already did. It is no longer a divergence: the blockquote arm
 is now upstream's, and on upstream's blockquote cases the two formatters print
 the same bytes.
 
-The first three and the blockquote were found by the property test rather than by reading, which is the
-argument for having written it: the shapes are individually obvious and
-collectively invisible.
+The first three and the blockquote were found by the property test rather
+than by reading, which is the argument for having written it: the shapes are
+individually obvious and collectively invisible.
 
 **What it costs, exactly.** Output differs from upstream only where upstream's
 own output does not re-parse. The first two fire in no other case -- upstream's
