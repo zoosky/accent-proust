@@ -235,7 +235,9 @@ impl<'s, 'o> Builder<'s, 'o> {
                             };
                             let mask =
                                 |at: usize| is_mask_start(&segmentation.tags, range.start + at);
-                            undo_inline_html(setext, buffer, &events, sentinels, (keep, mask))
+                            let comments = self.options.allow_comments;
+                            let keepers = (keep, mask, comments);
+                            undo_inline_html(setext, buffer, &events, sentinels, keepers)
                         });
                         match next {
                             Some(next) if passes > 0 => rewritten = Some(next),
@@ -244,7 +246,14 @@ impl<'s, 'o> Builder<'s, 'o> {
                     };
                     for (event, span) in events {
                         let event = match (&rewritten, sentinels.flatten()) {
-                            (Some(_), Some(sentinels)) => restore_markers(event, sentinels),
+                            (Some(buffer), Some(sentinels)) => {
+                                let written = Rewrite {
+                                    buffer,
+                                    original: text,
+                                    sentinels,
+                                };
+                                written.restore(event, &span)
+                            }
                             _ => event,
                         };
                         let span = range.start + span.start..range.start + span.end;
@@ -1777,40 +1786,95 @@ const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
 /// What [`undo_setext`] writes over the first byte of an underline that must
 /// stay text, paired with the marker it stands for (`=`, then `-`), and what
-/// [`undo_inline_html`] writes over a `<` of inline HTML, when it has one.
+/// [`undo_inline_html`] writes over a `<` of inline HTML.
 #[derive(Clone, Copy)]
 struct Sentinels {
     underline: [(char, char); 2],
-    html: Option<char>,
+    html: char,
+    /// Whether `html` occurs nowhere else in the run, not even as a character
+    /// reference, so that finding it in a string means a `<`.
+    html_unique: bool,
 }
 
 impl Sentinels {
-    /// Every sentinel, with the marker it stands for.
+    /// Every sentinel that stands for its marker wherever it is found.
     fn pairs(self) -> impl Iterator<Item = (char, char)> {
         self.underline
             .into_iter()
-            .chain(self.html.map(|sentinel| (sentinel, '<')))
+            .chain(self.html_unique.then_some((self.html, '<')))
     }
 }
 
-/// [`Sentinels`] that do not occur in `text`.
+/// The candidates for the `<` of inline HTML, in order of preference.
+const HTML_SENTINELS: [char; 7] = ['^', '$', '@', '\'', '"', ',', ':'];
+
+/// [`Sentinels`] for `text`.
 ///
 /// An underline's are control characters: CommonMark gives one no meaning, so
-/// a line that starts with one still continues the paragraph. The `<` of
-/// inline HTML needs ASCII punctuation instead, as `<` is, or a `*` or `_`
-/// beside it would flank differently; the candidates are the ones no inline
-/// rule, table or strikethrough reads. One the author wrote would be mistaken
-/// for a sentinel, so only absent ones are used. A run that holds them all is
-/// left as the tokenizer reads it, which no document does.
+/// a line that starts with one still continues the paragraph. Only ones that
+/// do not occur in `text`, written or as a reference, are used, and a run that
+/// holds them all is left with its setext headings, which no document does.
+///
+/// The `<` of inline HTML needs ASCII punctuation instead, as `<` is, or a `*`
+/// or `_` beside it would flank differently. The candidates are the ones that
+/// no inline rule, table or strikethrough reads, at the start of a line or
+/// beside anything markup can hold, and that cannot make markup again with
+/// what follows a `<`: not `/`, which turns `<<b>` into `</b>`, and not `?`.
+/// One absent from the run is preferred, but prose holds them all readily, so
+/// when none is the first serves anyway: text is restored by position (see
+/// [`Rewrite::restore`]), and only strings that are not a verbatim slice of
+/// the buffer need the sentinel to be unique.
 fn sentinels_for(text: &str) -> Option<Sentinels> {
     let mut free = ('\u{1}'..='\u{8}')
         .chain('\u{e}'..='\u{1f}')
-        .filter(|candidate| !text.contains(*candidate));
+        .filter(|&candidate| absent(text, candidate));
     let underline = [(free.next()?, '='), (free.next()?, '-')];
-    let html = ['^', '$', '@', '\'', '"', ',', '/', '?']
+    let unique = HTML_SENTINELS
         .into_iter()
-        .find(|candidate| !text.contains(*candidate));
-    Some(Sentinels { underline, html })
+        .find(|&candidate| absent(text, candidate));
+    Some(Sentinels {
+        underline,
+        html: unique.unwrap_or(HTML_SENTINELS[0]),
+        html_unique: unique.is_some(),
+    })
+}
+
+/// Whether `character` occurs in `text` neither as itself nor as a character
+/// reference that decodes to it.
+fn absent(text: &str, character: char) -> bool {
+    !text.contains(character)
+        && !text.match_indices('&').any(|(at, _)| {
+            text.get(at + 1..)
+                .and_then(|rest| rest.split_once(';'))
+                .is_some_and(|(name, _)| reference_value(name) == Some(character))
+        })
+}
+
+/// What the character reference `&name;` decodes to: any numeric one, and
+/// the named ones that decode to a sentinel candidate.
+fn reference_value(name: &str) -> Option<char> {
+    let number = if let Some(hex) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
+        u32::from_str_radix(hex, 16)
+            .ok()
+            .filter(|_| (1..=6).contains(&hex.len()))?
+    } else if let Some(decimal) = name.strip_prefix('#') {
+        decimal
+            .parse()
+            .ok()
+            .filter(|_| (1..=7).contains(&decimal.len()))?
+    } else {
+        return match name {
+            "Hat" => Some('^'),
+            "dollar" => Some('$'),
+            "commat" => Some('@'),
+            "apos" => Some('\''),
+            "quot" | "QUOT" => Some('"'),
+            "comma" => Some(','),
+            "colon" => Some(':'),
+            _ => None,
+        };
+    };
+    char::from_u32(number)
 }
 
 /// Rewrite the underline of every setext heading in `events` so that it
@@ -1880,22 +1944,24 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>], sentinels: Sentinels) -> Op
 /// - **A reference link's label is rewritten on both sides.** The tokenizer
 ///   matches a label to its definition by its text, so `[<b>]` and
 ///   `[<b>]: /u` have every `<` in the link and in the definition's label
-///   rewritten, or neither.
+///   rewritten, or neither, but for a comment kept as a node (`comments`).
 fn undo_inline_html(
     setext: Option<String>,
     buffer: &str,
     events: &[Spanned<'_>],
     sentinels: Sentinels,
-    (keep, mask): (impl Fn(&Range<usize>) -> bool, impl Fn(usize) -> bool),
+    (keep, mask, comments): (impl Fn(&Range<usize>) -> bool, impl Fn(usize) -> bool, bool),
 ) -> Option<String> {
-    let Some(sentinel) = sentinels.html else {
-        return setext;
-    };
+    let kept: Vec<&Range<usize>> = events
+        .iter()
+        .filter(|(event, span)| matches!(event, Event::InlineHtml(_)) && keep(span))
+        .map(|(_, span)| span)
+        .collect();
     let angles = |span: &Range<usize>| {
         buffer.get(span.clone()).map_or_else(Vec::new, |text| {
             text.match_indices('<')
                 .map(|(offset, _)| span.start + offset)
-                .filter(|&at| !mask(at))
+                .filter(|&at| !mask(at) && !kept.iter().any(|kept| kept.contains(&at)))
                 .collect::<Vec<_>>()
         })
     };
@@ -1908,21 +1974,42 @@ fn undo_inline_html(
     if at.is_empty() {
         return setext;
     }
+    // In order, as the events are, so that a link is tested by bisection.
+    let undone = at.clone();
     for pair in events.windows(2) {
         if let [
             (Event::Start(Container::Link { .. } | Container::Image { .. }), link),
             (Event::LinkDefinition, definition),
         ] = pair
-            && at.iter().any(|offset| link.contains(offset))
+            && undone
+                .get(undone.partition_point(|&offset| offset < link.start))
+                .is_some_and(|&offset| offset < link.end)
         {
             at.extend(angles(link));
-            let label = after_label(buffer, definition.clone());
-            at.extend(angles(&(definition.start..label.start)));
+            // The label is not inline content, so it has no events to say
+            // what stays HTML: a whole comment does, when comments are nodes,
+            // as it did in the link.
+            let label = definition.start..after_label(buffer, definition.clone()).start;
+            let text = buffer.get(label.clone()).unwrap_or_default();
+            let mut comment_end = label.start;
+            for offset in angles(&label) {
+                if offset < comment_end {
+                    continue;
+                }
+                let rest = text.get(offset - label.start..).unwrap_or_default();
+                match rest
+                    .find("-->")
+                    .filter(|_| comments && rest.starts_with("<!--"))
+                {
+                    Some(close) => comment_end = offset + close + 3,
+                    None => at.push(offset),
+                }
+            }
         }
     }
     let mut out = setext.unwrap_or_else(|| buffer.to_string());
     let mut bytes = [0; 4];
-    let sentinel = sentinel.encode_utf8(&mut bytes);
+    let sentinel = sentinels.html.encode_utf8(&mut bytes);
     for offset in at {
         if out.get(offset..=offset) == Some("<") {
             out.replace_range(offset..=offset, sentinel);
@@ -1931,30 +2018,53 @@ fn undo_inline_html(
     Some(out)
 }
 
-/// Put back the markers [`undo_setext`] and [`undo_inline_html`] overwrote,
-/// in every string `event` carries.
-///
-/// Not only text: a link title can span the underline's line, and a reference
-/// link takes its title from a definition anywhere in the run.
-fn restore_markers(event: Event<'_>, sentinels: Sentinels) -> Event<'_> {
-    let fix = |value| restore(value, sentinels);
-    match event {
-        Event::Text(content) => Event::Text(fix(content)),
-        Event::Code(content) => Event::Code(fix(content)),
-        Event::Html(content) => Event::Html(fix(content)),
-        Event::InlineHtml(content) => Event::InlineHtml(fix(content)),
-        Event::Start(Container::Link { destination, title }) => Event::Start(Container::Link {
-            destination: fix(destination),
-            title: fix(title),
-        }),
-        Event::Start(Container::Image { destination, title }) => Event::Start(Container::Image {
-            destination: fix(destination),
-            title: fix(title),
-        }),
-        Event::Start(Container::CodeBlock { info }) => Event::Start(Container::CodeBlock {
-            info: info.map(fix),
-        }),
-        other => other,
+/// A run as [`undo_setext`] and [`undo_inline_html`] rewrote it, next to the
+/// run as it was. Every rewrite keeps every offset.
+struct Rewrite<'r> {
+    buffer: &'r str,
+    original: &'r str,
+    sentinels: Sentinels,
+}
+
+impl Rewrite<'_> {
+    /// Put back the markers overwritten in every string `event` carries.
+    ///
+    /// Text that is the buffer at its span, as nearly all text is, is the
+    /// original at that span: restored by position, so a sentinel the author
+    /// wrote, or a reference decoded to one, stays as it is. Anything else --
+    /// an escape's text, a code span's content, a title, which a reference
+    /// link takes from a definition anywhere in the run -- is restored by
+    /// character, for the sentinels that occur nowhere else.
+    fn restore<'e>(&self, event: Event<'e>, span: &Range<usize>) -> Event<'e> {
+        let fix = |value| restore(value, self.sentinels);
+        match event {
+            Event::Text(content) if self.buffer.get(span.clone()) == Some(&*content) => {
+                match self.original.get(span.clone()) {
+                    Some(original) if original != &*content => {
+                        Event::Text(Cow::Owned(original.to_owned()))
+                    }
+                    _ => Event::Text(content),
+                }
+            }
+            Event::Text(content) => Event::Text(fix(content)),
+            Event::Code(content) => Event::Code(fix(content)),
+            Event::Html(content) => Event::Html(fix(content)),
+            Event::InlineHtml(content) => Event::InlineHtml(fix(content)),
+            Event::Start(Container::Link { destination, title }) => Event::Start(Container::Link {
+                destination: fix(destination),
+                title: fix(title),
+            }),
+            Event::Start(Container::Image { destination, title }) => {
+                Event::Start(Container::Image {
+                    destination: fix(destination),
+                    title: fix(title),
+                })
+            }
+            Event::Start(Container::CodeBlock { info }) => Event::Start(Container::CodeBlock {
+                info: info.map(fix),
+            }),
+            other => other,
+        }
     }
 }
 
@@ -2054,16 +2164,20 @@ const fn is_inline(kind: ContainerKind) -> bool {
 ///
 /// An HTML block line or a code line may begin with indentation the tokenizer
 /// kept, so whitespace before the placeholder is allowed.
-/// Whether a block tag the segmenter masked as `<? ... ?>` starts at `at`.
-fn is_mask_start(tags: &[TagSpan], at: usize) -> bool {
-    tags.get(tags.partition_point(|tag| tag.outer.start < at))
-        .is_some_and(|tag| tag.nested && tag.outer.start == at)
-}
-
 fn nested_at<'t>(source: &str, tags: &'t [TagSpan], span: &Range<usize>) -> Option<&'t TagSpan> {
-    let tag = tags.get(tags.partition_point(|tag| tag.outer.start < span.start))?;
+    let tag = tag_from(tags, span.start)?;
     let lead = source.get(span.start..tag.outer.start)?;
     (tag.nested && tag.outer.start < span.end && lead.trim().is_empty()).then_some(tag)
+}
+
+/// The first tag that starts at or after `at`.
+fn tag_from(tags: &[TagSpan], at: usize) -> Option<&TagSpan> {
+    tags.get(tags.partition_point(|tag| tag.outer.start < at))
+}
+
+/// Whether a block tag the segmenter masked as `<? ... ?>` starts at `at`.
+fn is_mask_start(tags: &[TagSpan], at: usize) -> bool {
+    tag_from(tags, at).is_some_and(|tag| tag.nested && tag.outer.start == at)
 }
 
 /// Whether any tag overlaps `span`.

@@ -612,6 +612,53 @@ fn inline_html_read_as_text_keeps_flanking_and_labels() {
     }
 }
 
+/// The character written over a `<` is never mistaken for one the author
+/// wrote or a reference decoded to, and a run that holds every candidate
+/// still reads its markup as text.
+#[test]
+fn the_sentinel_for_a_bracket_is_never_the_authors() {
+    let document = parse("<b>x &#94; y ^");
+    assert_eq!(
+        attribute(at(&document, &[0, 0, 0]), "content"),
+        "\"<b>x ^ y ^\""
+    );
+    let document = parse("a<b>c [d](&#94;)");
+    assert_eq!(attribute(at(&document, &[0, 0, 1]), "href"), "\"^\"");
+    let source = "<a href=\"{% $y %}\">x</a> ^ $ @ ' \" , : and `<i>`";
+    let document = parse(source);
+    let inline = at(&document, &[0, 0]);
+    assert!(
+        inline.children.iter().any(|child| matches!(
+            child.get("content"),
+            Some(accent_proust::ast::Value::Variable(_))
+        )),
+        "{}",
+        outline(&document)
+    );
+    assert_eq!(
+        attribute(inline.children.last().unwrap_or(inline), "content"),
+        "\"<i>\""
+    );
+}
+
+/// A comment kept as a node stays one inside a label that also holds markup.
+#[test]
+fn a_kept_comment_in_a_reference_label_stays_a_comment() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let source = "[<!-- c --> <b>]\n\n[<!-- c --> <b>]: /u";
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with(source, &PulldownTokenizer::new(), &options);
+    let link = at(&document, &[0, 0, 0]);
+    assert_eq!(link.node_type, NodeType::Link, "{}", outline(&document));
+    assert_eq!(
+        at(link, &[0]).node_type,
+        NodeType::Comment,
+        "{}",
+        outline(&document)
+    );
+}
+
 /// Markup nested in markup is undone in one pass, not one per level.
 #[test]
 fn nested_inline_html_is_read_in_linear_time() {
