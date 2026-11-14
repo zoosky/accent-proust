@@ -126,9 +126,10 @@ impl Declaration for Js {
     }
 
     fn keys(&self) -> Vec<String> {
-        self.object()
-            .map(|object| value::keys(&object))
-            .unwrap_or_default()
+        match self.object() {
+            Some(object) => value::keys(&object),
+            None => Vec::new(),
+        }
     }
 
     fn get(&self, key: &str, at: &Path) -> Result<Option<Js>, Error> {

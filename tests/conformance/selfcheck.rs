@@ -14,8 +14,9 @@ use crate::{CORPUS, grade};
 
 // A helper, so outside a `#[test]` function and outside the relaxation in
 // `clippy.toml`. The panic is the point: a corpus that will not load is not a
-// test failure to report, it is the ground the tests stand on.
-#[expect(
+// test failure to report, it is the ground the tests stand on. An `allow`,
+// not an `expect`: clippy 1.100 counts this as test code and no longer fires.
+#[allow(
     clippy::panic,
     reason = "a test helper fails the way the tests it serves do"
 )]

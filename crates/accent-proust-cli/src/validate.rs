@@ -61,7 +61,6 @@ pub enum Format {
 }
 
 /// Run `validate`.
-#[must_use]
 pub fn run(args: &ValidateArgs) -> ExitCode {
     let Some(sources) = load("validate", &args.host) else {
         return Exit::Failure.code();

@@ -22,6 +22,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`fmt` writes an autolink only for an absolute URI** (#84).
+  `[README.md](README.md)` stays as it is instead of becoming `<README.md>`,
+  which is not a link, as in upstream's open markdoc/markdoc#651
+  (`DIVERGENCES.md` entry 16).
+- **`fmt` keeps a destination that holds a space a link** (#91). `[a](</a b>)`
+  reprints as itself instead of `[a](/a b)`. A destination is also written so
+  that a backslash, an `&` before a reference, and a line ending read back as
+  written, and so is a title: `[a](a "t\"u")` no longer loses its link. An
+  empty destination before a title is written `<>`.
 - **A reference link keeps the tags of its definition** (#79). `[a][r]` with
   `[r]: /x{%$y%}z "t{% $z %}"` gave `href="/x{%xx%}z"`: the masked text.
 - **A tag with spaces in a link destination makes no link** (#80), as upstream:

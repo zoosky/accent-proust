@@ -28,7 +28,6 @@ pub struct RenderArgs {
 }
 
 /// Run `render`.
-#[must_use]
 pub fn run(args: &RenderArgs) -> ExitCode {
     let Some(sources) = load("render", &args.host) else {
         return Exit::Failure.code();

@@ -29,7 +29,6 @@ pub struct TransformArgs {
 }
 
 /// Run `transform`.
-#[must_use]
 pub fn run(args: &TransformArgs) -> ExitCode {
     let Some(sources) = load("transform", &args.host) else {
         return Exit::Failure.code();

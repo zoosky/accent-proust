@@ -148,7 +148,6 @@ struct Canonical {
 /// The exit code: 2 if any input failed, otherwise 1 if `--check` found a
 /// change, otherwise 0. `--write` exits 0 when it changed something, because
 /// changing it was the request.
-#[must_use]
 pub fn run(args: &FmtArgs) -> ExitCode {
     let options = options(args);
     let mode = Mode::of(args);

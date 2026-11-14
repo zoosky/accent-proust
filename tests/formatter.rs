@@ -1161,3 +1161,182 @@ mod proptests {
 
     }
 }
+
+/// A link destination reprints so that it reads back as the same string, and a
+/// link reprints as an autolink only when it would read back as one (#84,
+/// #91).
+mod destinations {
+    use super::{NodeType, check, format, parse, stable, support};
+    use proptest::prelude::*;
+
+    #[test]
+    fn a_relative_link_equal_to_its_text_keeps_the_long_form() {
+        stable("See [README.md](README.md) and [/docs](/docs) and [#a](#a).\n");
+    }
+
+    #[test]
+    fn an_email_shaped_link_equal_to_its_text_keeps_the_long_form() {
+        stable("[foo@example.com](foo@example.com)\n");
+    }
+
+    #[test]
+    fn an_absolute_uri_equal_to_its_text_becomes_an_autolink() {
+        check("[https://a.b](https://a.b)\n", "<https://a.b>\n");
+        check("[ab:c](ab:c)\n", "<ab:c>\n");
+    }
+
+    #[test]
+    fn a_one_letter_scheme_is_not_an_absolute_uri() {
+        stable("[a:b](a:b)\n");
+    }
+
+    #[test]
+    fn a_destination_with_a_space_keeps_its_angle_brackets() {
+        stable("[a](</a b>)\n");
+        stable("![a](</a b.png> \"t\")\n");
+    }
+
+    #[test]
+    fn inside_angle_brackets_the_brackets_are_escaped_and_parentheses_are_not() {
+        stable("[a](<a b\\<c\\>(d>)\n");
+    }
+
+    #[test]
+    fn a_destination_starting_with_an_angle_bracket_is_bracketed() {
+        check("[a](\\<b)\n", "[a](<\\<b>)\n");
+    }
+
+    #[test]
+    fn a_backslash_is_escaped_only_where_it_would_escape() {
+        stable("[a](a\\b)\n");
+        check("[a](a\\\\*)\n", "[a](a\\\\*)\n");
+        check("[a](a\\\\)\n", "[a](a\\\\)\n");
+        check("[a](a\\\u{a0})\n", "[a](a\\\\&nbsp;)\n");
+    }
+
+    #[test]
+    fn an_ampersand_that_would_start_a_reference_is_escaped() {
+        stable("[a](/?a=1&b=2)\n");
+        check("[a](/&amp;amp;)\n", "[a](/\\&amp;)\n");
+    }
+
+    #[test]
+    fn a_line_ending_is_written_as_a_reference_and_needs_no_brackets() {
+        stable("[a](/a&#10;b)\n");
+        check("[a](</a&#10;b c>)\n", "[a](</a&#10;b c>)\n");
+    }
+
+    #[test]
+    fn an_empty_destination_before_a_title_is_written_as_brackets() {
+        stable("[a](<> \"t\")\n");
+        stable("![a](<> \"t\")\n");
+        stable("[a]()\n");
+    }
+
+    #[test]
+    fn a_title_reads_back_as_written() {
+        stable("[a](a \"t\\\"u\")\n");
+        check("[a](a 't\"u')\n", "[a](a \"t\\\"u\")\n");
+        check("[a](a \"t\\\\\")\n", "[a](a \"t\\\\\")\n");
+        check("[a](a \"&amp;amp;\")\n", "[a](a \"\\&amp;\")\n");
+    }
+
+    /// Pieces of destinations, including every character the writer treats
+    /// specially.
+    const PIECES: &[&str] = &[
+        "a",
+        "/",
+        "README.md",
+        "#a",
+        "ab:",
+        "https://a.b",
+        "a@b.c",
+        " ",
+        "\t",
+        "\u{1}",
+        "(",
+        ")",
+        "\\",
+        "\\(",
+        "&amp;",
+        "&#10;",
+        "&#x3c;",
+        "&#x3e;",
+        "&nbsp;",
+        "\u{a0}",
+        "\u{e4}",
+        "%20",
+        "?a=1&b",
+        "*",
+        "_",
+    ];
+
+    fn destination() -> impl Strategy<Value = String> {
+        prop::collection::vec(prop::sample::select(PIECES), 0..8).prop_map(|parts| parts.concat())
+    }
+
+    /// Pieces of a title, as written between `"`.
+    const TITLE_PIECES: &[&str] = &[
+        "t",
+        " ",
+        "\\\"",
+        "\\",
+        "\\\\",
+        "&amp;",
+        "&amp;amp;",
+        "(",
+        ")",
+        "'",
+        "&#10;",
+        "\u{a0}",
+    ];
+
+    fn title() -> impl Strategy<Value = Option<String>> {
+        prop::option::of(
+            prop::collection::vec(prop::sample::select(TITLE_PIECES), 0..6)
+                .prop_map(|parts| parts.concat()),
+        )
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2048))]
+
+        /// Any link the parser reads, bare or bracketed, and with text equal
+        /// to its destination or not, reprints as the same tree.
+        #[test]
+        fn a_link_round_trips(
+            destination in destination(),
+            bracketed in any::<bool>(),
+            same_text in any::<bool>(),
+            image in any::<bool>(),
+            title in title(),
+        ) {
+            let written = if bracketed { format!("<{destination}>") } else { destination.clone() };
+            // Text escaping is not under test: text that holds a reference, a
+            // backslash or an emphasis marker is the formatter's text arm's,
+            // with limits of its own (see `proptests`).
+            let plain = !destination.contains(['&', '\\', '*', '_']);
+            let text = if same_text && plain { destination.as_str() } else { "x" };
+            let bang = if image { "!" } else { "" };
+            let title = title.map(|title| format!(" \"{title}\"")).unwrap_or_default();
+            let source = format!("{bang}[{text}]({written}{title})\n");
+            let document = parse(&source);
+            // Only a source that is one link and nothing else: text left over
+            // beside it is the text arm's again.
+            let inline = document.walk().find(|node| node.node_type == NodeType::Inline);
+            let linked = inline.is_some_and(|inline| {
+                inline.children.len() == 1
+                    && matches!(inline.children[0].node_type, NodeType::Link | NodeType::Image)
+            });
+            prop_assume!(linked);
+            let reprinted = format(&document);
+            prop_assert_eq!(
+                support::outline(&document),
+                support::outline(&parse(&reprinted)),
+                "{:?} reprinted as {:?}",
+                source,
+                reprinted
+            );
+        }
+    }
+}

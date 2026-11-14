@@ -23,7 +23,6 @@ pub struct ParseArgs {
 }
 
 /// Run `parse`.
-#[must_use]
 pub fn run(args: &ParseArgs) -> ExitCode {
     let tokenizer = PulldownTokenizer::new();
     let mut exit = Exit::Success;

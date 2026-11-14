@@ -1,8 +1,11 @@
-//! The three character classes the formatter escapes, and the one it replaces.
+//! Two of the three character classes the formatter escapes, and the one it
+//! replaces. The third, the parentheses of a link destination, is escaped
+//! where the destination is written (`super::inline`), which needs more than a
+//! character class.
 //!
 //! Upstream writes them as regular expressions passed to
-//! `escapeMarkdownCharacters`. Two are global replacements over a character
-//! set; the third is a non-global alternation, so it rewrites **one** match in
+//! `escapeMarkdownCharacters`. One is a global replacement over a character
+//! set; the other is a non-global alternation, so it rewrites **one** match in
 //! the whole string, and which one depends on the alternation order. Spelling
 //! that out is the point of this module: a global replacement of the same
 //! alternation would escape a `#` in the middle of a sentence, and a `>` on
@@ -16,9 +19,6 @@
 /// Which characters to escape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Escape {
-    /// `/[()]/g` -- the parentheses that would close a link or image
-    /// destination early.
-    Parens,
     /// `/[*_~]/g` -- the markers that would close a `strong`, `em` or `s`
     /// wrapper early. Applied to text inside one.
     Wrapping,
@@ -37,7 +37,6 @@ pub(super) enum Escape {
 /// entities.
 pub(super) fn escape_markdown(text: &str, class: Escape) -> String {
     let escaped = match class {
-        Escape::Parens => escape_set(text, &['(', ')']),
         Escape::Wrapping => escape_set(text, &['*', '_', '~']),
         Escape::Block => escape_block(text),
     };
@@ -136,14 +135,6 @@ mod tests {
     use super::{Escape, escape_markdown};
 
     #[test]
-    fn parentheses_are_escaped_everywhere_they_appear() {
-        assert_eq!(
-            escape_markdown("https://example.com?q=()", Escape::Parens),
-            "https://example.com?q=\\(\\)"
-        );
-    }
-
-    #[test]
     fn wrapper_markers_are_escaped_everywhere_they_appear() {
         assert_eq!(
             escape_markdown("a _sentence_ with *stars* and ~tildes~", Escape::Wrapping),
@@ -199,7 +190,6 @@ mod tests {
     #[test]
     fn non_breaking_spaces_become_entities_in_every_class() {
         assert_eq!(escape_markdown("a\u{a0}b", Escape::Block), "a&nbsp;b");
-        assert_eq!(escape_markdown("a\u{a0}b", Escape::Parens), "a&nbsp;b");
         assert_eq!(escape_markdown("a\u{a0}b", Escape::Wrapping), "a&nbsp;b");
     }
 }
