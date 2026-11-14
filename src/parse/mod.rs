@@ -173,7 +173,7 @@ pub fn parse_with<'s>(
     tokenizer: &dyn Tokenizer,
     options: &ParseOptions<'s>,
 ) -> Node<'s> {
-    let segmentation = segment::segment(source);
+    let segmentation = segment::segment_with(source, options.allow_comments);
     let mut document = document::Builder::new(source, options).run(&segmentation, tokenizer);
 
     // Upstream runs its transform list here, at the end of `parser()`, and the

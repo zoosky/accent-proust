@@ -22,6 +22,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tag inside a comment block is comment text** (#100), with comments on,
+  as upstream: a block tag alone on a line of a multi-line comment no longer
+  splits it.
 - **An image's `alt` is its label as written, as upstream's is** (#96).
   `![*a* <https://a.b>](/i.png)` has `alt="*a* <https://a.b>"`, not the text
   of its children, `a https://a.b`. A label over lines loses only its
