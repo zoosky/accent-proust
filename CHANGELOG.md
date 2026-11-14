@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-14
+
 ### Added
 
 - **`Event::LinkDefinition`**, which a tokenizer may report right after a
@@ -60,7 +62,6 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A tag with spaces in a link destination makes no link** (#80), as upstream:
   `[a](/x{% $y %}z)` is text and a variable. Masking now keeps a tag's
   whitespace.
-
 - **A line starting with `#` over `---` or `===` is no longer a heading**
   (#81). `#a` and `#5 bolt` are not ATX headings, so, as upstream, the pair is
   a paragraph and a rule, or one paragraph.
@@ -415,7 +416,8 @@ crate builds on pulldown-cmark.
 - **MSRV 1.96** for the library, normalised across the Accent crates, on Rust
   edition 2024.
 
-[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.12.4...HEAD
+[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/zoosky/accent-proust/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/zoosky/accent-proust/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/zoosky/accent-proust/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/zoosky/accent-proust/compare/v0.12.1...v0.12.2

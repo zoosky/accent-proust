@@ -64,15 +64,16 @@ places. Every disagreement that matters is enumerated in
 
 ## Versioning
 
-The crate is at `0.12.4` rather than `1.0.0` because the shape of the Rust types
+The crate is at `0.13.0` rather than `1.0.0` because the shape of the Rust types
 is not promised yet. The conventions above already are; a `0.x` number is the
 honest way to say the rest still moves -- `0.11.0` is the release in which
-`Config` changed shape, `0.12.0` adds a field to `Node`, and the changelog says
+`Config` changed shape, `0.12.0` adds a field to `Node`, `0.13.0` encodes link
+destinations and reads raw HTML as upstream does, and the changelog says
 what moved each time.
 
 > [!NOTE]
 > The npm package and the crate share one version number. A release publishes
-> both, so `accent-proust 0.12.4` on crates.io and `accent-proust@0.12.4` on npm
+> both, so `accent-proust 0.13.0` on crates.io and `accent-proust@0.13.0` on npm
 > are built from the same commit.
 
 ## Licence and provenance
