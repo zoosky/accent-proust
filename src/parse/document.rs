@@ -1996,16 +1996,22 @@ where
     let angles = |span: &Range<usize>, at: &mut Vec<usize>| {
         let text = buffer.get(span.clone()).unwrap_or_default();
         let mut comment_end = span.start;
+        // Once no `-->` follows, none follows a later `<` either.
+        let mut closes = keeps.comments;
         for (offset, _) in text.match_indices('<') {
             let offset = span.start + offset;
             if offset < comment_end || (keeps.mask)(offset) || in_kept(offset) {
                 continue;
             }
             let rest = text.get(offset - span.start..).unwrap_or_default();
-            match rest
-                .find("-->")
-                .filter(|_| keeps.comments && rest.starts_with("<!--"))
-            {
+            let close = if closes && rest.starts_with("<!--") {
+                let close = rest.find("-->");
+                closes = close.is_some();
+                close
+            } else {
+                None
+            };
+            match close {
                 Some(close) => comment_end = offset + close + 3,
                 None => at.push(offset),
             }

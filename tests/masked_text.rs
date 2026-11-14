@@ -698,6 +698,9 @@ fn many_references_and_comments_are_read_in_linear_time() {
         "<b> ".repeat(10_000)
     );
     let _ = parse_with(&source, &PulldownTokenizer::new(), &options);
+    // Comments that never close, inside one span of markup.
+    let unclosed = format!("<a {}>", "<!-- ".repeat(10_000));
+    let _ = parse_with(&unclosed, &PulldownTokenizer::new(), &options);
     assert!(
         started.elapsed().as_secs() < 5,
         "took {:?}",
