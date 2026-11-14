@@ -22,6 +22,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An HTML block is read as markdown, as upstream reads it** (#98).
+  markdown-it with `html: false` has no HTML block rule, so a line starting
+  `<div>` or `<!-- c -->` is a paragraph whose links, entities, escapes and
+  tags all work: `<!-- c -->[l](/u)` has a link. A comment block is still a
+  `comment` node when comments are on.
 - **Raw inline HTML is text, as upstream reads it** (#89). A tag inside it is
   a tag: `<a href="{% $y %}">x</a>` holds a variable. Escapes and entities
   are read, a line break is a soft break, and a `*` in it can open emphasis,

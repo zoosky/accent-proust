@@ -708,6 +708,23 @@ fn many_references_and_comments_are_read_in_linear_time() {
     );
 }
 
+/// A long comment block is gathered in one pass over its lines.
+#[test]
+fn a_long_comment_block_is_read_in_linear_time() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    let source = format!("<!--\n{}-->\n", "x\n".repeat(20_000));
+    let started = std::time::Instant::now();
+    let document = parse_with(&source, &PulldownTokenizer::new(), &options);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(at(&document, &[0]).node_type, NodeType::Comment);
+}
+
 /// Markup nested in markup is undone in one pass, not one per level.
 #[test]
 fn nested_inline_html_is_read_in_linear_time() {
@@ -736,6 +753,82 @@ fn an_inline_comment_is_a_node_only_when_comments_are() {
         outline(at(&document, &[0, 0])),
         "inline\n  text content=\"x <!-- c --> y\"\n"
     );
+}
+
+/// An HTML block is markdown, as markdown-it with `html: false` reads it
+/// (#98): its links, entities, escapes, emphasis and tags all work. Every
+/// expected tree is upstream 0.5.12's.
+#[test]
+fn an_html_block_is_read_as_markdown() {
+    for (source, expected) in [
+        (
+            "<!-- c -->[l](/u)",
+            "inline\n  text content=\"<!-- c -->\"\n  link href=\"/u\"\n    text content=\"l\"\n",
+        ),
+        (
+            "<span>&amp; {% $y %}</span>",
+            "inline\n  text content=\"<span>& \"\n  text content=$y\n  text content=\"</span>\"\n",
+        ),
+        (
+            "<div>\n*a*",
+            "inline\n  text content=\"<div>\"\n  softbreak\n  em marker=\"*\"\n    text content=\"a\"\n",
+        ),
+    ] {
+        let document = parse(source);
+        assert_eq!(outline(at(&document, &[0, 0])), expected, "{source:?}");
+    }
+    let document = parse("> <div>\n> [l](/u)");
+    assert_eq!(
+        at(&document, &[0, 0, 0, 2]).node_type,
+        NodeType::Link,
+        "{}",
+        outline(&document)
+    );
+}
+
+/// With comments as nodes, a comment block is upstream's: it starts at any
+/// line opening with `<!--`, inside a container too, ends at the line with
+/// its `-->`, drops what follows that on its line, and is a block of its own.
+/// Every expected tree is upstream 0.5.12's, with `allowComments`.
+#[test]
+fn a_comment_block_is_upstreams_when_comments_are_nodes() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    for (source, expected) in [
+        ("<!-- c -->[l](/u)", "document\n  comment content=\"c\"\n"),
+        (
+            "<div>\n<!-- a\nb -->",
+            "document\n  paragraph\n    inline\n      text content=\"<div>\"\n  comment content=\"a\\nb\"\n",
+        ),
+        (
+            "> <!-- a\n> b -->",
+            "document\n  blockquote\n    comment content=\"a\\n> b\"\n",
+        ),
+        (
+            "<!-- a -->\n<!-- b -->",
+            "document\n  comment content=\"a\"\n  comment content=\"b\"\n",
+        ),
+        (
+            "<!-- a -->\npara",
+            "document\n  comment content=\"a\"\n  paragraph\n    inline\n      text content=\"para\"\n",
+        ),
+        (
+            "x\n<!-- a -->",
+            "document\n  paragraph\n    inline\n      text content=\"x\"\n  comment content=\"a\"\n",
+        ),
+        (
+            "<!-- a\n\n# H",
+            "document\n  paragraph\n    inline\n      text content=\"<!-- a\"\n  heading level=1\n    inline\n      text content=\"H\"\n",
+        ),
+        (
+            "<!-->\n<!-- b -->",
+            "document\n  comment content=\"\"\n  comment content=\"b\"\n",
+        ),
+    ] {
+        let document = parse_with(source, &PulldownTokenizer::new(), &options);
+        assert_eq!(outline(&document), expected, "{source:?}");
+    }
 }
 
 #[test]
