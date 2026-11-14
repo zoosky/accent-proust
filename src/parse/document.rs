@@ -1085,6 +1085,48 @@ impl<'s, 'o> Builder<'s, 'o> {
         Some(paragraph)
     }
 
+    /// The `alt` of the image at `span`, whose text ends at `text_end`: the
+    /// source of its label, as markdown-it's image rule takes it.
+    ///
+    /// markdown-it hands the inline rules a paragraph's lines without their
+    /// container prefixes, so a line of the label after the first is without
+    /// the `>` and whitespace up to the column its run starts at, and keeps
+    /// any indentation past it. Line endings are `\n`, as markdown-it
+    /// normalises them. The label ends at the first `]` after its text, read in
+    /// the masked text, where no tag can hide one.
+    fn image_alt(&self, span: &Range<usize>, text_end: usize, masked: &str) -> Option<String> {
+        let open = span.start + 2;
+        if self.source.get(span.start..open) != Some("![") {
+            return None;
+        }
+        let from = text_end.max(open);
+        let close = from + masked.get(from..span.end)?.find(']')?;
+        let label = self.source.get(open..close)?;
+        let run = self.inline_span.as_ref().map_or(open, |run| run.start);
+        let line_start = self
+            .source
+            .get(..run)
+            .and_then(|head| head.rfind(['\n', '\r']))
+            .map_or(0, |at| at + 1);
+        let column = run - line_start;
+        let label = label.replace("\r\n", "\n").replace('\r', "\n");
+        let mut alt = String::with_capacity(label.len());
+        for (index, line) in label.split('\n').enumerate() {
+            if index > 0 {
+                alt.push('\n');
+                let prefix = line
+                    .bytes()
+                    .take(column)
+                    .take_while(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+                    .count();
+                alt.push_str(line.get(prefix..).unwrap_or(line));
+            } else {
+                alt.push_str(line);
+            }
+        }
+        Some(alt.replace('\0', "\u{fffd}"))
+    }
+
     /// Whether raw HTML at `span` -- inline, or one line of a block -- stays
     /// HTML rather than being read again as markdown: a block tag the
     /// segmenter masked as `<? ... ?>`, which the HTML arms turn back into the
@@ -1320,11 +1362,14 @@ impl<'s, 'o> Builder<'s, 'o> {
                 return;
             }
             ContainerKind::Image => {
+                let text_end = self.links.last().map(|link| link.text_end);
                 self.restore_destination(&span, segmentation);
-                // Upstream treats an image as a leaf: its children become the
-                // `alt` text and are then dropped.
+                // Upstream treats an image as a leaf: its `alt` is the source
+                // of its label (#96), and its children are dropped.
                 let mut node = self.pop();
-                let alt = collect_text(&node);
+                let alt = text_end
+                    .and_then(|text_end| self.image_alt(&span, text_end, &segmentation.masked))
+                    .unwrap_or_else(|| collect_text(&node));
                 node.children.clear();
                 node.set("alt", Value::String(alt));
                 self.attach(node);
