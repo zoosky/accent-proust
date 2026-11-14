@@ -22,6 +22,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Raw inline HTML is text, as upstream reads it** (#89). A tag inside it is
+  a tag: `<a href="{% $y %}">x</a>` holds a variable. Escapes and entities
+  are read, a line break is a soft break, and a `*` in it can open emphasis,
+  as with markdown-it's `html: false`. An inline comment is still a `comment`
+  node when comments are on.
 - **An email autolink links to `mailto:`** (#85), as upstream and CommonMark:
   `<foo@example.com>` has `href="mailto:foo@example.com"`, and `fmt` reprints
   it as `[foo@example.com](mailto:foo@example.com)`, as upstream does.

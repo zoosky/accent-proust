@@ -562,6 +562,182 @@ fn an_email_autolinks_destination_is_a_mailto_url() {
 
 // ---- HTML ----------------------------------------------------------------
 
+/// Upstream runs markdown-it with `html: false`, so raw inline HTML is text
+/// like any other (#89): a tag in it is a tag, an escape and an entity are
+/// read, a line break is a soft break and a `*` can open emphasis. Every
+/// expected tree is upstream 0.5.12's.
+#[test]
+fn inline_html_is_text_with_tags_in_it() {
+    for (source, expected) in [
+        (
+            "<a href=\"{% $y %}\">x</a>",
+            "inline\n  text content=\"<a href=\\\"\"\n  text content=$y\n  text content=\"\\\">x</a>\"\n",
+        ),
+        (
+            "<a title=\"&amp;\\*\">x</a>",
+            "inline\n  text content=\"<a title=\\\"&*\\\">x</a>\"\n",
+        ),
+        (
+            "<a\nhref=\"{% $y %}\">x</a>",
+            "inline\n  text content=\"<a\"\n  softbreak\n  text content=\"href=\\\"\"\n  text content=$y\n  text content=\"\\\">x</a>\"\n",
+        ),
+        (
+            "<b title=\"*\">a*",
+            "inline\n  text content=\"<b title=\\\"\"\n  em marker=\"*\"\n    text content=\"\\\">a\"\n",
+        ),
+    ] {
+        let document = parse(source);
+        assert_eq!(outline(at(&document, &[0, 0])), expected, "{source:?}");
+    }
+}
+
+/// Emphasis next to inline HTML flanks as it does beside a `<`, and a
+/// reference label holding markup still finds its definition. Upstream's
+/// trees, checked by kind.
+#[test]
+fn inline_html_read_as_text_keeps_flanking_and_labels() {
+    for (source, kinds) in [
+        ("foo*<b>bar*", vec![NodeType::Text]),
+        ("_(x)_<b>", vec![NodeType::Em, NodeType::Text]),
+        ("[<b>]\n\n[<b>]: /u", vec![NodeType::Link]),
+        ("[x][<b>]\n\n[<b>]: /u", vec![NodeType::Link]),
+    ] {
+        let document = parse(source);
+        let found: Vec<NodeType> = at(&document, &[0, 0])
+            .children
+            .iter()
+            .map(|child| child.node_type)
+            .collect();
+        assert_eq!(found, kinds, "{source:?}:\n{}", outline(&document));
+    }
+}
+
+/// The character written over a `<` is never mistaken for one the author
+/// wrote or a reference decoded to, and a run that holds every candidate
+/// still reads its markup as text.
+#[test]
+fn the_sentinel_for_a_bracket_is_never_the_authors() {
+    let document = parse("<b>x &#94; y ^");
+    assert_eq!(
+        attribute(at(&document, &[0, 0, 0]), "content"),
+        "\"<b>x ^ y ^\""
+    );
+    let document = parse("a<b>c [d](&#94;)");
+    assert_eq!(attribute(at(&document, &[0, 0, 1]), "href"), "\"^\"");
+    let source = "<a href=\"{% $y %}\">x</a> ^ $ @ ' \" , : and `<i>`";
+    let document = parse(source);
+    let inline = at(&document, &[0, 0]);
+    assert!(
+        inline.children.iter().any(|child| matches!(
+            child.get("content"),
+            Some(accent_proust::ast::Value::Variable(_))
+        )),
+        "{}",
+        outline(&document)
+    );
+    assert_eq!(
+        attribute(inline.children.last().unwrap_or(inline), "content"),
+        "\"<i>\""
+    );
+}
+
+/// A comment kept as a node stays one inside a label that also holds markup.
+#[test]
+fn a_kept_comment_in_a_reference_label_stays_a_comment() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let source = "[<!-- c --> <b>]\n\n[<!-- c --> <b>]: /u";
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with(source, &PulldownTokenizer::new(), &options);
+    let link = at(&document, &[0, 0, 0]);
+    assert_eq!(link.node_type, NodeType::Link, "{}", outline(&document));
+    assert_eq!(
+        at(link, &[0]).node_type,
+        NodeType::Comment,
+        "{}",
+        outline(&document)
+    );
+}
+
+/// A whole comment inside other markup is a comment when comments are nodes,
+/// as upstream's inline comment rule finds one anywhere.
+#[test]
+fn a_comment_inside_markup_is_a_comment_when_comments_are_nodes() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with(
+        "<a title=\"<!-- c -->\"> x",
+        &PulldownTokenizer::new(),
+        &options,
+    );
+    let kinds: Vec<NodeType> = at(&document, &[0, 0])
+        .children
+        .iter()
+        .map(|child| child.node_type)
+        .collect();
+    assert_eq!(
+        kinds,
+        [NodeType::Text, NodeType::Comment, NodeType::Text],
+        "{}",
+        outline(&document)
+    );
+}
+
+/// Neither references nor kept comments make a run's reading quadratic.
+#[test]
+fn many_references_and_comments_are_read_in_linear_time() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let started = std::time::Instant::now();
+    let _ = parse(&format!("<b> {}", "&amp;".repeat(40_000)));
+    let options = ParseOptions::new().allow_comments(true);
+    let source = format!(
+        "x {}{}",
+        "<!-- c --> ".repeat(10_000),
+        "<b> ".repeat(10_000)
+    );
+    let _ = parse_with(&source, &PulldownTokenizer::new(), &options);
+    // Comments that never close, inside one span of markup.
+    let unclosed = format!("<a {}>", "<!-- ".repeat(10_000));
+    let _ = parse_with(&unclosed, &PulldownTokenizer::new(), &options);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
+/// Markup nested in markup is undone in one pass, not one per level.
+#[test]
+fn nested_inline_html_is_read_in_linear_time() {
+    let source = format!("{}-->", "x <!-- ".repeat(20_000));
+    let started = std::time::Instant::now();
+    let document = parse(&source);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(document.children.len(), 1);
+}
+
+/// A comment stays a comment when comments are nodes, and is text otherwise.
+#[test]
+fn an_inline_comment_is_a_node_only_when_comments_are() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let source = "x <!-- c --> y";
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with(source, &PulldownTokenizer::new(), &options);
+    assert_eq!(at(&document, &[0, 0, 1]).node_type, NodeType::Comment);
+    let document = parse(source);
+    assert_eq!(
+        outline(at(&document, &[0, 0])),
+        "inline\n  text content=\"x <!-- c --> y\"\n"
+    );
+}
+
 #[test]
 fn an_indented_html_block_leaves_no_stray_text() {
     let source = "  <div>\n\nfoo\n";
