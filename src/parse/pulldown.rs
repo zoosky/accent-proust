@@ -156,6 +156,18 @@ fn container(tag: Tag<'_>) -> Option<Container<'_>> {
         Tag::Emphasis => Container::Emphasis,
         Tag::Strong => Container::Strong,
         Tag::Strikethrough => Container::Strikethrough,
+        // CommonMark gives an email autolink the destination `mailto:` and
+        // the address, and so does markdown-it; pulldown-cmark reports the
+        // bare address and leaves the scheme to its HTML writer (#85).
+        Tag::Link {
+            link_type: LinkType::Email,
+            dest_url,
+            title,
+            ..
+        } => Container::Link {
+            destination: Cow::Owned(format!("mailto:{dest_url}")),
+            title: cow(title),
+        },
         Tag::Link {
             dest_url, title, ..
         } => Container::Link {

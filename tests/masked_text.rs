@@ -528,6 +528,38 @@ fn an_autolink_keeps_its_tags() {
     assert_eq!(attribute(link, "href"), "\"https://a.b/{%$y%}\"");
 }
 
+/// Upstream reads the autolink before it looks for tags, so the tag in it is
+/// literal text, in its text as in its destination.
+#[test]
+fn an_autolinks_text_keeps_its_tags_as_text() {
+    for (source, text) in [
+        ("<https://a.b/{%$y%}>\n", "https://a.b/{%$y%}"),
+        ("<{%$y%}@b.c>\n", "{%$y%}@b.c"),
+    ] {
+        let document = parse(source);
+        let link = at(&document, &[0, 0, 0]);
+        assert_eq!(
+            link.children.len(),
+            1,
+            "{source:?}:\n{}",
+            outline(&document)
+        );
+        assert_eq!(
+            attribute(at(link, &[0]), "content"),
+            format!("{text:?}"),
+            "{source:?}"
+        );
+    }
+}
+
+/// An email autolink's destination is `mailto:` and the address (#85).
+#[test]
+fn an_email_autolinks_destination_is_a_mailto_url() {
+    let document = parse("<{%$y%}@b.c>\n");
+    let link = at(&document, &[0, 0, 0]);
+    assert_eq!(attribute(link, "href"), "\"mailto:{%$y%}@b.c\"");
+}
+
 // ---- HTML ----------------------------------------------------------------
 
 #[test]

@@ -80,6 +80,9 @@ struct OpenLink {
     /// Where the definition a reference link resolves to is written, when the
     /// tokenizer reports it. Its destination and title come from there.
     definition: Option<Range<usize>>,
+    /// Whether it is an autolink, `<...>`, whose text is literal: no escape
+    /// and no tag in it is one.
+    autolink: bool,
 }
 
 /// Builds one document.
@@ -660,6 +663,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 text_end: span.end,
                 refused: true,
                 definition: None,
+                autolink: false,
             });
             self.link_just_opened = true;
             let text = unescape(self.slice(span));
@@ -677,6 +681,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             text_end: opening.end,
             refused: true,
             definition: None,
+            autolink: false,
         });
         self.link_just_opened = true;
         self.push_source_text(opening);
@@ -1108,6 +1113,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                     text_end: span.start,
                     refused: false,
                     definition: None,
+                    autolink: self.slice(&span).starts_with('<'),
                 });
                 self.link_just_opened = true;
                 let mut node = self.node(NodeType::Link, span);
@@ -1122,6 +1128,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                     text_end: span.start,
                     refused: false,
                     definition: None,
+                    autolink: false,
                 });
                 self.link_just_opened = true;
                 let mut node = self.node(NodeType::Image, span);
@@ -1658,6 +1665,14 @@ impl<'s, 'o> Builder<'s, 'o> {
         let tail = span.start < self.skip_to;
         let span = if tail { self.skip_to..span.end } else { span };
         self.open_inline(&span);
+        // An autolink's text is its source, tags and all: markdown-it reads
+        // `<https://a.b/{%$x%}>` as an autolink before Markdoc looks for tags.
+        let autolink = self.links.last().is_some_and(|link| link.autolink);
+        if autolink && !tail {
+            let node = self.text_node(self.slice(&span).to_owned(), span);
+            self.attach(node);
+            return;
+        }
         if !tail && !overlaps(tags, &span) {
             if !text.is_empty() {
                 let node = self.text_node(text.to_string(), span);
