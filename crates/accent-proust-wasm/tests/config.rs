@@ -261,7 +261,7 @@ fn children_may_name_tag_because_upstreams_schemas_do() {
     assert!(
         result.is_ok(),
         "{}",
-        result.as_ref().err().map(message).unwrap_or_default()
+        result.as_ref().err().map_or_else(String::new, message)
     );
 }
 
@@ -296,11 +296,12 @@ fn a_schema_may_be_any_object_read_key_by_key() {
     assert!(
         config.is_ok(),
         "{}",
-        config.as_ref().err().map(message).unwrap_or_default()
+        config.as_ref().err().map_or_else(String::new, message)
     );
-    let html = config
-        .map(|config| config.render_html("{% callout %}x{% /callout %}"))
-        .unwrap_or_default();
+    let html = config.map_or_else(
+        |_| String::new(),
+        |config| config.render_html("{% callout %}x{% /callout %}"),
+    );
     assert!(html.contains("<Aside"), "{html}");
 }
 
@@ -337,11 +338,12 @@ fn an_undefined_variable_is_null() {
     assert!(
         config.is_ok(),
         "{}",
-        config.as_ref().err().map(message).unwrap_or_default()
+        config.as_ref().err().map_or_else(String::new, message)
     );
-    let html = config
-        .map(|config| config.render_html("{% if $user %}yes{% else /%}no{% /if %}"))
-        .unwrap_or_default();
+    let html = config.map_or_else(
+        |_| String::new(),
+        |config| config.render_html("{% if $user %}yes{% else /%}no{% /if %}"),
+    );
     assert!(html.contains("no"), "{html}");
 }
 
