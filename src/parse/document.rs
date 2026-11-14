@@ -85,6 +85,18 @@ struct OpenLink {
     autolink: bool,
 }
 
+impl OpenLink {
+    /// A link whose text starts at `text_end`, with no definition yet.
+    fn new(text_end: usize, refused: bool, autolink: bool) -> OpenLink {
+        OpenLink {
+            text_end,
+            refused,
+            definition: None,
+            autolink,
+        }
+    }
+}
+
 /// Builds one document.
 #[allow(
     clippy::struct_excessive_bools,
@@ -659,12 +671,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// again as text, whole, and its content events are dropped.
     fn refuse_link(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
         if self.slice(span).starts_with('<') {
-            self.links.push(OpenLink {
-                text_end: span.end,
-                refused: true,
-                definition: None,
-                autolink: false,
-            });
+            self.links.push(OpenLink::new(span.end, true, false));
             self.link_just_opened = true;
             let text = unescape(self.slice(span));
             self.text(&text, span.clone(), &segmentation.tags);
@@ -677,12 +684,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             1
         };
         let opening = span.start..(span.start + opening).min(span.end);
-        self.links.push(OpenLink {
-            text_end: opening.end,
-            refused: true,
-            definition: None,
-            autolink: false,
-        });
+        self.links.push(OpenLink::new(opening.end, true, false));
         self.link_just_opened = true;
         self.push_source_text(opening);
     }
@@ -1109,12 +1111,11 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.refuse_link(&span, segmentation);
             }
             Container::Link { destination, title } => {
-                self.links.push(OpenLink {
-                    text_end: span.start,
-                    refused: false,
-                    definition: None,
-                    autolink: self.slice(&span).starts_with('<'),
-                });
+                self.links.push(OpenLink::new(
+                    span.start,
+                    false,
+                    self.slice(&span).starts_with('<'),
+                ));
                 self.link_just_opened = true;
                 let mut node = self.node(NodeType::Link, span);
                 node.set("href", Value::String(destination.to_string()));
@@ -1124,12 +1125,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
             }
             Container::Image { destination, title } => {
-                self.links.push(OpenLink {
-                    text_end: span.start,
-                    refused: false,
-                    definition: None,
-                    autolink: false,
-                });
+                self.links.push(OpenLink::new(span.start, false, false));
                 self.link_just_opened = true;
                 let mut node = self.node(NodeType::Image, span);
                 node.set("alt", Value::String(String::new()));
