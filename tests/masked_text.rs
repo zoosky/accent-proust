@@ -562,6 +562,51 @@ fn an_email_autolinks_destination_is_a_mailto_url() {
 
 // ---- HTML ----------------------------------------------------------------
 
+/// Upstream runs markdown-it with `html: false`, so raw inline HTML is text
+/// like any other (#89): a tag in it is a tag, an escape and an entity are
+/// read, a line break is a soft break and a `*` can open emphasis. Every
+/// expected tree is upstream 0.5.12's.
+#[test]
+fn inline_html_is_text_with_tags_in_it() {
+    for (source, expected) in [
+        (
+            "<a href=\"{% $y %}\">x</a>",
+            "inline\n  text content=\"<a href=\\\"\"\n  text content=$y\n  text content=\"\\\">x</a>\"\n",
+        ),
+        (
+            "<a title=\"&amp;\\*\">x</a>",
+            "inline\n  text content=\"<a title=\\\"&*\\\">x</a>\"\n",
+        ),
+        (
+            "<a\nhref=\"{% $y %}\">x</a>",
+            "inline\n  text content=\"<a\"\n  softbreak\n  text content=\"href=\\\"\"\n  text content=$y\n  text content=\"\\\">x</a>\"\n",
+        ),
+        (
+            "<b title=\"*\">a*",
+            "inline\n  text content=\"<b title=\\\"\"\n  em marker=\"*\"\n    text content=\"\\\">a\"\n",
+        ),
+    ] {
+        let document = parse(source);
+        assert_eq!(outline(at(&document, &[0, 0])), expected, "{source:?}");
+    }
+}
+
+/// A comment stays a comment when comments are nodes, and is text otherwise.
+#[test]
+fn an_inline_comment_is_a_node_only_when_comments_are() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let source = "x <!-- c --> y";
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with(source, &PulldownTokenizer::new(), &options);
+    assert_eq!(at(&document, &[0, 0, 1]).node_type, NodeType::Comment);
+    let document = parse(source);
+    assert_eq!(
+        outline(at(&document, &[0, 0])),
+        "inline\n  text content=\"x <!-- c --> y\"\n"
+    );
+}
+
 #[test]
 fn an_indented_html_block_leaves_no_stray_text() {
     let source = "  <div>\n\nfoo\n";
