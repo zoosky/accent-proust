@@ -591,6 +591,41 @@ fn inline_html_is_text_with_tags_in_it() {
     }
 }
 
+/// Emphasis next to inline HTML flanks as it does beside a `<`, and a
+/// reference label holding markup still finds its definition. Upstream's
+/// trees, checked by kind.
+#[test]
+fn inline_html_read_as_text_keeps_flanking_and_labels() {
+    for (source, kinds) in [
+        ("foo*<b>bar*", vec![NodeType::Text]),
+        ("_(x)_<b>", vec![NodeType::Em, NodeType::Text]),
+        ("[<b>]\n\n[<b>]: /u", vec![NodeType::Link]),
+        ("[x][<b>]\n\n[<b>]: /u", vec![NodeType::Link]),
+    ] {
+        let document = parse(source);
+        let found: Vec<NodeType> = at(&document, &[0, 0])
+            .children
+            .iter()
+            .map(|child| child.node_type)
+            .collect();
+        assert_eq!(found, kinds, "{source:?}:\n{}", outline(&document));
+    }
+}
+
+/// Markup nested in markup is undone in one pass, not one per level.
+#[test]
+fn nested_inline_html_is_read_in_linear_time() {
+    let source = format!("{}-->", "x <!-- ".repeat(20_000));
+    let started = std::time::Instant::now();
+    let document = parse(&source);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(document.children.len(), 1);
+}
+
 /// A comment stays a comment when comments are nodes, and is text otherwise.
 #[test]
 fn an_inline_comment_is_a_node_only_when_comments_are() {
