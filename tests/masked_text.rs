@@ -769,20 +769,41 @@ fn an_html_block_is_read_as_markdown() {
     );
 }
 
-/// A comment block is still a comment when comments are nodes.
+/// With comments as nodes, a comment block is upstream's: it starts at any
+/// line opening with `<!--`, inside a container too, ends at the line with
+/// its `-->`, drops what follows that on its line, and is a block of its own.
+/// Every expected tree is upstream 0.5.12's, with `allowComments`.
 #[test]
-fn a_comment_block_is_a_comment_when_comments_are_nodes() {
+fn a_comment_block_is_upstreams_when_comments_are_nodes() {
     use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
 
     let options = ParseOptions::new().allow_comments(true);
-    let document = parse_with("<!-- a\nb -->\n\npara", &PulldownTokenizer::new(), &options);
-    assert_eq!(
-        at(&document, &[0]).node_type,
-        NodeType::Comment,
-        "{}",
-        outline(&document)
-    );
-    assert_eq!(at(&document, &[1]).node_type, NodeType::Paragraph);
+    for (source, expected) in [
+        ("<!-- c -->[l](/u)", "document\n  comment content=\"c\"\n"),
+        (
+            "<div>\n<!-- a\nb -->",
+            "document\n  paragraph\n    inline\n      text content=\"<div>\"\n  comment content=\"a\\nb\"\n",
+        ),
+        (
+            "> <!-- a\n> b -->",
+            "document\n  blockquote\n    comment content=\"a\\n> b\"\n",
+        ),
+        (
+            "<!-- a -->\n<!-- b -->",
+            "document\n  comment content=\"a\"\n  comment content=\"b\"\n",
+        ),
+        (
+            "<!-- a -->\npara",
+            "document\n  comment content=\"a\"\n  paragraph\n    inline\n      text content=\"para\"\n",
+        ),
+        (
+            "x\n<!-- a -->",
+            "document\n  paragraph\n    inline\n      text content=\"x\"\n  comment content=\"a\"\n",
+        ),
+    ] {
+        let document = parse_with(source, &PulldownTokenizer::new(), &options);
+        assert_eq!(outline(&document), expected, "{source:?}");
+    }
 }
 
 #[test]

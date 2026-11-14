@@ -205,9 +205,9 @@ impl<'s, 'o> Builder<'s, 'o> {
                 Block::Markdown(range) => {
                     let text = segmentation.masked.get(range.clone()).unwrap_or("");
                     // Each pass turns at least one underline-shaped line
-                    // into one that is not, or one `<` of inline HTML into
-                    // text, so there are never more passes than lines and
-                    // `<` together.
+                    // into one that is not, or one `<` of raw HTML into text,
+                    // so there are never more passes than lines and `<`
+                    // together.
                     let mut rewritten: Option<String> = None;
                     let mut passes = text.lines().count() + text.matches('<').count() + 1;
                     let mut sentinels = None;
@@ -921,36 +921,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 node.set("content", Value::String(content));
                 self.attach(node);
             }
-            Event::Html(_) => {
-                if let Some(tag) = nested_at(self.source, &segmentation.tags, &span) {
-                    self.flush_html_block();
-                    self.close_inline();
-                    self.emit_spanning(tag, false);
-                    return;
-                }
-                self.close_inline();
-                match self.html_block.take() {
-                    // A tokenizer reports an HTML block one line at a time, so
-                    // the lines are gathered back into one node. Where one block
-                    // ends and the next begins has to be read off the spans:
-                    // the lines of a block are contiguous, and two blocks are
-                    // separated by at least the blank line between them. The
-                    // block wrapper itself carries nothing and is dropped (see
-                    // `pulldown::container`), so it cannot say instead -- and
-                    // without this test two `<!-- ... -->` comments a blank line
-                    // apart merge into one comment whose content contains the
-                    // first one's terminator.
-                    Some(open) if open.end == span.start => {
-                        self.html_block = Some(open.start..span.end);
-                    }
-                    Some(open) => {
-                        self.html_block = Some(open);
-                        self.flush_html_block();
-                        self.html_block = Some(span);
-                    }
-                    None => self.html_block = Some(span),
-                }
-            }
+            Event::Html(_) => self.html_line(span, segmentation),
             Event::InlineHtml(_) => {
                 if let Some(tag) = nested_at(self.source, &segmentation.tags, &span) {
                     if self.begins_line(tag) && self.splittable() {
@@ -991,16 +962,52 @@ impl<'s, 'o> Builder<'s, 'o> {
         }
     }
 
+    /// One line of an HTML block: a block tag masked as one, or a line of a
+    /// block gathered for [`Self::flush_html_block`].
+    fn html_line(&mut self, span: Range<usize>, segmentation: &Segmentation) {
+        if let Some(tag) = nested_at(self.source, &segmentation.tags, &span) {
+            self.flush_html_block();
+            self.close_inline();
+            self.emit_spanning(tag, false);
+            return;
+        }
+        self.close_inline();
+        match self.html_block.take() {
+            // A tokenizer reports an HTML block one line at a time, so
+            // the lines are gathered back into one node. Where one block
+            // ends and the next begins has to be read off the spans:
+            // the lines of a block are contiguous, and two blocks are
+            // separated by at least the blank line between them. The
+            // block wrapper itself carries nothing and is dropped (see
+            // `pulldown::container`), so it cannot say instead -- and
+            // without this test two `<!-- ... -->` comments a blank line
+            // apart merge into one comment whose content contains the
+            // first one's terminator. [`continues_html`] is the test,
+            // shared with `undo_html`.
+            Some(open)
+                if continues_html(self.source, &open, &span, self.options.allow_comments) =>
+            {
+                self.html_block = Some(open.start..span.end);
+            }
+            Some(open) => {
+                self.html_block = Some(open);
+                self.flush_html_block();
+                self.html_block = Some(span);
+            }
+            None => self.html_block = Some(span),
+        }
+    }
+
     /// Turn the gathered HTML block into nodes.
     ///
-    /// A comment becomes a `comment` node when comments are enabled. Any
-    /// other HTML block was already read again as markdown by [`undo_html`],
-    /// as markdown-it with `html: false` reads it: it has no HTML block rule
-    /// (#98). What still arrives here -- a comment when comments are off, in a
-    /// run with no free sentinel or past the pass limit -- is the nearest
-    /// shape without one: paragraphs of literal text, one per run of
-    /// non-blank lines, each line a text node and the lines joined by soft
-    /// breaks.
+    /// A comment becomes a `comment` node when comments are enabled, gathered
+    /// line by line as [`continues_html`] reads one. Any other HTML block was
+    /// already read again as markdown by [`undo_html`], as markdown-it with
+    /// `html: false` reads it: it has no HTML block rule (#98). What still
+    /// arrives here otherwise -- in a run with no free sentinel, or past the
+    /// pass limit -- is the nearest shape without one: paragraphs of literal
+    /// text, one per run of non-blank lines, each line a text node and the
+    /// lines joined by soft breaks.
     ///
     /// This used to attach the raw markup as one bare `text` node in the
     /// block position, a shape upstream never produces and one the `document`
@@ -1059,10 +1066,13 @@ impl<'s, 'o> Builder<'s, 'o> {
         if !self.options.allow_comments {
             return None;
         }
+        // Upstream's block rule ends a comment at its first `-->` and drops
+        // what follows it on that line; inline, the span ends there anyway.
         self.slice(span)
-            .trim()
+            .trim_start()
             .strip_prefix("<!--")
-            .and_then(|rest| rest.strip_suffix("-->"))
+            .and_then(|rest| rest.split_once("-->"))
+            .map(|(body, _)| body)
     }
 
     /// The `comment` node for `span`, when comments are enabled and the
@@ -1792,7 +1802,7 @@ const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
 /// What [`undo_setext`] writes over the first byte of an underline that must
 /// stay text, paired with the marker it stands for (`=`, then `-`), and what
-/// [`undo_html`] writes over a `<` of inline HTML. Each occurs nowhere
+/// [`undo_html`] writes over a `<` of raw HTML. Each occurs nowhere
 /// else in the run, written or as a character reference, so finding one in a
 /// string means its marker; [`None`] where no such character is left.
 #[derive(Clone, Copy)]
@@ -1941,64 +1951,92 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>], sentinels: Sentinels) -> Op
     out
 }
 
-/// The spans of raw HTML in `events`, in order, as the ones `keep` says stay
-/// HTML and the ones to read as markdown.
+/// Whether the HTML block line at `next` continues the block gathered at
+/// `open`, which `source` holds.
 ///
-/// Inline HTML is one span per event. An HTML block arrives a line at a time,
-/// so its lines are gathered back into one span first: whether a block is one
-/// comment is a question about the block. A block that is not one keeps only
-/// the lines `keep` names on their own -- a masked block tag, say.
+/// The lines of one block follow each other with at most a container prefix
+/// between them -- a `> ` or an item's indent -- and two blocks have at least
+/// a blank line between them. When comments are nodes, a comment is a block
+/// of its own, as upstream's block comment rule makes it: it starts at a line
+/// opening with `<!--`, even inside another block, and ends at the line that
+/// holds its `-->`.
+fn continues_html(source: &str, open: &Range<usize>, next: &Range<usize>, comments: bool) -> bool {
+    let joined = source
+        .get(open.end..next.start)
+        .is_some_and(|gap| gap.bytes().all(|byte| matches!(byte, b' ' | b'\t' | b'>')));
+    if !joined || !comments {
+        return joined;
+    }
+    let text = source.get(open.clone()).unwrap_or_default();
+    match opened_comment(text) {
+        Some(rest) => !rest.contains("-->"),
+        None => source
+            .get(next.clone())
+            .is_none_or(|line| opened_comment(line).is_none()),
+    }
+}
+
+/// What follows the `<!--` that `text` opens with, past its indentation.
+fn opened_comment(text: &str) -> Option<&str> {
+    text.trim_start().strip_prefix("<!--")
+}
+
+/// The spans of raw HTML in `events`, in order, as the ones `keep` says stay
+/// HTML and the ones to read as markdown. `buffer` holds them.
+///
+/// Inline HTML is one span per event. An HTML block arrives a line at a time.
+/// When comments are nodes, a comment in it is kept whole, from the line that
+/// opens it to the one that closes it, as [`continues_html`] reads one; the
+/// builder gathers the same lines back into the same comment. Any other line
+/// is kept only if `keep` names it -- a masked block tag, say -- and is
+/// otherwise read as markdown.
 fn html_spans(
+    buffer: &str,
     events: &[Spanned<'_>],
     keep: impl Fn(&Range<usize>) -> bool,
+    comments: bool,
 ) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
     let (mut kept, mut undone) = (Vec::new(), Vec::new());
-    let mut block: Vec<&Range<usize>> = Vec::new();
-    // Sort the lines gathered so far, as one span if they are one to keep.
-    let mut flush = |block: &mut Vec<&Range<usize>>| {
-        let (Some(first), Some(last)) = (block.first(), block.last()) else {
-            return;
-        };
-        let whole = first.start..last.end;
-        if keep(&whole) {
-            kept.push(whole);
-        } else if let [_] = block.as_slice() {
-            undone.push(whole);
-        } else {
-            for line in block.iter() {
-                if keep(line) {
-                    kept.push((*line).clone());
-                } else {
-                    undone.push((*line).clone());
-                }
-            }
-        }
-        block.clear();
-    };
+    // A comment whose lines are still being gathered.
+    let mut comment: Option<Range<usize>> = None;
     for (event, span) in events {
         match event {
             Event::Html(_) => {
-                if block.last().is_some_and(|last| last.end != span.start) {
-                    flush(&mut block);
+                if let Some(open) = comment.take() {
+                    if continues_html(buffer, &open, span, comments) {
+                        comment = Some(open.start..span.end);
+                        continue;
+                    }
+                    kept.push(open);
                 }
-                block.push(span);
+                let line = buffer.get(span.clone()).unwrap_or_default();
+                if comments && opened_comment(line).is_some() {
+                    comment = Some(span.clone());
+                } else if keep(span) {
+                    kept.push(span.clone());
+                } else {
+                    undone.push(span.clone());
+                }
             }
-            // Inline HTML is a span of its own.
             Event::InlineHtml(_) => {
-                flush(&mut block);
-                block.push(span);
-                flush(&mut block);
+                kept.extend(comment.take());
+                if keep(span) {
+                    kept.push(span.clone());
+                } else {
+                    undone.push(span.clone());
+                }
             }
             _ => {}
         }
     }
-    flush(&mut block);
+    kept.extend(comment);
     (kept, undone)
 }
 
-/// What stays HTML when [`undo_html`] reads inline HTML as text.
+/// What stays HTML when [`undo_html`] reads raw HTML as markdown.
 struct Keeps<S, M> {
-    /// Whether inline HTML at a span stays HTML.
+    /// Whether raw HTML at a span stays HTML: an inline span, or one line of
+    /// a block.
     span: S,
     /// Whether a block tag masked as `<? ... ?>` starts at an offset.
     mask: M,
@@ -2007,7 +2045,7 @@ struct Keeps<S, M> {
     comments: bool,
 }
 
-/// Overwrite every `<` of inline HTML in `events` with its sentinel, but what
+/// Overwrite every `<` of raw HTML in `events` with its sentinel, but what
 /// `keeps` says stays HTML. `setext` is the buffer [`undo_setext`] rewrote,
 /// if it did, and is edited in place. Returns the rewritten buffer, or
 /// [`None`] when nothing was rewritten.
@@ -2038,7 +2076,7 @@ where
     let Some(sentinel) = sentinels.html else {
         return setext;
     };
-    let (kept, undone) = html_spans(events, |span| (keeps.span)(span));
+    let (kept, undone) = html_spans(buffer, events, |span| (keeps.span)(span), keeps.comments);
     if undone.is_empty() {
         return setext;
     }
