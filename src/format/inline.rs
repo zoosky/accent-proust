@@ -21,8 +21,15 @@ impl Formatter<'_> {
     pub(super) fn image(&mut self, node: &Node<'_>, no: Ctx, out: &mut Out) {
         out.text("!");
         out.text("[");
-        if let Some(alt) = node.get("alt") {
-            self.value(alt, no, out);
+        match node.get("alt") {
+            // A label over lines is the item's, so its later lines carry the
+            // indent: written bare, the parser would read it as the label's
+            // own and drop it, and the alt would not read back.
+            Some(Value::String(alt)) if alt.contains('\n') => {
+                out.text(alt.replace('\n', &format!("\n{}", SPACE.repeat(no.indent))));
+            }
+            Some(alt) => self.value(alt, no, out),
+            None => {}
         }
         out.text("]");
         out.text("(");

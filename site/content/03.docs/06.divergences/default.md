@@ -119,7 +119,7 @@ encoder is a byte-exact port of markdown-it's.
 
 | # | Divergence |
 |---|---|
-| 16 | **Four round-trip defects in upstream's formatter are fixed.** Upstream emits output that does not parse back to the tree it came from; this crate does not reproduce that |
+| 16 | **Five round-trip defects in upstream's formatter are fixed.** Upstream emits output that does not parse back to the tree it came from; this crate does not reproduce that |
 
 Entry 16 is the only one that makes this implementation *more* correct than the
 original rather than differently correct, and it is declared here for the same

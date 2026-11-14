@@ -22,6 +22,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An image's `alt` is its label as written, as upstream's is** (#96).
+  `![*a* <https://a.b>](/i.png)` has `alt="*a* <https://a.b>"`, not the text
+  of its children, `a https://a.b`. A label over lines loses only its
+  container prefixes.
 - **An HTML block is read as markdown, as upstream reads it** (#98).
   markdown-it with `html: false` has no HTML block rule, so a line starting
   `<div>` or `<!-- c -->` is a paragraph whose links, entities, escapes and
