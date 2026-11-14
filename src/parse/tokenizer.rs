@@ -106,7 +106,10 @@ pub enum Container<'s> {
     Strikethrough,
     /// `[text](destination "title")`.
     Link {
-        /// The destination, as written.
+        /// The destination, as written, but for an [email autolink], whose
+        /// destination is `mailto:` and the address.
+        ///
+        /// [email autolink]: https://spec.commonmark.org/0.31.2/#email-autolink
         destination: Cow<'s, str>,
         /// The title, empty when there is none.
         title: Cow<'s, str>,

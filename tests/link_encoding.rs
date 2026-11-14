@@ -25,6 +25,8 @@ const CASES: &[(&str, &str)] = &[
     ("<https://bücher.de/ä>", "https://xn--bcher-kva.de/%C3%A4"),
     ("[a](/x{%$y%}z)", "/x%7B%25$y%25%7Dz"),
     ("[a][r]\n\n[r]: /ä\n", "/%C3%A4"),
+    ("Mail <foo@example.com> now", "mailto:foo@example.com"),
+    ("<a.b+c@x.y>", "mailto:a.b+c@x.y"),
 ];
 
 /// The first link's `href` or image's `src` in a node.
@@ -88,6 +90,7 @@ fn the_syntax_tree_keeps_the_destination_as_written() {
         ("![i](/ä.png)", "/ä.png"),
         ("[a](https://bücher.de/)", "https://bücher.de/"),
         ("<https://bücher.de/ä>", "https://bücher.de/ä"),
+        ("<foo@example.com>", "mailto:foo@example.com"),
     ] {
         assert_eq!(
             destination(&parse(source)).as_deref(),
@@ -106,6 +109,15 @@ fn formatting_does_not_rewrite_a_destination() {
     ] {
         assert_eq!(format::format(&parse(source)), *source, "{source:?}");
     }
+}
+
+#[test]
+fn an_email_autolink_reprints_as_upstream_reprints_it() {
+    let document = parse("Mail <foo@example.com> now\n");
+    assert_eq!(
+        format::format(&document),
+        "Mail [foo@example.com](mailto:foo@example.com) now\n"
+    );
 }
 
 #[test]
