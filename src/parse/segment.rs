@@ -117,7 +117,18 @@ pub(crate) struct Segmentation {
 }
 
 /// Scan a document.
+#[cfg(test)]
 pub(crate) fn segment(source: &str) -> Segmentation {
+    segment_with(source, false)
+}
+
+/// Scan a document, with comments as nodes when `comments` is set.
+///
+/// A comment block is then as opaque as a fence: upstream's block comment
+/// rule takes it before any tag is read, so a tag inside it is comment text,
+/// on a line of its own too (#100). It starts at a line opening with `<!--`
+/// that some `-->` follows, and ends with the line that holds the first one.
+pub(crate) fn segment_with(source: &str, comments: bool) -> Segmentation {
     let lines = line_ranges(source);
     let mut state = Scan {
         source,
@@ -126,6 +137,8 @@ pub(crate) fn segment(source: &str) -> Segmentation {
         tags: Vec::new(),
         markdown_start: 0,
         fence: None,
+        comments,
+        comment_end: None,
     };
 
     let mut index = 0;
@@ -157,6 +170,10 @@ struct Scan<'s> {
     tags: Vec<TagSpan>,
     markdown_start: usize,
     fence: Option<Fence>,
+    /// Whether comments are nodes, so that a comment block is opaque.
+    comments: bool,
+    /// Where the comment block being passed over ends: just past its `-->`.
+    comment_end: Option<usize>,
 }
 
 impl Scan<'_> {
@@ -175,6 +192,31 @@ impl Scan<'_> {
                 self.fence = None;
             }
             return index + 1;
+        }
+        if let Some(end) = self.comment_end {
+            if line.end >= end {
+                self.comment_end = None;
+            }
+            return index + 1;
+        }
+        if self.comments {
+            let opener = line.start + container_prefix(text);
+            let rest = self.source.get(opener..).unwrap_or_default();
+            if rest.starts_with("<!--") {
+                match rest.find("-->") {
+                    Some(close) => {
+                        let end = opener + close + 3;
+                        if line.end < end {
+                            self.comment_end = Some(end);
+                        }
+                        return index + 1;
+                    }
+                    // No `-->` follows this `<!--`, so none follows a later
+                    // one either: stop looking, which keeps many unclosed
+                    // openers linear.
+                    None => self.comments = false,
+                }
+            }
         }
         if let Some(fence) = opens_fence(text) {
             self.fence = Some(fence);

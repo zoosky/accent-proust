@@ -708,6 +708,47 @@ fn many_references_and_comments_are_read_in_linear_time() {
     );
 }
 
+/// With comments as nodes, a tag inside a comment block is comment text, on
+/// a line of its own too: upstream's block comment rule takes the block
+/// before any tag is read (#100). Upstream 0.5.12's trees, `allowComments`.
+#[test]
+fn a_tag_inside_a_comment_block_is_comment_text() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    for (source, expected) in [
+        (
+            "<!-- a\n{% if $x %}\nb -->",
+            "document\n  comment content=\"a\\n{% if $x %}\\nb\"\n",
+        ),
+        (
+            "> <!-- a\n> {% if $x %}\n> b -->",
+            "document\n  blockquote\n    comment content=\"a\\n> {% if $x %}\\n> b\"\n",
+        ),
+        (
+            "<!-- a\n\n{% foo %}\nb\n{% /foo %}\n-->\nafter",
+            "document\n  comment content=\"a\\n\\n{% foo %}\\nb\\n{% /foo %}\"\n  paragraph\n    inline\n      text content=\"after\"\n",
+        ),
+    ] {
+        let document = parse_with(source, &PulldownTokenizer::new(), &options);
+        assert_eq!(outline(&document), expected, "{source:?}");
+    }
+    // A `<!--` that nothing closes is no comment, and the tag after it is one.
+    let document = parse_with("<!-- a\n{% $y %}", &PulldownTokenizer::new(), &options);
+    assert!(
+        outline(&document).contains("content=$y"),
+        "{}",
+        outline(&document)
+    );
+    // Comments off, the tag is read as before.
+    let document = parse("<!-- a\n{% if $x %}\nb -->");
+    assert!(
+        outline(&document).contains("tag[if]"),
+        "{}",
+        outline(&document)
+    );
+}
+
 /// A long comment block is gathered in one pass over its lines.
 #[test]
 fn a_long_comment_block_is_read_in_linear_time() {
