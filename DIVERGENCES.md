@@ -493,11 +493,11 @@ levels of *authored* nesting, because a paragraph of text is already four --
 document, paragraph, inline, text -- and a list adds two per level. A generated
 or hostile document prints truncated rather than taking the process down.
 
-## 16. Three round-trip defects in upstream's formatter are fixed, not reproduced
+## 16. Four round-trip defects in upstream's formatter are fixed, not reproduced
 
 **Upstream:** the formatter emits output that does not parse back to the tree it
-came from, in three shapes. Each is reachable from an ordinary document, and all
-three are silent -- the output looks plausible.
+came from, in four shapes. Each is reachable from an ordinary document, and all
+four are silent -- the output looks plausible.
 
 1. **An inline comment ends a line.** The `comment` arm appends a newline to
    every comment. Upstream's tokenizer has an inline comment rule, so a comment
@@ -515,9 +515,15 @@ three are silent -- the output looks plausible.
    re-parses as a tag with *no* children. Upstream's own `tags` case fixes
    `{% a %}{% /a %}` as `{% a /%}`, so its output does not settle until a second
    pass.
+4. **A relative link equal to its text is written as an autolink.** The `link`
+   arm writes `<href>` whenever the text is the `href`, and only an absolute URI
+   reads back as an autolink: `[README.md](README.md)` reprints as
+   `<README.md>`, which is text, and `[a@b.c](a@b.c)` as `<a@b.c>`, a link to
+   `mailto:a@b.c` (#84). The fix is upstream's open markdoc/markdoc#651.
 
 **Here:** an inline comment ends no line, the closing boundary carries the
-indent, and a tag whose children come to nothing self-closes.
+indent, a tag whose children come to nothing self-closes, and a link is written
+as an autolink only when its `href` is a CommonMark absolute URI.
 
 **Why:** because the round trip is the specification, not a nice property. r111
 §9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
@@ -528,7 +534,7 @@ that never close, in every migrated file, with nothing in the output that looks
 wrong. That is not a compatibility win worth having, and "upstream does it too"
 is not a defence a corrupted document accepts.
 
-There were four. The fourth was a blockquote that marked only its first line:
+There were five. The fifth was a blockquote that marked only its first line:
 one `> ` per child, so a child printing on several lines came back with its
 later lines outside the quote, and `> a\n> b` reprinted as `> a\nb`. Upstream
 fixed it in v0.5.10 by prefixing every line (markdoc/markdoc#640), which is
@@ -536,7 +542,7 @@ what this crate already did. It is no longer a divergence: the blockquote arm
 is now upstream's, and on upstream's blockquote cases the two formatters print
 the same bytes.
 
-All four were found by the property test rather than by reading, which is the
+The first three and the blockquote were found by the property test rather than by reading, which is the
 argument for having written it: the shapes are individually obvious and
 collectively invisible.
 
@@ -546,7 +552,9 @@ own output does not re-parse. The first two fire in no other case -- upstream's
 byte-identically here, because their content already takes the branch that was
 correct. The third changes `{% x %}{% /x %}` into
 `{% x /%}` for a tag whose children print nothing, which is the same
-normalisation upstream already applies to a tag with no children at all.
+normalisation upstream already applies to a tag with no children at all. The
+fourth keeps `[x](x)` in the long form for an `x` with no scheme, which is what
+upstream wrote before markdoc/markdoc#574 and will write again after #651.
 
 **And what is deliberately *not* fixed.** Upstream escapes exactly three things
 at the start of a run of text: a `*`, a `>`, and a run of `#`. There are more
@@ -593,5 +601,8 @@ written destination where upstream's sees the encoded one. And an autolink's
 text is its destination as written: upstream decodes it for display
 (`normalizeLinkText`, punycode back to Unicode and escapes back to
 characters), which differs only for an autolink written already encoded, such
-as `<https://xn--bcher-kva.de/%C3%A4>`. The port's unit tests and 40,000
+as `<https://xn--bcher-kva.de/%C3%A4>`. Last, the formatter writes a
+destination that holds a space or a control character between `<` and `>`
+(#91): `[a](</a b>)` reprints as itself, where upstream's tree holds `/a%20b`
+and its formatter writes that. The port's unit tests and 40,000
 generated URLs give markdown-it 15.0.1's output byte for byte.
