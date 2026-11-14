@@ -32,6 +32,9 @@ fn the_alt_is_the_label_as_written() {
         ("![a ![b](/c) d](/i.png)", "a ![b](/c) d"),
         ("![a [b](/u) c](/i.png)", "a [b](/u) c"),
         ("![x][r]\n\n[r]: /i.png", "x"),
+        ("![a {% x %} b](/i.png)", "a {% x %} b"),
+        ("![{% x %}](/i.png)", "{% x %}"),
+        ("| ![b\\|c](/i.png) |\n|-|", "b|c"),
         ("x ![](/i.png)", ""),
     ] {
         assert_eq!(alt(&parse(source)).as_deref(), Some(expected), "{source:?}");
@@ -50,6 +53,12 @@ fn a_label_over_lines_loses_only_its_container_prefix() {
         ("> > ![a\n> > b](/i.png)", "a\nb"),
         ("![a  \nb](/i.png)", "a  \nb"),
         ("![a\r\nb](/i.png)", "a\nb"),
+        ("  ![a\n    b](/i.png)", "a\n    b"),
+        (">  ![a\n>  b](/i.png)", "a\n b"),
+        (">\t![a\n>\tb](/i.png)", "a\n\tb"),
+        ("- a\n\n  ![x\n  y](/i.png)", "x\ny"),
+        ("- > ![a\n  > b](/i.png)", "a\nb"),
+        ("> - ![a\n>   b](/i.png)", "a\nb"),
     ] {
         assert_eq!(alt(&parse(source)).as_deref(), Some(expected), "{source:?}");
     }
@@ -63,6 +72,8 @@ fn the_alt_survives_formatting() {
         "![<https://a.b/{%$y%}>](/i.png)\n",
         "![*a* `b`](/i.png)\n",
         "![a {% $y %} b](/i.png)\n",
+        "- ![a\n     b](/i.png)\n",
+        "> - ![a\n>      b](/i.png)\n",
     ] {
         let once = format(&parse(source));
         assert_eq!(

@@ -1108,23 +1108,42 @@ impl<'s, 'o> Builder<'s, 'o> {
             .get(..run)
             .and_then(|head| head.rfind(['\n', '\r']))
             .map_or(0, |at| at + 1);
-        let column = run - line_start;
-        let label = label.replace("\r\n", "\n").replace('\r', "\n");
+        let in_item = self
+            .stack
+            .iter()
+            .any(|node| node.node_type == NodeType::Item);
+        let column = content_column(self.source.get(line_start..run)?, in_item);
+        // markdown-it's table rule unescapes a cell's `\|` before the image
+        // rule reads the label.
+        let in_cell = self
+            .stack
+            .iter()
+            .any(|node| matches!(node.node_type, NodeType::Td | NodeType::Th));
         let mut alt = String::with_capacity(label.len());
-        for (index, line) in label.split('\n').enumerate() {
-            if index > 0 {
-                alt.push('\n');
-                let prefix = line
-                    .bytes()
-                    .take(column)
-                    .take_while(|byte| matches!(byte, b' ' | b'\t' | b'>'))
-                    .count();
-                alt.push_str(line.get(prefix..).unwrap_or(line));
-            } else {
-                alt.push_str(line);
+        let mut characters = label.chars().peekable();
+        while let Some(character) = characters.next() {
+            match character {
+                '\r' | '\n' => {
+                    if character == '\r' {
+                        characters.next_if_eq(&'\n');
+                    }
+                    alt.push('\n');
+                    // The next line's container prefix, up to the column.
+                    for _ in 0..column {
+                        if characters
+                            .next_if(|next| matches!(next, ' ' | '\t' | '>'))
+                            .is_none()
+                        {
+                            break;
+                        }
+                    }
+                }
+                '\0' => alt.push('\u{fffd}'),
+                '\\' if in_cell && characters.peek() == Some(&'|') => {}
+                other => alt.push(other),
             }
         }
-        Some(alt.replace('\0', "\u{fffd}"))
+        Some(alt)
     }
 
     /// Whether raw HTML at `span` -- inline, or one line of a block -- stays
@@ -1365,7 +1384,18 @@ impl<'s, 'o> Builder<'s, 'o> {
                 let text_end = self.links.last().map(|link| link.text_end);
                 self.restore_destination(&span, segmentation);
                 // Upstream treats an image as a leaf: its `alt` is the source
-                // of its label (#96), and its children are dropped.
+                // of its label (#96), and its children are dropped -- an inline
+                // tag its label leaves open with them, which is above it.
+                if let Some(index) = self
+                    .stack
+                    .iter()
+                    .rposition(|node| node.node_type == NodeType::Image)
+                {
+                    while self.stack.len() > index + 1 {
+                        let node = self.pop();
+                        self.attach(node);
+                    }
+                }
                 let mut node = self.pop();
                 let alt = text_end
                     .and_then(|text_end| self.image_alt(&span, text_end, &segmentation.masked))
@@ -2035,6 +2065,26 @@ fn same_html_block(source: &str, open: &Range<usize>, next: &Range<usize>) -> bo
         .is_some_and(|gap| gap.bytes().all(|byte| matches!(byte, b' ' | b'\t' | b'>')))
 }
 
+/// The column the content of `prefix`'s containers starts at, `prefix`
+/// being a line from its start to where its inline run starts.
+///
+/// What markdown-it strips from each later line of the run: after a `>`, one
+/// space and no tab, which it consumes only in part; after a list marker,
+/// every space that follows it, as that is the item's content indent. Bare
+/// indentation is the paragraph's own, which later lines keep, but inside an
+/// item, where it is the item's content indent on a line after its first.
+fn content_column(prefix: &str, in_item: bool) -> usize {
+    let containers = prefix.trim_end_matches([' ', '\t']);
+    match containers.bytes().last() {
+        None if in_item => prefix.len(),
+        None => 0,
+        Some(b'>') => {
+            containers.len() + usize::from(prefix.as_bytes().get(containers.len()) == Some(&b' '))
+        }
+        Some(_) => prefix.len(),
+    }
+}
+
 /// What is between a comment's `<!--` and its first `-->`, when `text` opens
 /// with one past its indentation and one follows.
 ///
@@ -2344,8 +2394,8 @@ fn after_label(masked: &str, span: Range<usize>) -> Range<usize> {
 
 /// Every text descendant of a node, concatenated.
 ///
-/// Used for an image's `alt`, which upstream takes from `token.content` -- the
-/// raw inline text of the image's children.
+/// An image's `alt` only when [`Builder::image_alt`] cannot find its label;
+/// upstream's is the label's source (#96).
 fn collect_text(node: &Node<'_>) -> String {
     let mut out = String::new();
     for child in node.walk() {

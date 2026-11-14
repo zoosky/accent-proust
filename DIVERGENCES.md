@@ -493,11 +493,11 @@ levels of *authored* nesting, because a paragraph of text is already four --
 document, paragraph, inline, text -- and a list adds two per level. A generated
 or hostile document prints truncated rather than taking the process down.
 
-## 16. Four round-trip defects in upstream's formatter are fixed, not reproduced
+## 16. Five round-trip defects in upstream's formatter are fixed, not reproduced
 
 **Upstream:** the formatter emits output that does not parse back to the tree it
-came from, in four shapes. Each is reachable from an ordinary document, and all
-four are silent -- the output looks plausible.
+came from, in five shapes. Each is reachable from an ordinary document, and all
+five are silent -- the output looks plausible.
 
 1. **An inline comment ends a line.** The `comment` arm appends a newline to
    every comment. Upstream's tokenizer has an inline comment rule, so a comment
@@ -520,10 +520,16 @@ four are silent -- the output looks plausible.
    reads back as an autolink: `[README.md](README.md)` reprints as
    `<README.md>`, which is text, and `[a@b.c](a@b.c)` as `<a@b.c>`, a link to
    `mailto:a@b.c` (#84). The fix is upstream's open markdoc/markdoc#651.
+5. **An image's alt over lines loses its indent.** The `image` arm writes the
+   `alt` as it is, and inside a list item its later lines then lack the
+   item's indent, which the parser reads as the label's own and drops:
+   `- ![a\n     b](/i.png)` reprints with an alt of `a\n b`, not `a\n   b`
+   (found in review of #96).
 
 **Here:** an inline comment ends no line, the closing boundary carries the
-indent, a tag whose children come to nothing self-closes, and a link is written
-as an autolink only when its `href` is a CommonMark absolute URI.
+indent, a tag whose children come to nothing self-closes, a link is written
+as an autolink only when its `href` is a CommonMark absolute URI, and each
+later line of an image's alt carries the indent.
 
 **Why:** because the round trip is the specification, not a nice property. r111
 §9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
