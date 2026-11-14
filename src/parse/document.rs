@@ -25,10 +25,10 @@
 //!   thematic break. pulldown-cmark has no such switch, but a setext heading is
 //!   recognisable in its output -- its span covers more than one line -- so
 //!   [`undo_setext`] rewrites the underline so that it cannot be one, and the
-//!   run is tokenized again. Raw inline HTML is undone the same way: upstream
-//!   runs markdown-it with `html: false`, so `<a href="{% $y %}">` is text
-//!   with a tag in it, and [`undo_inline_html`] overwrites its `<` so that it
-//!   reads as text here too. The sibling case, upstream's
+//!   run is tokenized again. Raw HTML is undone the same way: upstream runs
+//!   markdown-it with `html: false`, so `<a href="{% $y %}">` is text with a
+//!   tag in it and an HTML block is markdown, and [`undo_html`] overwrites
+//!   their `<` so that they read so here too. The sibling case, upstream's
 //!   disabled `code` rule, is *not* recoverable that way, and is
 //!   `DIVERGENCES.md` entry 11.
 //! - **A fence's content is literal by default.** `DIVERGENCES.md` entry 1
@@ -216,12 +216,14 @@ impl<'s, 'o> Builder<'s, 'o> {
                         let events = tokenizer.tokenize(buffer);
                         passes -= 1;
                         // Sentinels are picked once, and only for a run that
-                        // has a heading or inline HTML to look at.
+                        // has a heading or raw HTML to look at.
                         if sentinels.is_none()
                             && events.iter().any(|(event, _)| {
                                 matches!(
                                     event,
-                                    Event::Start(Container::Heading { .. }) | Event::InlineHtml(_)
+                                    Event::Start(Container::Heading { .. })
+                                        | Event::Html(_)
+                                        | Event::InlineHtml(_)
                                 )
                             })
                         {
@@ -232,14 +234,14 @@ impl<'s, 'o> Builder<'s, 'o> {
                             let keeps = Keeps {
                                 span: |span: &Range<usize>| {
                                     let span = range.start + span.start..range.start + span.end;
-                                    self.keeps_inline_html(&span, segmentation)
+                                    self.keeps_html(&span, segmentation)
                                 },
                                 mask: |at: usize| {
                                     is_mask_start(&segmentation.tags, range.start + at)
                                 },
                                 comments: self.options.allow_comments,
                             };
-                            undo_inline_html(setext, buffer, &events, sentinels, &keeps)
+                            undo_html(setext, buffer, &events, sentinels, &keeps)
                         });
                         match next {
                             Some(next) if passes > 0 => rewritten = Some(next),
@@ -991,10 +993,12 @@ impl<'s, 'o> Builder<'s, 'o> {
 
     /// Turn the gathered HTML block into nodes.
     ///
-    /// A comment becomes a `comment` node when comments are enabled. Anything
-    /// else -- a comment when they are not, or any other raw HTML -- is what
-    /// markdown-it with `html: false` makes of the same lines: it has no HTML
-    /// block rule, so they are paragraphs of literal text, one per run of
+    /// A comment becomes a `comment` node when comments are enabled. Any
+    /// other HTML block was already read again as markdown by [`undo_html`],
+    /// as markdown-it with `html: false` reads it: it has no HTML block rule
+    /// (#98). What still arrives here -- a comment when comments are off, in a
+    /// run with no free sentinel or past the pass limit -- is the nearest
+    /// shape without one: paragraphs of literal text, one per run of
     /// non-blank lines, each line a text node and the lines joined by soft
     /// breaks.
     ///
@@ -1044,7 +1048,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// as text: a block tag the segmenter masked as `<? ... ?>`, which the
     /// `InlineHtml` arm turns back into the tag, and a comment when comments
     /// are nodes.
-    fn keeps_inline_html(&self, span: &Range<usize>, segmentation: &Segmentation) -> bool {
+    fn keeps_html(&self, span: &Range<usize>, segmentation: &Segmentation) -> bool {
         nested_at(self.source, &segmentation.tags, span).is_some()
             || self.comment_body(span).is_some()
     }
@@ -1077,7 +1081,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// Upstream runs markdown-it with `html: false`, so raw HTML is text there,
     /// and adds a comment rule when `allowComments` is on. A comment becomes a
     /// `comment` node when comments are enabled. Any other inline HTML was
-    /// already read again as text by [`undo_inline_html`], escapes, entities,
+    /// already read again as text by [`undo_html`], escapes, entities,
     /// tags and all (#89). What still arrives here as text -- in a run with no
     /// free sentinel, or past the pass limit -- carries the markup verbatim.
     fn html_node(&mut self, span: Range<usize>) -> Node<'s> {
@@ -1788,7 +1792,7 @@ const LINE_BREAK: [char; 2] = ['\n', '\r'];
 
 /// What [`undo_setext`] writes over the first byte of an underline that must
 /// stay text, paired with the marker it stands for (`=`, then `-`), and what
-/// [`undo_inline_html`] writes over a `<` of inline HTML. Each occurs nowhere
+/// [`undo_html`] writes over a `<` of inline HTML. Each occurs nowhere
 /// else in the run, written or as a character reference, so finding one in a
 /// string means its marker; [`None`] where no such character is left.
 #[derive(Clone, Copy)]
@@ -1797,7 +1801,7 @@ struct Sentinels {
     html: Option<char>,
 }
 
-/// The ASCII punctuation [`undo_inline_html`] prefers for a `<`, in order.
+/// The ASCII punctuation [`undo_html`] prefers for a `<`, in order.
 ///
 /// Punctuation, as `<` is, or a `*` or `_` beside it would flank differently.
 /// These are the ones that no inline rule, table or strikethrough reads, at
@@ -1937,7 +1941,62 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>], sentinels: Sentinels) -> Op
     out
 }
 
-/// What stays HTML when [`undo_inline_html`] reads inline HTML as text.
+/// The spans of raw HTML in `events`, in order, as the ones `keep` says stay
+/// HTML and the ones to read as markdown.
+///
+/// Inline HTML is one span per event. An HTML block arrives a line at a time,
+/// so its lines are gathered back into one span first: whether a block is one
+/// comment is a question about the block. A block that is not one keeps only
+/// the lines `keep` names on their own -- a masked block tag, say.
+fn html_spans(
+    events: &[Spanned<'_>],
+    keep: impl Fn(&Range<usize>) -> bool,
+) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
+    let (mut kept, mut undone) = (Vec::new(), Vec::new());
+    let mut block: Vec<&Range<usize>> = Vec::new();
+    // Sort the lines gathered so far, as one span if they are one to keep.
+    let mut flush = |block: &mut Vec<&Range<usize>>| {
+        let (Some(first), Some(last)) = (block.first(), block.last()) else {
+            return;
+        };
+        let whole = first.start..last.end;
+        if keep(&whole) {
+            kept.push(whole);
+        } else if let [_] = block.as_slice() {
+            undone.push(whole);
+        } else {
+            for line in block.iter() {
+                if keep(line) {
+                    kept.push((*line).clone());
+                } else {
+                    undone.push((*line).clone());
+                }
+            }
+        }
+        block.clear();
+    };
+    for (event, span) in events {
+        match event {
+            Event::Html(_) => {
+                if block.last().is_some_and(|last| last.end != span.start) {
+                    flush(&mut block);
+                }
+                block.push(span);
+            }
+            // Inline HTML is a span of its own.
+            Event::InlineHtml(_) => {
+                flush(&mut block);
+                block.push(span);
+                flush(&mut block);
+            }
+            _ => {}
+        }
+    }
+    flush(&mut block);
+    (kept, undone)
+}
+
+/// What stays HTML when [`undo_html`] reads inline HTML as text.
 struct Keeps<S, M> {
     /// Whether inline HTML at a span stays HTML.
     span: S,
@@ -1965,7 +2024,7 @@ struct Keeps<S, M> {
 ///   matches a label to its definition by its text, so `[<b>]` and
 ///   `[<b>]: /u` have every `<` in the link and in the definition's label
 ///   rewritten, or neither.
-fn undo_inline_html<S, M>(
+fn undo_html<S, M>(
     setext: Option<String>,
     buffer: &str,
     events: &[Spanned<'_>],
@@ -1979,12 +2038,7 @@ where
     let Some(sentinel) = sentinels.html else {
         return setext;
     };
-    // Spans in order, as the events are.
-    let (kept, undone): (Vec<&Range<usize>>, Vec<&Range<usize>>) = events
-        .iter()
-        .filter(|(event, _)| matches!(event, Event::InlineHtml(_)))
-        .map(|(_, span)| span)
-        .partition(|span| (keeps.span)(span));
+    let (kept, undone) = html_spans(events, |span| (keeps.span)(span));
     if undone.is_empty() {
         return setext;
     }
@@ -2050,7 +2104,7 @@ where
     Some(out)
 }
 
-/// A run as [`undo_setext`] and [`undo_inline_html`] rewrote it, next to the
+/// A run as [`undo_setext`] and [`undo_html`] rewrote it, next to the
 /// run as it was. Every rewrite keeps every offset.
 struct Rewrite<'r> {
     buffer: &'r str,

@@ -738,6 +738,53 @@ fn an_inline_comment_is_a_node_only_when_comments_are() {
     );
 }
 
+/// An HTML block is markdown, as markdown-it with `html: false` reads it
+/// (#98): its links, entities, escapes, emphasis and tags all work. Every
+/// expected tree is upstream 0.5.12's.
+#[test]
+fn an_html_block_is_read_as_markdown() {
+    for (source, expected) in [
+        (
+            "<!-- c -->[l](/u)",
+            "inline\n  text content=\"<!-- c -->\"\n  link href=\"/u\"\n    text content=\"l\"\n",
+        ),
+        (
+            "<span>&amp; {% $y %}</span>",
+            "inline\n  text content=\"<span>& \"\n  text content=$y\n  text content=\"</span>\"\n",
+        ),
+        (
+            "<div>\n*a*",
+            "inline\n  text content=\"<div>\"\n  softbreak\n  em marker=\"*\"\n    text content=\"a\"\n",
+        ),
+    ] {
+        let document = parse(source);
+        assert_eq!(outline(at(&document, &[0, 0])), expected, "{source:?}");
+    }
+    let document = parse("> <div>\n> [l](/u)");
+    assert_eq!(
+        at(&document, &[0, 0, 0, 2]).node_type,
+        NodeType::Link,
+        "{}",
+        outline(&document)
+    );
+}
+
+/// A comment block is still a comment when comments are nodes.
+#[test]
+fn a_comment_block_is_a_comment_when_comments_are_nodes() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    let document = parse_with("<!-- a\nb -->\n\npara", &PulldownTokenizer::new(), &options);
+    assert_eq!(
+        at(&document, &[0]).node_type,
+        NodeType::Comment,
+        "{}",
+        outline(&document)
+    );
+    assert_eq!(at(&document, &[1]).node_type, NodeType::Paragraph);
+}
+
 #[test]
 fn an_indented_html_block_leaves_no_stray_text() {
     let source = "  <div>\n\nfoo\n";
