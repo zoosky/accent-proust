@@ -86,13 +86,23 @@ struct OpenLink {
 }
 
 impl OpenLink {
-    /// A link whose text starts at `text_end`, with no definition yet.
-    fn new(text_end: usize, refused: bool, autolink: bool) -> OpenLink {
+    /// A link or image that is one, whose text starts at `start`.
+    fn opened(start: usize, autolink: bool) -> OpenLink {
         OpenLink {
-            text_end,
-            refused,
+            text_end: start,
+            refused: false,
             definition: None,
             autolink,
+        }
+    }
+
+    /// A link or image refused as text, whose syntax so far ends at `end`.
+    fn refused(end: usize) -> OpenLink {
+        OpenLink {
+            text_end: end,
+            refused: true,
+            definition: None,
+            autolink: false,
         }
     }
 }
@@ -623,9 +633,10 @@ impl<'s, 'o> Builder<'s, 'o> {
     fn restore_destination(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
         let link = self.links.pop();
         let text_end = link.as_ref().map_or(span.start, |link| link.text_end);
+        let autolink = link.as_ref().is_some_and(|link| link.autolink);
         let after = if let Some(definition) = link.and_then(|link| link.definition) {
             definition
-        } else if self.slice(span).starts_with('<') {
+        } else if autolink {
             span.clone()
         } else {
             text_end.min(span.end)..span.end
@@ -671,7 +682,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// again as text, whole, and its content events are dropped.
     fn refuse_link(&mut self, span: &Range<usize>, segmentation: &Segmentation) {
         if self.slice(span).starts_with('<') {
-            self.links.push(OpenLink::new(span.end, true, false));
+            self.links.push(OpenLink::refused(span.end));
             self.link_just_opened = true;
             let text = unescape(self.slice(span));
             self.text(&text, span.clone(), &segmentation.tags);
@@ -684,7 +695,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             1
         };
         let opening = span.start..(span.start + opening).min(span.end);
-        self.links.push(OpenLink::new(opening.end, true, false));
+        self.links.push(OpenLink::refused(opening.end));
         self.link_just_opened = true;
         self.push_source_text(opening);
     }
@@ -1111,11 +1122,8 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.refuse_link(&span, segmentation);
             }
             Container::Link { destination, title } => {
-                self.links.push(OpenLink::new(
-                    span.start,
-                    false,
-                    self.slice(&span).starts_with('<'),
-                ));
+                let autolink = self.slice(&span).starts_with('<');
+                self.links.push(OpenLink::opened(span.start, autolink));
                 self.link_just_opened = true;
                 let mut node = self.node(NodeType::Link, span);
                 node.set("href", Value::String(destination.to_string()));
@@ -1125,7 +1133,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                 self.open(node);
             }
             Container::Image { destination, title } => {
-                self.links.push(OpenLink::new(span.start, false, false));
+                self.links.push(OpenLink::opened(span.start, false));
                 self.link_just_opened = true;
                 let mut node = self.node(NodeType::Image, span);
                 node.set("alt", Value::String(String::new()));
@@ -1663,8 +1671,7 @@ impl<'s, 'o> Builder<'s, 'o> {
         self.open_inline(&span);
         // An autolink's text is its source, tags and all: markdown-it reads
         // `<https://a.b/{%$x%}>` as an autolink before Markdoc looks for tags.
-        let autolink = self.links.last().is_some_and(|link| link.autolink);
-        if autolink && !tail {
+        if self.links.last().is_some_and(|link| link.autolink) {
             let node = self.text_node(self.slice(&span).to_owned(), span);
             self.attach(node);
             return;

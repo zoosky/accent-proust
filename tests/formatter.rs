@@ -1185,6 +1185,14 @@ mod destinations {
         check("[ab:c](ab:c)\n", "<ab:c>\n");
     }
 
+    /// A tag in an autolink is text (#85), and only an autolink keeps it so.
+    #[test]
+    fn an_autolink_holding_a_tag_as_text_stays_an_autolink() {
+        stable("<https://a.b/{%$y%}>\n");
+        stable("<{%$y%}@b.c>\n");
+        check("<a@b.c>\n", "[a@b.c](mailto:a@b.c)\n");
+    }
+
     #[test]
     fn a_one_letter_scheme_is_not_an_absolute_uri() {
         stable("[a:b](a:b)\n");

@@ -47,6 +47,18 @@ impl Formatter<'_> {
             out.text(format!("<{href}>"));
             return;
         }
+        // An email autolink is written in the long form, as upstream writes
+        // it, unless its text holds a tag kept as text: only an autolink keeps
+        // one literal, and in `[...]` it would read back as a tag.
+        if !has_title
+            && let Some(Value::String(href)) = node.get("href")
+            && href.strip_prefix("mailto:") == Some(children.as_str())
+            && is_email(&children)
+            && holds_literal_tag(node)
+        {
+            out.text(format!("<{children}>"));
+            return;
+        }
 
         out.text("[");
         out.text(children);
@@ -155,6 +167,34 @@ fn is_absolute_uri(href: &str) -> bool {
 /// The title a link or image has, if any.
 fn title_of<'n>(node: &'n Node<'_>) -> Option<&'n Value> {
     node.get("title").filter(|value| value.is_truthy())
+}
+
+/// Whether `text` is the address of a CommonMark [email autolink].
+///
+/// [email autolink]: https://spec.commonmark.org/0.31.2/#email-address
+fn is_email(text: &str) -> bool {
+    let Some((local, domain)) = text.split_once('@') else {
+        return false;
+    };
+    let label = |label: &str| {
+        (1..=63).contains(&label.len())
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    };
+    !local.is_empty()
+        && local
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(c))
+        && domain.split('.').all(label)
+}
+
+/// Whether a text node under `node` holds `{%` as text, which only an
+/// autolink's text can.
+fn holds_literal_tag(node: &Node<'_>) -> bool {
+    node.walk().any(
+        |child| matches!(child.get("content"), Some(Value::String(text)) if text.contains("{%")),
+    )
 }
 
 /// A destination string, written so that it reads back as itself (#91).

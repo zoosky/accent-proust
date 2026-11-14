@@ -27,7 +27,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it as `[foo@example.com](mailto:foo@example.com)`, as upstream does.
 - **An autolink's text keeps a tag in it as text**, as upstream:
   `<https://a.b/{%$y%}>` reads `https://a.b/{%$y%}`, not `https://a.b/` and a
-  variable.
+  variable. `fmt` keeps such an autolink in the `<...>` form, the only one
+  that keeps the tag text.
 - **`fmt` writes an autolink only for an absolute URI** (#84).
   `[README.md](README.md)` stays as it is instead of becoming `<README.md>`,
   which is not a link, as in upstream's open markdoc/markdoc#651
