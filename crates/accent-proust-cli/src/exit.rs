@@ -23,7 +23,6 @@ pub enum Exit {
 
 impl Exit {
     /// The process exit code.
-    #[must_use]
     pub fn code(self) -> ExitCode {
         match self {
             Exit::Success => ExitCode::SUCCESS,
