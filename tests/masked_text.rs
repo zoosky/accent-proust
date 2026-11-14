@@ -708,6 +708,23 @@ fn many_references_and_comments_are_read_in_linear_time() {
     );
 }
 
+/// A long comment block is gathered in one pass over its lines.
+#[test]
+fn a_long_comment_block_is_read_in_linear_time() {
+    use accent_proust::parse::{ParseOptions, PulldownTokenizer, parse_with};
+
+    let options = ParseOptions::new().allow_comments(true);
+    let source = format!("<!--\n{}-->\n", "x\n".repeat(20_000));
+    let started = std::time::Instant::now();
+    let document = parse_with(&source, &PulldownTokenizer::new(), &options);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(at(&document, &[0]).node_type, NodeType::Comment);
+}
+
 /// Markup nested in markup is undone in one pass, not one per level.
 #[test]
 fn nested_inline_html_is_read_in_linear_time() {
@@ -799,6 +816,14 @@ fn a_comment_block_is_upstreams_when_comments_are_nodes() {
         (
             "x\n<!-- a -->",
             "document\n  paragraph\n    inline\n      text content=\"x\"\n  comment content=\"a\"\n",
+        ),
+        (
+            "<!-- a\n\n# H",
+            "document\n  paragraph\n    inline\n      text content=\"<!-- a\"\n  heading level=1\n    inline\n      text content=\"H\"\n",
+        ),
+        (
+            "<!-->\n<!-- b -->",
+            "document\n  comment content=\"\"\n  comment content=\"b\"\n",
         ),
     ] {
         let document = parse_with(source, &PulldownTokenizer::new(), &options);

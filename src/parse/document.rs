@@ -168,6 +168,9 @@ pub(crate) struct Builder<'s, 'o> {
     /// An inline tag that runs past the end of its block is not a tag: upstream
     /// parses inline content one block at a time, so its `{%` is text there.
     ends: Vec<usize>,
+    /// The comment blocks of the run being built, as [`comment_blocks`]
+    /// finds them, when comments are nodes. The undo pass kept the same ones.
+    comments: Vec<Range<usize>>,
 }
 
 impl<'s, 'o> Builder<'s, 'o> {
@@ -191,6 +194,7 @@ impl<'s, 'o> Builder<'s, 'o> {
             skip_to: 0,
             links: Vec::new(),
             ends: Vec::new(),
+            comments: Vec::new(),
         }
     }
 
@@ -247,6 +251,15 @@ impl<'s, 'o> Builder<'s, 'o> {
                             Some(next) if passes > 0 => rewritten = Some(next),
                             _ => break events,
                         }
+                    };
+                    self.comments = if self.options.allow_comments {
+                        let buffer = rewritten.as_deref().unwrap_or(text);
+                        comment_blocks(buffer, &events)
+                            .into_iter()
+                            .map(|span| range.start + span.start..range.start + span.end)
+                            .collect()
+                    } else {
+                        Vec::new()
                     };
                     for (event, span) in events {
                         let event = match (&rewritten, sentinels) {
@@ -965,6 +978,33 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// One line of an HTML block: a block tag masked as one, or a line of a
     /// block gathered for [`Self::flush_html_block`].
     fn html_line(&mut self, span: Range<usize>, segmentation: &Segmentation) {
+        // A comment block's lines are gathered into exactly the block that
+        // `comment_blocks` found, and flushed at its last line.
+        let comment = self
+            .comments
+            .get(
+                self.comments
+                    .partition_point(|block| block.end <= span.start),
+            )
+            .filter(|block| block.start <= span.start)
+            .cloned();
+        if let Some(block) = comment {
+            self.close_inline();
+            match self.html_block.take() {
+                Some(open) if open.start == block.start => {
+                    self.html_block = Some(open.start..span.end);
+                }
+                open => {
+                    self.html_block = open;
+                    self.flush_html_block();
+                    self.html_block = Some(span.clone());
+                }
+            }
+            if span.end >= block.end {
+                self.flush_html_block();
+            }
+            return;
+        }
         if let Some(tag) = nested_at(self.source, &segmentation.tags, &span) {
             self.flush_html_block();
             self.close_inline();
@@ -976,17 +1016,11 @@ impl<'s, 'o> Builder<'s, 'o> {
             // A tokenizer reports an HTML block one line at a time, so
             // the lines are gathered back into one node. Where one block
             // ends and the next begins has to be read off the spans:
-            // the lines of a block are contiguous, and two blocks are
+            // the lines of a block follow each other, and two blocks are
             // separated by at least the blank line between them. The
             // block wrapper itself carries nothing and is dropped (see
-            // `pulldown::container`), so it cannot say instead -- and
-            // without this test two `<!-- ... -->` comments a blank line
-            // apart merge into one comment whose content contains the
-            // first one's terminator. [`continues_html`] is the test,
-            // shared with `undo_html`.
-            Some(open)
-                if continues_html(self.source, &open, &span, self.options.allow_comments) =>
-            {
+            // `pulldown::container`), so it cannot say instead.
+            Some(open) if same_html_block(self.source, &open, &span) => {
                 self.html_block = Some(open.start..span.end);
             }
             Some(open) => {
@@ -1001,7 +1035,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// Turn the gathered HTML block into nodes.
     ///
     /// A comment becomes a `comment` node when comments are enabled, gathered
-    /// line by line as [`continues_html`] reads one. Any other HTML block was
+    /// as [`comment_blocks`] found it. Any other HTML block was
     /// already read again as markdown by [`undo_html`], as markdown-it with
     /// `html: false` reads it: it has no HTML block rule (#98). What still
     /// arrives here otherwise -- in a run with no free sentinel, or past the
@@ -1051,10 +1085,11 @@ impl<'s, 'o> Builder<'s, 'o> {
         Some(paragraph)
     }
 
-    /// Whether inline HTML at `span` stays HTML rather than being read again
-    /// as text: a block tag the segmenter masked as `<? ... ?>`, which the
-    /// `InlineHtml` arm turns back into the tag, and a comment when comments
-    /// are nodes.
+    /// Whether raw HTML at `span` -- inline, or one line of a block -- stays
+    /// HTML rather than being read again as markdown: a block tag the
+    /// segmenter masked as `<? ... ?>`, which the HTML arms turn back into the
+    /// tag, and an inline comment when comments are nodes. A comment block is
+    /// [`comment_blocks`]' to find.
     fn keeps_html(&self, span: &Range<usize>, segmentation: &Segmentation) -> bool {
         nested_at(self.source, &segmentation.tags, span).is_some()
             || self.comment_body(span).is_some()
@@ -1066,13 +1101,7 @@ impl<'s, 'o> Builder<'s, 'o> {
         if !self.options.allow_comments {
             return None;
         }
-        // Upstream's block rule ends a comment at its first `-->` and drops
-        // what follows it on that line; inline, the span ends there anyway.
-        self.slice(span)
-            .trim_start()
-            .strip_prefix("<!--")
-            .and_then(|rest| rest.split_once("-->"))
-            .map(|(body, _)| body)
+        comment_body(self.slice(span))
     }
 
     /// The `comment` node for `span`, when comments are enabled and the
@@ -1952,84 +1981,124 @@ fn undo_setext(buffer: &str, events: &[Spanned<'_>], sentinels: Sentinels) -> Op
 }
 
 /// Whether the HTML block line at `next` continues the block gathered at
-/// `open`, which `source` holds.
-///
-/// The lines of one block follow each other with at most a container prefix
-/// between them -- a `> ` or an item's indent -- and two blocks have at least
-/// a blank line between them. When comments are nodes, a comment is a block
-/// of its own, as upstream's block comment rule makes it: it starts at a line
-/// opening with `<!--`, even inside another block, and ends at the line that
-/// holds its `-->`.
-fn continues_html(source: &str, open: &Range<usize>, next: &Range<usize>, comments: bool) -> bool {
-    let joined = source
+/// `open`, which `source` holds: the lines of one block follow each other
+/// with at most a container prefix between them -- a `> ` or an item's
+/// indent -- and two blocks have at least a blank line between them.
+fn same_html_block(source: &str, open: &Range<usize>, next: &Range<usize>) -> bool {
+    source
         .get(open.end..next.start)
-        .is_some_and(|gap| gap.bytes().all(|byte| matches!(byte, b' ' | b'\t' | b'>')));
-    if !joined || !comments {
-        return joined;
-    }
-    let text = source.get(open.clone()).unwrap_or_default();
-    match opened_comment(text) {
-        Some(rest) => !rest.contains("-->"),
-        None => source
-            .get(next.clone())
-            .is_none_or(|line| opened_comment(line).is_none()),
-    }
+        .is_some_and(|gap| gap.bytes().all(|byte| matches!(byte, b' ' | b'\t' | b'>')))
 }
 
-/// What follows the `<!--` that `text` opens with, past its indentation.
-fn opened_comment(text: &str) -> Option<&str> {
-    text.trim_start().strip_prefix("<!--")
-}
-
-/// The spans of raw HTML in `events`, in order, as the ones `keep` says stay
-/// HTML and the ones to read as markdown. `buffer` holds them.
+/// What is between a comment's `<!--` and its first `-->`, when `text` opens
+/// with one past its indentation and one follows.
 ///
-/// Inline HTML is one span per event. An HTML block arrives a line at a time.
-/// When comments are nodes, a comment in it is kept whole, from the line that
-/// opens it to the one that closes it, as [`continues_html`] reads one; the
-/// builder gathers the same lines back into the same comment. Any other line
-/// is kept only if `keep` names it -- a masked block tag, say -- and is
-/// otherwise read as markdown.
-fn html_spans(
+/// Upstream's rules, block and inline: the `-->` is looked for from the `<!--`
+/// itself, so `<!-->` is an empty comment, and what follows it is not the
+/// comment's.
+fn comment_body(text: &str) -> Option<&str> {
+    let text = text.trim_start();
+    if !text.starts_with("<!--") {
+        return None;
+    }
+    let close = text.find("-->")?;
+    Some(text.get(4..close).unwrap_or_default())
+}
+
+/// The comment blocks among the HTML block lines of `events`, as upstream's
+/// block comment rule finds them when comments are nodes, as spans of
+/// `buffer`.
+///
+/// A comment starts at a line opening with `<!--` -- inside another HTML
+/// block or a container too -- that some `-->` follows, and ends at the end
+/// of the line that holds the first one. What follows it there is dropped,
+/// as upstream drops it. A `<!--` that nothing closes is no comment, and its
+/// lines are markdown.
+///
+/// One forward scan: lines inside a comment are passed over, and once no
+/// `-->` follows a `<!--`, none follows a later one either.
+fn comment_blocks(buffer: &str, events: &[Spanned<'_>]) -> Vec<Range<usize>> {
+    let mut blocks: Vec<Range<usize>> = Vec::new();
+    let mut closes = true;
+    for (event, span) in events {
+        if !matches!(event, Event::Html(_)) {
+            continue;
+        }
+        if let Some(last) = blocks.last_mut()
+            && span.start < last.end
+        {
+            last.end = last.end.max(span.end);
+            continue;
+        }
+        let Some(line) = buffer.get(span.clone()) else {
+            continue;
+        };
+        let indent = line.len() - line.trim_start().len();
+        if !closes || !line.trim_start().starts_with("<!--") {
+            continue;
+        }
+        let opener = span.start + indent;
+        let Some(close) = buffer.get(opener..).and_then(|rest| rest.find("-->")) else {
+            closes = false;
+            continue;
+        };
+        let close = opener + close + 3;
+        let end = buffer
+            .get(close..)
+            .and_then(|rest| rest.find('\n'))
+            .map_or(buffer.len(), |offset| close + offset + 1);
+        blocks.push(span.start..end.max(span.end));
+    }
+    blocks
+}
+
+/// The spans of raw HTML in `events`, in order, as the ones to keep as HTML
+/// and the ones to read as markdown. `buffer` holds them.
+///
+/// Inline HTML is one span per event, kept if `keeps` says so. An HTML block
+/// arrives a line at a time. When comments are nodes, its comment blocks are
+/// kept whole, as [`comment_blocks`] finds them -- the builder gathers the
+/// same ones. Any other line is kept only if `keeps` names it, a masked block
+/// tag, and is otherwise read as markdown.
+fn html_spans<S, M>(
     buffer: &str,
     events: &[Spanned<'_>],
-    keep: impl Fn(&Range<usize>) -> bool,
-    comments: bool,
-) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
+    keeps: &Keeps<S, M>,
+) -> (Vec<Range<usize>>, Vec<Range<usize>>)
+where
+    S: Fn(&Range<usize>) -> bool,
+    M: Fn(usize) -> bool,
+{
+    let comments = if keeps.comments {
+        comment_blocks(buffer, events)
+    } else {
+        Vec::new()
+    };
+    let in_comment = |at: usize| {
+        comments
+            .get(comments.partition_point(|block| block.end <= at))
+            .is_some_and(|block| block.start <= at)
+    };
     let (mut kept, mut undone) = (Vec::new(), Vec::new());
-    // A comment whose lines are still being gathered.
-    let mut comment: Option<Range<usize>> = None;
+    let mut blocks = comments.iter().peekable();
     for (event, span) in events {
-        match event {
-            Event::Html(_) => {
-                if let Some(open) = comment.take() {
-                    if continues_html(buffer, &open, span, comments) {
-                        comment = Some(open.start..span.end);
-                        continue;
-                    }
-                    kept.push(open);
-                }
-                let line = buffer.get(span.clone()).unwrap_or_default();
-                if comments && opened_comment(line).is_some() {
-                    comment = Some(span.clone());
-                } else if keep(span) {
-                    kept.push(span.clone());
-                } else {
-                    undone.push(span.clone());
-                }
-            }
-            Event::InlineHtml(_) => {
-                kept.extend(comment.take());
-                if keep(span) {
-                    kept.push(span.clone());
-                } else {
-                    undone.push(span.clone());
-                }
-            }
-            _ => {}
+        let html = matches!(event, Event::Html(_));
+        if !html && !matches!(event, Event::InlineHtml(_)) {
+            continue;
+        }
+        while let Some(block) = blocks.next_if(|block| block.start <= span.start) {
+            kept.push(block.clone());
+        }
+        if html && in_comment(span.start) {
+            continue;
+        }
+        if (keeps.span)(span) {
+            kept.push(span.clone());
+        } else {
+            undone.push(span.clone());
         }
     }
-    kept.extend(comment);
+    kept.extend(blocks.cloned());
     (kept, undone)
 }
 
@@ -2076,7 +2145,7 @@ where
     let Some(sentinel) = sentinels.html else {
         return setext;
     };
-    let (kept, undone) = html_spans(buffer, events, |span| (keeps.span)(span), keeps.comments);
+    let (kept, undone) = html_spans(buffer, events, keeps);
     if undone.is_empty() {
         return setext;
     }
