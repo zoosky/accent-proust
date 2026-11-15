@@ -1127,17 +1127,7 @@ impl<'s, 'o> Builder<'s, 'o> {
         let from = text_end.max(open);
         let close = from + masked.get(from..span.end)?.find(']')?;
         let label = self.source.get(open..close)?;
-        let run = self.inline_span.as_ref().map_or(open, |run| run.start);
-        let line_start = self
-            .source
-            .get(..run)
-            .and_then(|head| head.rfind(['\n', '\r']))
-            .map_or(0, |at| at + 1);
-        let in_item = self
-            .stack
-            .iter()
-            .any(|node| node.node_type == NodeType::Item);
-        let column = content_column(self.source.get(line_start..run)?, in_item);
+        let column = self.continuation_column(open)?;
         // markdown-it's table rule unescapes a cell's `\|` before the image
         // rule reads the label.
         let in_cell = self
@@ -1171,6 +1161,23 @@ impl<'s, 'o> Builder<'s, 'o> {
         Some(alt)
     }
 
+    /// How many columns of container prefix markdown-it strips from each line
+    /// of the inline run being built after its first: `at` is where the run
+    /// starts when none has.
+    fn continuation_column(&self, at: usize) -> Option<usize> {
+        let run = self.inline_span.as_ref().map_or(at, |run| run.start);
+        let line_start = self
+            .source
+            .get(..run)
+            .and_then(|head| head.rfind(['\n', '\r']))
+            .map_or(0, |at| at + 1);
+        let in_item = self
+            .stack
+            .iter()
+            .any(|node| node.node_type == NodeType::Item);
+        Some(content_column(self.source.get(line_start..run)?, in_item))
+    }
+
     /// Whether raw HTML at `span` -- inline, or one line of a block -- stays
     /// HTML rather than being read again as markdown: a block tag the
     /// segmenter masked as `<? ... ?>`, which the HTML arms turn back into the
@@ -1196,9 +1203,26 @@ impl<'s, 'o> Builder<'s, 'o> {
         let inner = self.comment_body(span)?;
         // Upstream reads the source with every line break made `\n`.
         let content = inner.trim().replace("\r\n", "\n").replace('\r', "\n");
+        Some(self.comment_with(content, span))
+    }
+
+    /// The `comment` node for an inline comment at `span`.
+    ///
+    /// Upstream's inline rule reads a paragraph's lines without their
+    /// container prefixes, so a line after the first is without the `>` and
+    /// whitespace up to the column its run starts at, as an image's `alt` is.
+    /// A comment block keeps them: its block rule reads the source.
+    fn inline_comment(&mut self, span: &Range<usize>) -> Option<Node<'s>> {
+        let inner = self.comment_body(span)?;
+        let column = self.continuation_column(span.start)?;
+        let content = unprefixed(inner, column);
+        Some(self.comment_with(content.trim().to_string(), span))
+    }
+
+    fn comment_with(&mut self, content: String, span: &Range<usize>) -> Node<'s> {
         let mut node = self.node(NodeType::Comment, span.clone());
         node.set("content", Value::String(content));
-        Some(node)
+        node
     }
 
     /// A comment that opens a table row, at `comment`, and `rest`, the text
@@ -1225,7 +1249,7 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// tags and all (#89). What still arrives here as text -- in a run with no
     /// free sentinel, or past the pass limit -- carries the markup verbatim.
     fn html_node(&mut self, span: Range<usize>) -> Node<'s> {
-        if let Some(comment) = self.comment_node(&span) {
+        if let Some(comment) = self.inline_comment(&span) {
             return comment;
         }
         let raw = self.slice(&span).to_string();
@@ -2123,6 +2147,33 @@ fn content_column(prefix: &str, in_item: bool) -> usize {
         }
         Some(_) => prefix.len(),
     }
+}
+
+/// `text` with every line break made `\n` and, on each line after the first,
+/// up to `column` characters of container prefix -- `>`, spaces and tabs --
+/// removed, as markdown-it hands a paragraph's lines to its inline rules.
+fn unprefixed(text: &str, column: usize) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if !matches!(character, '\r' | '\n') {
+            out.push(character);
+            continue;
+        }
+        if character == '\r' {
+            characters.next_if_eq(&'\n');
+        }
+        out.push('\n');
+        for _ in 0..column {
+            if characters
+                .next_if(|next| matches!(next, ' ' | '\t' | '>'))
+                .is_none()
+            {
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// What is between a comment's `<!--` and its first `-->`, when `text` opens

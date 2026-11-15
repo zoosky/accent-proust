@@ -1348,3 +1348,38 @@ mod destinations {
         }
     }
 }
+
+/// A pipe table in a list item reprints indented to the item, so it stays in
+/// it. Upstream prints its rows at the margin, which ends the item.
+mod tables_in_items {
+    use super::{check, format, parse, stable, support};
+
+    #[test]
+    fn a_table_in_an_item_is_indented_to_it() {
+        check(
+            "- x\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n",
+            "- x\n\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n",
+        );
+        stable("- | a |\n  | - |\n  | 1 |\n");
+        stable("- a\n  - b\n\n    | a |\n    | - |\n    | 1 |\n");
+        stable("> - x\n> \n>   | a |\n>   | - |\n>   | 1 |\n");
+        stable("| a |\n| - |\n| 1 |\n");
+    }
+
+    #[test]
+    fn a_table_in_an_item_reparses_as_written() {
+        for source in [
+            "- x\n\n  | a |\n  |---|\n  | 1 |\n",
+            "- | a |\n  |---|\n  | 1 |\n",
+            "1. x\n   | a |\n   |---|\n",
+        ] {
+            let document = parse(source);
+            let formatted = format(&document);
+            assert_eq!(
+                support::outline(&parse(&formatted)),
+                support::outline(&document),
+                "{source:?} -> {formatted:?}"
+            );
+        }
+    }
+}

@@ -341,6 +341,40 @@ fn a_comment_has_its_line_breaks_as_newlines() {
         ("<!-- a\rb -->\r", "a\nb"),
         ("> <!-- a\r\n> b -->\r\n", "a\n> b"),
         ("x <!-- a\r\nb --> y\r\n", "a\nb"),
+        ("> x <!-- a\r\n> b --> y\r\n", "a\nb"),
+    ] {
+        let document = parse_comments(source);
+        let comment = document
+            .walk()
+            .find(|node| node.node_type == accent_proust::ast::NodeType::Comment)
+            .and_then(|node| node.get("content"));
+        assert_eq!(
+            comment,
+            Some(&accent_proust::ast::Value::String(content.into())),
+            "{source:?}"
+        );
+    }
+}
+
+/// An inline comment's later lines are without their container prefixes, as
+/// upstream's inline rule reads a paragraph's lines; a comment block keeps
+/// them, as upstream's block rule reads the source.
+#[test]
+fn an_inline_comment_is_without_its_lines_prefixes() {
+    for (source, content) in [
+        ("> x <!-- a\n> b --> y\n", "a\nb"),
+        (">x <!-- a\n>b --> y\n", "a\nb"),
+        ("> x <!-- a\n>    b --> y\n", "a\n   b"),
+        ("> x <!-- a\nb --> y\n", "a\nb"),
+        ("- x <!-- a\n  b --> y\n", "a\nb"),
+        ("- x <!-- a\n     b --> y\n", "a\n   b"),
+        ("> - x <!-- a\n>   b\n>   c --> y\n", "a\nb\nc"),
+        ("> > x <!-- a\n> > b --> y\n", "a\nb"),
+        (">\tx <!-- a\n>\tb --> y\n", "a\n\tb"),
+        ("1. x <!-- a\n   b --> y\n", "a\nb"),
+        ("x <!-- a\n   b --> y\n", "a\n   b"),
+        ("> <!-- a\n> b -->\n", "a\n> b"),
+        ("- <!-- a\n  b -->\n", "a\n  b"),
     ] {
         let document = parse_comments(source);
         let comment = document
@@ -367,6 +401,9 @@ fn a_comment_in_a_container_formats_as_written() {
         "> <!-- a\nb -->\n> c\n",
         "- > <!-- a\n  > b -->\n",
         "> x <!-- a\n> b --> y\n",
+        "- x <!-- a\n     b --> y\n",
+        "> - x <!-- a\n>   b\n>   c --> y\n",
+        "> x <!-- a\n> b --> y\n>\n> <!-- c\n> d -->\n",
     ] {
         let document = parse_comments(source);
         let formatted = accent_proust::format::format(&document);

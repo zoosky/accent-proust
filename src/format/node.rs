@@ -99,7 +99,7 @@ impl Formatter<'_> {
             NodeType::Tr => self.tr(node, no, out),
             NodeType::Td | NodeType::Th => self.cell(node, no, out),
             NodeType::Tbody => self.children(node, no, out),
-            NodeType::Comment => self.comment(node, out),
+            NodeType::Comment => self.comment(node, ctx, out),
             // An `error` node has no source to reprint -- its tag did not parse
             // -- and a bare `node` is the default a host constructs. Upstream
             // prints nothing for either.
@@ -342,12 +342,19 @@ impl Formatter<'_> {
     /// splits the paragraph -- upstream's own tokenizer has an inline comment
     /// rule, so upstream can produce the node it then misprints. See
     /// `DIVERGENCES.md` entry 16.
-    fn comment(&mut self, node: &Node<'_>, out: &mut Out) {
+    ///
+    /// An inline comment's content is without its lines' container prefixes,
+    /// as the parse reads it, so a line after the first is indented as a soft
+    /// break indents the next. A comment block's keeps them; see
+    /// [`format_with`](super::format_with).
+    fn comment(&mut self, node: &Node<'_>, ctx: Ctx, out: &mut Out) {
         let mut content = match node.get("content") {
             Some(value) => self.text_of(value),
             None => String::new(),
         };
-        if let Some(mark) = self.comment_break {
+        if node.inline {
+            content = content.replace(NL, &format!("{NL}{}", indent(ctx)));
+        } else if let Some(mark) = self.comment_break {
             content = content.replace(NL, mark.encode_utf8(&mut [0; 4]));
         }
         let trailing = if node.inline { "" } else { NL };

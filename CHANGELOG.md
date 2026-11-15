@@ -28,6 +28,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   added another, so `> <!-- a\n> b -->` reprinted as `> <!-- a\n> > b -->`
   and gained a `>` on every pass. Upstream's formatter still does
   (`DIVERGENCES.md` entry 16).
+- **An inline comment's later lines are without their container prefixes**,
+  with comments on, as upstream: in `> x <!-- a\n> b --> y` the content is
+  `a\nb`, not `a\n> b`. `format` indents those lines to a list item, as it
+  indents a soft break.
+- **`format` indents a pipe table in a list item to the item.** Its rows were
+  printed at the margin, which ended the item: `- x\n\n  | a |\n  |---|`
+  reprinted as a table after the list, and `- | a |\n  |---|` as an item
+  holding the text `| a |`. Upstream's formatter still does
+  (`DIVERGENCES.md` entry 16).
 
 ## [0.13.0] - 2026-11-14
 

@@ -219,13 +219,15 @@ pub fn format(node: &Node<'_>) -> String {
 #[must_use]
 pub fn format_with(node: &Node<'_>, options: &FormatOptions) -> String {
     let plain = format_tree(node, options, None);
-    // A comment's line breaks are its content's, which keeps every marker the
-    // source had on those lines, so a quote must not prefix them again. They
+    // A comment block's line breaks are its content's, which keeps every
+    // marker the source had on those lines, so a quote must not prefix them
+    // again. An inline comment's content has none, and is prefixed as text. They
     // are printed as a character the output holds nowhere else, and become
     // line breaks once the quotes have prefixed every other line.
     let tree = || std::iter::once(node).chain(node.walk());
     let quoted = tree().any(|node| node.node_type == NodeType::Blockquote) && tree().any(|node| {
         node.node_type == NodeType::Comment
+            && !node.inline
             && matches!(node.get("content"), Some(Value::String(content)) if content.contains(NL))
     });
     if !quoted {
