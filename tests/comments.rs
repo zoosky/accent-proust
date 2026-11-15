@@ -219,27 +219,76 @@ fn a_comment_in_a_fence_inside_a_container_is_code() {
             "> ```\n> <!-- a\n> ```\n> <!-- b\n{% if $x %}\n> -->\n",
             "document\n  blockquote\n    fence content=\"<!-- a\\n\"\n    comment content=\"b\\n{% if $x %}\\n>\"\n",
         ),
+        // However many `<!--` the fence holds: refusing them goes no further
+        // than the fence.
+        (
+            "> ```\n> <!-- a\n> <!-- a2\n> ```\n> <!-- b\n{% if $x %}\n> -->\n",
+            "document\n  blockquote\n    fence content=\"<!-- a\\n<!-- a2\\n\"\n    comment content=\"b\\n{% if $x %}\\n>\"\n",
+        ),
     ] {
         assert_eq!(outline(&parse_comments(source)), expected, "{source:?}");
     }
 }
 
+/// A comment block may not open on the line after a table, which upstream
+/// reads as a row; a line with a `|` in a paragraph is no table, and a comment
+/// interrupts the paragraph there, in a container too.
+#[test]
+fn a_comment_after_a_pipe_opens_unless_a_table_is_there() {
+    for (source, expected) in [
+        (
+            "a | b\n<!-- c\n{% if $x %}\nd -->\n",
+            "document\n  paragraph\n    inline\n      text content=\"a | b\"\n  comment content=\"c\\n{% if $x %}\\nd\"\n",
+        ),
+        (
+            "- a | b\n- <!-- c\n{% if $x %}\nd -->\n- e\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      inline\n        text content=\"a | b\"\n    item\n      comment content=\"c\\n{% if $x %}\\nd\"\n    item\n      inline\n        text content=\"e\"\n",
+        ),
+        (
+            "> a | b\n> <!-- c\nd -->\n> e\n",
+            "document\n  blockquote\n    paragraph\n      inline\n        text content=\"a | b\"\n    comment content=\"c\\nd\"\n    paragraph\n      inline\n        text content=\"e\"\n",
+        ),
+    ] {
+        assert_eq!(outline(&parse_comments(source)), expected, "{source:?}");
+    }
+    // After a table, the `<!--` line is a row, and the tag is a tag.
+    let table = outline(&parse_comments(
+        "| a | b |\n|---|---|\n<!-- c\n{% if $x %}\nd -->\n",
+    ));
+    assert!(table.contains("text content=\"<!-- c\""), "{table}");
+    assert!(table.contains("tag[if] primary=$x"), "{table}");
+}
+
 /// Many `<!--` before one `-->`, each in code, are refused in a bounded number
-/// of passes, and each looks for its `-->` without searching the source again.
+/// of passes, and each looks for its `-->` without searching the source again:
+/// four times the lines take about four times as long, not sixteen.
 #[test]
 fn many_comments_in_code_stay_linear() {
-    let started = std::time::Instant::now();
-    for source in [
-        format!("{}-->\n", "    <!-- a\n".repeat(20_000)),
-        format!("> ```\n{}> -->\n", "> <!-- a\n".repeat(20_000)),
-        "> ```\n> <!-- a\n> ```\n".repeat(5_000) + "-->\n",
-    ] {
-        let _ = parse_comments(&source);
-    }
+    let documents = |lines: usize| {
+        [
+            format!("{}-->\n", "    <!-- a\n".repeat(lines)),
+            format!("> ```\n{}> -->\n", "> <!-- a\n".repeat(lines)),
+            "> ```\n> <!-- a\n> ```\n".repeat(lines / 4) + "-->\n",
+        ]
+    };
+    // The fastest of a few runs, so that a busy machine does not count.
+    let time = |lines: usize| {
+        let documents = documents(lines);
+        (0..3)
+            .map(|_| {
+                let started = std::time::Instant::now();
+                for source in &documents {
+                    let _ = parse_comments(source);
+                }
+                started.elapsed()
+            })
+            .min()
+            .unwrap_or_default()
+    };
+    let (small, large) = (time(5_000), time(20_000));
     assert!(
-        started.elapsed().as_secs() < 10,
-        "took {:?}",
-        started.elapsed()
+        large < small * 10,
+        "5,000 lines took {small:?} and 20,000 took {large:?}"
     );
 }
 

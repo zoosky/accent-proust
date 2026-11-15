@@ -15,6 +15,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `-->`. A tag inside the comment is comment text. A comment in a code block
   is still code, and one under four columns of indentation is code as before
   (`DIVERGENCES.md` entry 11).
+- **A comment block opens on the line after a `|`** that is not in a table,
+  with comments on, as upstream: after `a | b` in a paragraph the comment
+  interrupts it. Only after a table's delimiter row is the line a row.
 
 ## [0.13.0] - 2026-11-14
 

@@ -144,10 +144,14 @@ pub(crate) struct Segmentation {
 /// `<!--` opens nothing, and its lines are scanned as any others.
 pub(crate) enum CommentLines<'r> {
     /// Each is put on one line, but those that open at `refused`, sorted --
-    /// and with `inner`, every `<!--` that a refused one would have taken in
-    /// too. They are refused along with it from the parser's second retry,
-    /// so that a code block full of `<!--` is not refused one at a time.
-    Except { refused: &'r [usize], inner: bool },
+    /// and every `<!--` that a refused one would have taken in while still in
+    /// the same block of `code`, sorted: where the tokenizer reads code when
+    /// no comment spans lines. So a code block full of `<!--` is not refused
+    /// one at a time, and a comment after it still opens.
+    Except {
+        refused: &'r [usize],
+        code: &'r [Range<usize>],
+    },
     /// None is: a comment block that spans lines opens nothing.
     Never,
 }
@@ -184,6 +188,11 @@ pub(crate) fn segment_with(
         comment_blocks: Vec::new(),
         refused_until: 0,
         close: None,
+        tables: if comments {
+            table_lines(source, &lines)
+        } else {
+            Vec::new()
+        },
     };
 
     let mut index = 0;
@@ -224,12 +233,14 @@ struct Scan<'s> {
     spanning: &'s CommentLines<'s>,
     /// The comment blocks put on one line so far.
     comment_blocks: Vec<Range<usize>>,
-    /// Where the last refused comment block ends: no `<!--` before it opens
-    /// one.
+    /// Where the last refused comment block ends, or the code block it opens
+    /// in if that ends first: no `<!--` before it opens one.
     refused_until: usize,
     /// The first `-->` at or after some offset no later than the `<!--` being
     /// looked at, the last time one was looked for.
     close: Option<usize>,
+    /// Which lines are a table's, by index, when comments are nodes.
+    tables: Vec<bool>,
 }
 
 impl Scan<'_> {
@@ -259,9 +270,8 @@ impl Scan<'_> {
             && let Some(offset) = comment_opener(text)
             && !index
                 .checked_sub(1)
-                .and_then(|previous| lines.get(previous))
-                .and_then(|previous| self.source.get(previous.clone()))
-                .is_some_and(|previous| previous.contains('|'))
+                .and_then(|previous| self.tables.get(previous))
+                .is_some_and(|&table| table)
         {
             let opener = line.start + offset;
             match self.close_after(opener) {
@@ -272,15 +282,24 @@ impl Scan<'_> {
                     }
                     // Refusing is never unsafe: the lines are scanned for tags.
                     let refused = match self.spanning {
-                        CommentLines::Except { refused, inner } => {
-                            refused.binary_search(&opener).is_ok()
-                                || (*inner && opener < self.refused_until)
+                        CommentLines::Except { refused, code } => {
+                            let refused = opener < self.refused_until
+                                || refused.binary_search(&opener).is_ok();
+                            if refused {
+                                // Only as far as the code it is in: past that,
+                                // a `<!--` opens a comment again.
+                                let block = code.partition_point(|block| block.end <= opener);
+                                let until = code
+                                    .get(block)
+                                    .filter(|block| block.start <= opener)
+                                    .map_or(opener, |block| end.min(block.end));
+                                self.refused_until = self.refused_until.max(until);
+                            }
+                            refused
                         }
                         CommentLines::Never => true,
                     };
-                    if refused {
-                        self.refused_until = self.refused_until.max(end);
-                    } else {
+                    if !refused {
                         self.one_line(opener..end);
                         self.comment_end = Some(end);
                         return index + 1;
@@ -574,6 +593,31 @@ fn container_prefix(line: &str) -> usize {
 fn comment_opener(line: &str) -> Option<usize> {
     let pos = container_prefix(line);
     line.get(pos..)?.starts_with("<!--").then_some(pos)
+}
+
+/// Which of `lines` are a table's: in a run of lines that hold a `|`, those
+/// from a delimiter row on, as a comment block may not open on the line after
+/// one -- upstream reads that line as a row. A line with a `|` in a paragraph
+/// is not a table's, and a comment interrupts the paragraph there.
+fn table_lines(source: &str, lines: &[Range<usize>]) -> Vec<bool> {
+    let mut out = Vec::with_capacity(lines.len());
+    let (mut run, mut table) = (0, false);
+    for line in lines {
+        let text = source.get(line.clone()).unwrap_or("");
+        let rest = text.get(container_prefix(text)..).unwrap_or("").trim();
+        if rest.contains('|') {
+            table |= run > 0
+                && rest.contains('-')
+                && rest
+                    .bytes()
+                    .all(|byte| matches!(byte, b'|' | b':' | b'-' | b' ' | b'\t'));
+            run += 1;
+        } else {
+            (run, table) = (0, false);
+        }
+        out.push(table);
+    }
+    out
 }
 
 /// How many blockquotes a container prefix opens.

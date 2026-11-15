@@ -31,6 +31,8 @@ pub use tokenizer::{Alignment, Container, ContainerKind, Event, Spanned, Tokeniz
 #[cfg(feature = "pulldown-cmark-tokenizer")]
 pub use pulldown::PulldownTokenizer;
 
+use std::ops::Range;
+
 use crate::ast::Node;
 use crate::transform;
 
@@ -192,10 +194,10 @@ pub fn parse_with<'s>(
 /// that spans lines on one.
 ///
 /// A pass is needed only when the tokenizer read a comment put on one line as
-/// code; the next pass refuses it, and the one after that every comment inside
-/// it too. A document rarely needs a second pass, and a fourth needs a code
-/// block whose extent changes with the comments refused before it. The bound
-/// keeps a document built to need more linear.
+/// code; the next pass refuses it, with every comment it would have taken in
+/// from the same code block. A document rarely needs a second pass, and a
+/// third needs a code block whose extent changes with the comments refused
+/// before it. The bound keeps a document built to need more linear.
 const COMMENT_PASSES: usize = 4;
 
 /// Segment and build the document, refusing every comment block the
@@ -204,10 +206,11 @@ const COMMENT_PASSES: usize = 4;
 /// [`CommentLines`]: segment::CommentLines
 fn build<'s>(source: &'s str, tokenizer: &dyn Tokenizer, options: &ParseOptions<'s>) -> Node<'s> {
     let mut refused = Vec::new();
-    for pass in 0..COMMENT_PASSES {
+    let mut code = None;
+    for _ in 0..COMMENT_PASSES {
         let spanning = segment::CommentLines::Except {
             refused: &refused,
-            inner: pass > 1,
+            code: code.as_deref().unwrap_or_default(),
         };
         let segmentation = segment::segment_with(source, options.allow_comments, &spanning);
         let mut misplaced = Vec::new();
@@ -218,6 +221,9 @@ fn build<'s>(source: &'s str, tokenizer: &dyn Tokenizer, options: &ParseOptions<
         }
         refused.extend(misplaced);
         refused.sort_unstable();
+        if code.is_none() {
+            code = Some(code_blocks(source, tokenizer, options));
+        }
     }
     // No comment is on one line, so none can be misplaced.
     let segmentation = segment::segment_with(
@@ -226,4 +232,36 @@ fn build<'s>(source: &'s str, tokenizer: &dyn Tokenizer, options: &ParseOptions<
         &segment::CommentLines::Never,
     );
     document::Builder::new(source, options).run(&segmentation, tokenizer, &mut Vec::new())
+}
+
+/// Where the tokenizer reads a code block when no comment block that spans
+/// lines is put on one, in source order: where [`build`] takes the code that
+/// a refused comment is in to end.
+fn code_blocks(
+    source: &str,
+    tokenizer: &dyn Tokenizer,
+    options: &ParseOptions<'_>,
+) -> Vec<Range<usize>> {
+    let segmentation = segment::segment_with(
+        source,
+        options.allow_comments,
+        &segment::CommentLines::Never,
+    );
+    let mut out = Vec::new();
+    for block in &segmentation.blocks {
+        let segment::Block::Markdown(run) = block else {
+            continue;
+        };
+        let text = segmentation.masked.get(run.clone()).unwrap_or("");
+        out.extend(
+            tokenizer
+                .tokenize(text)
+                .into_iter()
+                .filter_map(|(event, span)| {
+                    matches!(event, Event::Start(Container::CodeBlock { .. }))
+                        .then(|| run.start + span.start..run.start + span.end)
+                }),
+        );
+    }
+    out
 }
