@@ -92,7 +92,12 @@ impl Formatter<'_> {
                 } else {
                     Escape::Block
                 };
-                out.text(escape_markdown(&content, class));
+                let escaped = escape_markdown(&content, class);
+                if ctx.in_cell {
+                    out.text(escaped.replace('|', "\\|"));
+                } else {
+                    out.text(escaped);
+                }
             }
             None => {}
         }
@@ -104,7 +109,14 @@ impl Formatter<'_> {
         if let Some(content) = node.get("content") {
             self.value(content, no, &mut inner);
         }
-        out.text(inner.joined().trim().to_owned());
+        let content = inner.joined().trim().to_owned();
+        // A table's `\|` is the cell's before it is the code span's, in a code
+        // span too.
+        if no.in_cell {
+            out.text(content.replace('|', "\\|"));
+        } else {
+            out.text(content);
+        }
         out.text("`");
     }
 

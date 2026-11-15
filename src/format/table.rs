@@ -25,11 +25,18 @@ use crate::ast::Node;
 impl Formatter<'_> {
     /// Upstream's `table` arm.
     pub(super) fn table(&mut self, node: &Node<'_>, ctx: Ctx, no: Ctx, out: &mut Out) {
-        let table = self.collect_children(node, no.increment(2));
         if ctx.parent_is_table_tag {
+            let table = self.collect_children(node, no.increment(2));
             advanced(&table, ctx.indent, out);
         } else {
-            pipe(&table, out);
+            // Upstream writes a cell's `|` as it is, so `x \| y` reprints as
+            // two cells. See `DIVERGENCES.md` entry 16.
+            let cells = Ctx {
+                in_cell: true,
+                ..no.increment(2)
+            };
+            let table = self.collect_children(node, cells);
+            pipe(&table, ctx.indent, out);
         }
     }
 
@@ -103,8 +110,14 @@ fn advanced(table: &Out, indent: usize, out: &mut Out) {
     out.text(NL);
 }
 
-/// A GFM pipe table, padded so the columns line up in the source.
-fn pipe(table: &Out, out: &mut Out) {
+/// A GFM pipe table, padded so the columns line up in the source, each line
+/// indented to `indent`.
+///
+/// Upstream indents none, so a table in a list item ends the item: its rows
+/// print at the margin, and the reparse reads them as a table after the list,
+/// or as the text of the item's first line. See `DIVERGENCES.md` entry 16.
+fn pipe(table: &Out, indent: usize, out: &mut Out) {
+    let indent = SPACE.repeat(indent);
     // A pipe table's `thead` and `tbody` yield rows and nothing else, so
     // filtering to rows loses nothing. Upstream indexes a string by column here
     // and would print characters; no tree reaches it.
@@ -133,12 +146,12 @@ fn pipe(table: &Out, out: &mut Out) {
     }
 
     out.text(NL);
-    out.text(row(&pad(head, &widths)));
+    out.text(format!("{indent}{}", row(&pad(head, &widths))));
     out.text(NL);
-    out.text(row(&rule(head, &widths)));
+    out.text(format!("{indent}{}", row(&rule(head, &widths))));
     out.text(NL);
     for cells in body {
-        out.text(row(&pad(cells, &widths)));
+        out.text(format!("{indent}{}", row(&pad(cells, &widths))));
         out.text(NL);
     }
 }

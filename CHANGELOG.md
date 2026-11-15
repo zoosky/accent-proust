@@ -6,6 +6,50 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A comment block runs past the end of its container** (#103), with comments
+  on, as upstream: `1. <!-- a` and a `-->` on a later, unindented line are one
+  comment in the item, as are a quote's comment with a lazy line and an item's
+  comment out of its indent. The container goes on after the line holding the
+  `-->`. A tag inside the comment is comment text. A comment in a code block
+  is still code, and one under four columns of indentation is code as before
+  (`DIVERGENCES.md` entry 11).
+- **A comment block opens on the line after a `|`** that is not in a table,
+  with comments on, as upstream: after `a | b` in a paragraph the comment
+  interrupts it. Only after a table's delimiter row is the line a row.
+- **The line after a table is a row**, with comments on, as upstream: a
+  `<!--` there no longer ends the table, in a container too. A comment that
+  closes on that line is an inline comment in the cell.
+- **A comment's content has `\n` for every line break**, as upstream: a
+  `\r\n` or a bare `\r` in it was kept.
+- **`format` writes a comment in a blockquote as its content has it.** Its
+  later lines already hold the `>` they were written with, and the quote
+  added another, so `> <!-- a\n> b -->` reprinted as `> <!-- a\n> > b -->`
+  and gained a `>` on every pass. Upstream's formatter still does
+  (`DIVERGENCES.md` entry 16).
+- **An inline comment's later lines are without their container prefixes**,
+  with comments on, as upstream: in `> x <!-- a\n> b --> y` the content is
+  `a\nb`, not `a\n> b`. `format` indents those lines to a list item, as it
+  indents a soft break.
+- **`format` indents a pipe table in a list item to the item.** Its rows were
+  printed at the margin, which ended the item: `- x\n\n  | a |\n  |---|`
+  reprinted as a table after the list, and `- | a |\n  |---|` as an item
+  holding the text `| a |`. Upstream's formatter still does
+  (`DIVERGENCES.md` entry 16).
+- **A tab in a container prefix is as wide as its columns** when an inline
+  comment's or an image alt's later lines are read without their prefixes,
+  as upstream: `- a <!-- x\n\ty -->` has the content `x\n  y`, and a tab
+  right after a `>` is kept.
+- **A cell's `\|` is a `|` in a code span and a comment**, as upstream: the
+  table rule unescapes it before the inline rules read the cell. A comment
+  that opens the row after a table may hold one.
+- **`format` writes a cell's `|` as `\|`**, in text, code and comments, so
+  `| x \| y |` no longer reprints as two cells; and **a comment block starts
+  a line of its own** at the indent, so one opening a tag's body or in a list
+  item stays there. Upstream's formatter still does neither
+  (`DIVERGENCES.md` entry 16).
+
 ## [0.13.0] - 2026-11-14
 
 ### Added

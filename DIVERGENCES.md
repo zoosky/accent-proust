@@ -315,7 +315,9 @@ the cases that indent content inside a tag are already annotated against
 entry 8, which subsumes them, and "Disabled setext heading" is reachable
 because the `lheading` half *is* reproduced. A document that relies on four-space
 indentation to write a paragraph -- rather than to nest one inside a tag --
-renders as code here and as prose upstream.
+renders as code here and as prose upstream. So does a comment block that opens
+under four columns of indentation or a tab, with comments on: upstream's comment
+rule takes it, and here it is code, and a tag on its later lines is a tag.
 
 ---
 
@@ -498,11 +500,11 @@ levels of *authored* nesting, because a paragraph of text is already four --
 document, paragraph, inline, text -- and a list adds two per level. A generated
 or hostile document prints truncated rather than taking the process down.
 
-## 16. Five round-trip defects in upstream's formatter are fixed, not reproduced
+## 16. Nine round-trip defects in upstream's formatter are fixed, not reproduced
 
 **Upstream:** the formatter emits output that does not parse back to the tree it
-came from, in five shapes. Each is reachable from an ordinary document, and all
-five are silent -- the output looks plausible.
+came from, in nine shapes. Each is reachable from an ordinary document, and
+all nine are silent -- the output looks plausible.
 
 1. **An inline comment ends a line.** The `comment` arm appends a newline to
    every comment. Upstream's tokenizer has an inline comment rule, so a comment
@@ -530,11 +532,32 @@ five are silent -- the output looks plausible.
    item's indent, which the parser reads as the label's own and drops:
    `- ![a\n     b](/i.png)` reprints with an alt of `a\n b`, not `a\n   b`
    (found in review of #96).
+6. **A comment in a quote is quoted twice.** A comment's content is the
+   source between `<!--` and `-->`, so its later lines keep the `>` they were
+   written with, and the `blockquote` arm prefixes them again:
+   `> <!-- a\n> b -->` reprints as `> <!-- a\n> > b -->`, whose content has
+   gained a `>` (#103). An inline comment's content is read without its
+   lines' prefixes, as upstream reads it, so a quote prefixing it is right.
+7. **A pipe table in a list item ends the item.** The `table` arm prints
+   every row at the margin, so `- x\n\n  | a |\n  |---|` reprints as a list
+   followed by a table, and `- | a |\n  |---|` as an item holding the text
+   `| a |` (#108).
+8. **A `|` in a cell ends it.** The cell arms write a cell's text, code and
+   comments as they are, and the table rule unescaped every `\|` before they
+   were read, so `| x \| y |` reprints as `| x | y |`, a row of two cells.
+9. **A comment block joins the line before it.** The `comment` arm starts
+   wherever the output is, so as a tag's first child it follows the opening
+   on its line -- `{% note %}<!-- a -->`, which reads back as text -- and in
+   a list item it starts at the margin and leaves the item.
 
 **Here:** an inline comment ends no line, the closing boundary carries the
 indent, a tag whose children come to nothing self-closes, a link is written
 as an autolink only when its `href` is a CommonMark absolute URI, and each
-later line of an image's alt carries the indent.
+later line of an image's alt carries the indent, and a comment's later lines
+are written as its content has them, with no prefix added, a pipe
+table's rows carry the indent, a cell's `|` is written `\|`, and a comment
+block starts a line of its own at the indent, after a blank line unless it
+follows another.
 
 **Why:** because the round trip is the specification, not a nice property. r111
 §9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
