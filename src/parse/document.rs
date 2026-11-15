@@ -282,7 +282,8 @@ impl<'s, 'o> Builder<'s, 'o> {
                             && let Some(close) = row_comment(text, buffer, &span)
                         {
                             let at = range.start + span.start;
-                            self.row_comment(at..at + close, at + close..range.start + span.end);
+                            let rest = text.get(span.start + close..span.end).unwrap_or("");
+                            self.row_comment(at..at + close, rest, segmentation);
                             continue;
                         }
                         let event = match (&rewritten, sentinels) {
@@ -1200,17 +1201,17 @@ impl<'s, 'o> Builder<'s, 'o> {
         Some(node)
     }
 
-    /// A comment that opens a table row, at `comment`, and the text after it
-    /// in the cell, at `rest` ([`row_comment`]).
-    fn row_comment(&mut self, comment: Range<usize>, rest: Range<usize>) {
+    /// A comment that opens a table row, at `comment`, and `rest`, the text
+    /// after it in the cell's first text event ([`row_comment`]), which is
+    /// text as any other.
+    fn row_comment(&mut self, comment: Range<usize>, rest: &str, segmentation: &Segmentation) {
         self.open_inline(&comment);
         if let Some(node) = self.comment_node(&comment) {
             self.attach(node);
         }
         if !rest.is_empty() {
-            let text = self.slice(&rest).to_string();
-            let node = self.text_node(text, rest);
-            self.attach(node);
+            let span = comment.end..comment.end + rest.len();
+            self.event(&Event::Text(Cow::Borrowed(rest)), span, segmentation);
         }
     }
 
@@ -2272,33 +2273,66 @@ where
     (kept, undone)
 }
 
-/// Where an HTML block opens on the line right after a table: its first `<`,
-/// which [`undo_html`] rewrites whatever the block is.
+/// What [`undo_html`] rewrites where an HTML block opens on the line right
+/// after a table: its first `<`, whatever the block is.
 ///
 /// markdown-it with `html: false` has no HTML block to end a table with, and
 /// its comment rule does not end one either, so the line is a row -- comment
 /// or not, it is the cell's text. CommonMark lets an HTML block interrupt the
 /// table. A block tag masked as one stays.
-fn rows_after_tables<M>(buffer: &str, events: &[Spanned<'_>], mask: &M) -> Vec<usize>
+///
+/// When comments are nodes and one closes on that line, so does every ASCII
+/// punctuation character in it but a `|`: the tokenizer then reads it as one
+/// run of text, which [`row_comment`] finds, where upstream's inline rule
+/// takes it before any markup inside. A `|` still splits the cell, as the
+/// table rule splits the row before the inline rules run.
+fn rows_after_tables<M>(
+    buffer: &str,
+    events: &[Spanned<'_>],
+    mask: &M,
+    comments: bool,
+) -> Vec<usize>
 where
     M: Fn(usize) -> bool,
 {
-    events
-        .windows(2)
-        .filter_map(|pair| match pair {
-            [
-                (Event::End(ContainerKind::Table), table),
-                (Event::Html(_), html),
-            ] if !buffer
-                .get(table.end..html.start)
-                .is_some_and(|gap| gap.contains(LINE_BREAK)) =>
-            {
-                let at = html.start + buffer.get(html.clone())?.find('<')?;
-                (!mask(at)).then_some(at)
-            }
-            _ => None,
-        })
-        .collect()
+    let mut out = Vec::new();
+    for pair in events.windows(2) {
+        let [
+            (Event::End(ContainerKind::Table), table),
+            (Event::Html(_), html),
+        ] = pair
+        else {
+            continue;
+        };
+        let gap = buffer.get(table.end..html.start).unwrap_or("");
+        let Some(line) = buffer.get(html.clone()) else {
+            continue;
+        };
+        let Some(open) = line.find('<') else {
+            continue;
+        };
+        let at = html.start + open;
+        if gap.contains(LINE_BREAK) || mask(at) {
+            continue;
+        }
+        out.push(at);
+        let line = line.get(open..).unwrap_or("");
+        let line = line.split(LINE_BREAK).next().unwrap_or("");
+        if let Some(close) = line
+            .find("-->")
+            .filter(|_| comments && line.starts_with("<!--"))
+        {
+            let comment = line.get(..close + 3).unwrap_or("");
+            let bytes = comment.as_bytes();
+            out.extend(bytes.iter().enumerate().filter_map(|(offset, &byte)| {
+                // A `\` before a `|` keeps it from splitting the cell.
+                let escapes_pipe = byte == b'\\' && bytes.get(offset + 1) == Some(&b'|');
+                (byte.is_ascii_punctuation() && byte != b'|' && !escapes_pipe)
+                    .then_some(at + offset)
+            }));
+        }
+    }
+    out
 }
 
 /// How far into the text at `span` the comment it opens with runs, when
@@ -2357,7 +2391,7 @@ where
         return setext;
     };
     let (kept, undone) = html_spans(buffer, events, keeps);
-    let rows = rows_after_tables(buffer, events, &keeps.mask);
+    let rows = rows_after_tables(buffer, events, &keeps.mask, keeps.comments);
     if undone.is_empty() && rows.is_empty() {
         return setext;
     }
@@ -2394,7 +2428,7 @@ where
     for span in &undone {
         angles(span, &mut at);
     }
-    at.extend(rows);
+    at.extend(rows.iter().copied());
     at.sort_unstable();
     at.dedup();
     if at.is_empty() {
@@ -2420,6 +2454,15 @@ where
     let sentinel = sentinel.encode_utf8(&mut bytes);
     for offset in at {
         if out.get(offset..=offset) == Some("<") {
+            out.replace_range(offset..=offset, sentinel);
+        }
+    }
+    for offset in rows {
+        if out
+            .as_bytes()
+            .get(offset)
+            .is_some_and(u8::is_ascii_punctuation)
+        {
             out.replace_range(offset..=offset, sentinel);
         }
     }

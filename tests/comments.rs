@@ -251,6 +251,19 @@ fn a_comment_after_a_pipe_opens_unless_a_table_is_there() {
     ] {
         assert_eq!(outline(&parse_comments(source)), expected, "{source:?}");
     }
+    // A `|` line and a dash line are a table only with as many cells in each,
+    // and not in code.
+    for (source, comment) in [
+        ("a | b | c\n--|--\n<!-- a\nb -->\n", "a\\nb"),
+        ("```\na | b\n--|--\n```\n<!-- x\ny -->\n", "x\\ny"),
+        ("    a | b\n    --|--\n\n<!-- x\ny -->\n", "x\\ny"),
+    ] {
+        let tree = outline(&parse_comments(source));
+        assert!(
+            tree.contains(&format!("\n  comment content=\"{comment}\"\n")),
+            "{source:?}\n{tree}"
+        );
+    }
     // After a table, the `<!--` line is a row, and the tag is a tag.
     let table = outline(&parse_comments(
         "| a | b |\n|---|---|\n<!-- c\n{% if $x %}\nd -->\n",
@@ -287,6 +300,19 @@ fn the_line_after_a_table_is_a_row() {
             table(row(&[
                 "            comment content=\"c\"\n            text content=\" \"\n            em marker=\"*\"\n              text content=\"x\"\n            text content=\" y\"\n",
             ])),
+        ),
+        // Markup inside the comment is the comment's, and what follows it is
+        // the cell's text, a tag included.
+        (
+            "| a |\n|---|\n<!-- *c* `d` --> z {% $x %}\n",
+            table(row(&[
+                "            comment content=\"*c* `d`\"\n            text content=\" z \"\n            text content=$x\n",
+            ])),
+        ),
+        // A `|` still splits the cell, and the comment then does not close in it.
+        (
+            "| a |\n|---|\n<!-- a | b -->\n",
+            table(row(&["            text content=\"<!-- a\"\n"])),
         ),
         (
             "| a |\n|---|\n<div>x</div>\n",

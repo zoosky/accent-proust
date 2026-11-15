@@ -595,29 +595,84 @@ fn comment_opener(line: &str) -> Option<usize> {
     line.get(pos..)?.starts_with("<!--").then_some(pos)
 }
 
-/// Which of `lines` are a table's: in a run of lines that hold a `|`, those
-/// from a delimiter row on, as a comment block may not open on the line after
-/// one -- upstream reads that line as a row. A line with a `|` in a paragraph
-/// is not a table's, and a comment interrupts the paragraph there.
+/// Which of `lines` are a table's, as a comment block may not open on the
+/// line after one -- upstream reads that line as a row: from a delimiter row
+/// with as many cells as the line above it, through the lines with a `|` that
+/// follow. A line with a `|` in a paragraph is not a table's, and a comment
+/// interrupts the paragraph there; nor is one in a fence or indented code.
+///
+/// Where it is wrong the tokenizer has the last word: a comment the segmenter
+/// puts on one line after a table is not an HTML block line to it
+/// ([`CommentLines`]).
 fn table_lines(source: &str, lines: &[Range<usize>]) -> Vec<bool> {
     let mut out = Vec::with_capacity(lines.len());
-    let (mut run, mut table) = (0, false);
+    let mut fence: Option<Fence> = None;
+    // The cells of the line above, while it holds a `|`.
+    let mut above: Option<usize> = None;
+    let mut table = false;
     for line in lines {
         let text = source.get(line.clone()).unwrap_or("");
-        let rest = text.get(container_prefix(text)..).unwrap_or("").trim();
-        if rest.contains('|') {
-            table |= run > 0
-                && rest.contains('-')
-                && rest
-                    .bytes()
-                    .all(|byte| matches!(byte, b'|' | b':' | b'-' | b' ' | b'\t'));
-            run += 1;
+        let in_fence = if let Some(open) = &fence {
+            if closes_fence(text, open) {
+                fence = None;
+            }
+            true
         } else {
-            (run, table) = (0, false);
+            fence = opens_fence(text);
+            fence.is_some()
+        };
+        let prefix = container_prefix(text);
+        let indent = text.get(..prefix).unwrap_or("");
+        let code = indent.bytes().all(|byte| matches!(byte, b' ' | b'\t'))
+            && indent
+                .bytes()
+                .map(|byte| if byte == b'\t' { 4 } else { 1 })
+                .sum::<usize>()
+                >= 4;
+        let rest = text.get(prefix..).unwrap_or("").trim();
+        if in_fence || code || !rest.contains('|') {
+            (above, table) = (None, false);
+            out.push(false);
+            continue;
         }
+        let cells = row_cells(rest);
+        table |= above.is_some_and(|above| above == cells.len())
+            && cells.iter().all(|cell| is_delimiter_cell(cell.trim()));
+        above = Some(cells.len());
         out.push(table);
     }
     out
+}
+
+/// The cells of a table row, split at each `|` no `\\` escapes, without the
+/// row's leading and trailing pipes.
+fn row_cells(row: &str) -> Vec<&str> {
+    let row = row.strip_prefix('|').unwrap_or(row);
+    let row = match row.strip_suffix('|') {
+        Some(inner) if !inner.ends_with('\\') => inner,
+        _ => row,
+    };
+    let mut cells = Vec::new();
+    let (mut start, mut escaped) = (0, false);
+    for (at, byte) in row.bytes().enumerate() {
+        match byte {
+            b'|' if !escaped => {
+                cells.push(row.get(start..at).unwrap_or(""));
+                start = at + 1;
+            }
+            _ => {}
+        }
+        escaped = byte == b'\\' && !escaped;
+    }
+    cells.push(row.get(start..).unwrap_or(""));
+    cells
+}
+
+/// Whether a cell is a delimiter row's: `-` with a `:` on either side or not.
+fn is_delimiter_cell(cell: &str) -> bool {
+    let cell = cell.strip_prefix(':').unwrap_or(cell);
+    let cell = cell.strip_suffix(':').unwrap_or(cell);
+    !cell.is_empty() && cell.bytes().all(|byte| byte == b'-')
 }
 
 /// How many blockquotes a container prefix opens.
