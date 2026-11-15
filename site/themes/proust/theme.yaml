@@ -5,6 +5,11 @@ description: >-
 version: "1.0.0"
 author: AccentX GmbH
 license: MIT
+# The theme ships no shortcodes. Every `{% callout %}` on the site is an example
+# inside a code block -- the pages document Markdoc, they do not use Accent's
+# components -- so `accent validate` is told there is nothing to implement
+# rather than given nine templates nothing renders.
+components: none
 assets:
   css:
     - css/main.scss
