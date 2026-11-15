@@ -81,8 +81,13 @@ One markdown-it check is ported rather than left to the engine, because
 upstream relies on it for safety: `validateLink`, which refuses a
 `javascript:`, `vbscript:`, `file:` or `data:` destination, so that the link is
 text. Three details differ. A tab or control character inside the scheme is
-refused here, where upstream percent-encodes it into a harmless link, because
-destinations are not percent-encoded here. An entity in a refused link stays as
+refused here, where upstream percent-encodes it into a harmless link:
+`[a](<java\tscript:x>)` (with a real tab) is `<a href="java%09script:x">`
+upstream and text here. The HTML here is encoded too, but the syntax tree keeps
+the destination as written (entry 17), and that tree is public: a host or a
+`transform` hook that reads `href` from it would get `java\tscript:x`, which a
+browser reads as `javascript:` once it drops the tab. So the check runs on what
+the tree holds, not on the encoded form (#93). An entity in a refused link stays as
 written. And a reference definition whose destination is refused disappears, as
 every definition does, where upstream shows it as a paragraph.
 
