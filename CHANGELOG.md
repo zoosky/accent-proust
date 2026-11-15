@@ -37,6 +37,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reprinted as a table after the list, and `- | a |\n  |---|` as an item
   holding the text `| a |`. Upstream's formatter still does
   (`DIVERGENCES.md` entry 16).
+- **A tab in a container prefix is as wide as its columns** when an inline
+  comment's or an image alt's later lines are read without their prefixes,
+  as upstream: `- a <!-- x\n\ty -->` has the content `x\n  y`, and a tab
+  right after a `>` is kept.
+- **A cell's `\|` is a `|` in a code span and a comment**, as upstream: the
+  table rule unescapes it before the inline rules read the cell. A comment
+  that opens the row after a table may hold one.
+- **`format` writes a cell's `|` as `\|`**, in text, code and comments, so
+  `| x \| y |` no longer reprints as two cells; and **a comment block starts
+  a line of its own** at the indent, so one opening a tag's body or in a list
+  item stays there. Upstream's formatter still does neither
+  (`DIVERGENCES.md` entry 16).
 
 ## [0.13.0] - 2026-11-14
 

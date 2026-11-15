@@ -275,16 +275,21 @@ impl<'s, 'o> Builder<'s, 'o> {
                     } else {
                         Vec::new()
                     };
+                    let mut row_comment_end = 0;
                     for (event, span) in events {
-                        if let Some(buffer) = &rewritten
-                            && self.options.allow_comments
-                            && matches!(event, Event::Text(_))
-                            && let Some(close) = row_comment(text, buffer, &span)
+                        if self.options.allow_comments
+                            && let Some(buffer) = &rewritten
+                            && let Event::Text(_) = event
                         {
-                            let at = range.start + span.start;
-                            let rest = text.get(span.start + close..span.end).unwrap_or("");
-                            self.row_comment(at..at + close, rest, segmentation);
-                            continue;
+                            let at = RowText {
+                                text,
+                                buffer,
+                                run: range.start,
+                                span: &span,
+                            };
+                            if self.row_text(&at, &mut row_comment_end, segmentation) {
+                                continue;
+                            }
                         }
                         let event = match (&rewritten, sentinels) {
                             (Some(buffer), Some(sentinels)) => {
@@ -954,7 +959,10 @@ impl<'s, 'o> Builder<'s, 'o> {
             Event::Text(text) => self.text(text, span, &segmentation.tags),
             Event::Code(_) => {
                 self.open_inline(&span);
-                let content = code_span_content(self.slice(&span));
+                let mut content = code_span_content(self.slice(&span));
+                if self.in_cell() {
+                    content = content.replace("\\|", "|");
+                }
                 let mut node = self.node(NodeType::Code, span);
                 node.set("content", Value::String(content));
                 self.attach(node);
@@ -1130,35 +1138,26 @@ impl<'s, 'o> Builder<'s, 'o> {
         let column = self.continuation_column(open)?;
         // markdown-it's table rule unescapes a cell's `\|` before the image
         // rule reads the label.
-        let in_cell = self
-            .stack
-            .iter()
-            .any(|node| matches!(node.node_type, NodeType::Td | NodeType::Th));
+        let in_cell = self.in_cell();
+        let label = unprefixed(label, column);
         let mut alt = String::with_capacity(label.len());
         let mut characters = label.chars().peekable();
         while let Some(character) = characters.next() {
             match character {
-                '\r' | '\n' => {
-                    if character == '\r' {
-                        characters.next_if_eq(&'\n');
-                    }
-                    alt.push('\n');
-                    // The next line's container prefix, up to the column.
-                    for _ in 0..column {
-                        if characters
-                            .next_if(|next| matches!(next, ' ' | '\t' | '>'))
-                            .is_none()
-                        {
-                            break;
-                        }
-                    }
-                }
                 '\0' => alt.push('\u{fffd}'),
                 '\\' if in_cell && characters.peek() == Some(&'|') => {}
                 other => alt.push(other),
             }
         }
         Some(alt)
+    }
+
+    /// Whether the node being built is in a table cell, where markdown-it's
+    /// table rule has unescaped every `\|` before the inline rules read it.
+    fn in_cell(&self) -> bool {
+        self.stack
+            .iter()
+            .any(|node| matches!(node.node_type, NodeType::Td | NodeType::Th))
     }
 
     /// How many columns of container prefix markdown-it strips from each line
@@ -1215,8 +1214,11 @@ impl<'s, 'o> Builder<'s, 'o> {
     fn inline_comment(&mut self, span: &Range<usize>) -> Option<Node<'s>> {
         let inner = self.comment_body(span)?;
         let column = self.continuation_column(span.start)?;
-        let content = unprefixed(inner, column);
-        Some(self.comment_with(content.trim().to_string(), span))
+        let mut content = unprefixed(inner, column).trim().to_string();
+        if self.in_cell() {
+            content = content.replace("\\|", "|");
+        }
+        Some(self.comment_with(content, span))
     }
 
     fn comment_with(&mut self, content: String, span: &Range<usize>) -> Node<'s> {
@@ -1225,12 +1227,46 @@ impl<'s, 'o> Builder<'s, 'o> {
         node
     }
 
+    /// Build the text event at `at` as what a row comment ([`row_comment`])
+    /// makes of it, and say whether it did: the comment the event opens, or
+    /// the part of it past the comment that an earlier event opened, which
+    /// `end` holds the end of. A `\|` in the comment is a text event of its
+    /// own, so the comment can run past the event that opens it.
+    fn row_text(&mut self, at: &RowText<'_>, end: &mut usize, segmentation: &Segmentation) -> bool {
+        let RowText {
+            text,
+            buffer,
+            run,
+            span,
+        } = *at;
+        if span.start < *end {
+            let rest = text.get(*end..span.end).unwrap_or("");
+            if !rest.is_empty() {
+                let event = Event::Text(Cow::Borrowed(rest));
+                self.event(&event, run + *end..run + *end + rest.len(), segmentation);
+            }
+            return true;
+        }
+        let Some(close) = row_comment(text, buffer, span) else {
+            return false;
+        };
+        let comment = run + span.start..run + span.start + close;
+        *end = span.start + close;
+        let rest = text.get((*end).min(span.end)..span.end).unwrap_or("");
+        self.row_comment(comment, rest, segmentation);
+        true
+    }
+
     /// A comment that opens a table row, at `comment`, and `rest`, the text
     /// after it in the cell's first text event ([`row_comment`]), which is
     /// text as any other.
     fn row_comment(&mut self, comment: Range<usize>, rest: &str, segmentation: &Segmentation) {
         self.open_inline(&comment);
-        if let Some(node) = self.comment_node(&comment) {
+        if let Some(inner) = self.comment_body(&comment) {
+            // Upstream's table rule unescapes a cell's `\|` before its inline
+            // rules read it.
+            let content = inner.trim().replace("\\|", "|");
+            let node = self.comment_with(content, &comment);
             self.attach(node);
         }
         if !rest.is_empty() {
@@ -2140,18 +2176,35 @@ fn same_html_block(source: &str, open: &Range<usize>, next: &Range<usize>) -> bo
 fn content_column(prefix: &str, in_item: bool) -> usize {
     let containers = prefix.trim_end_matches([' ', '\t']);
     match containers.bytes().last() {
-        None if in_item => prefix.len(),
+        None if in_item => width(prefix),
         None => 0,
         Some(b'>') => {
-            containers.len() + usize::from(prefix.as_bytes().get(containers.len()) == Some(&b' '))
+            width(containers) + usize::from(prefix.as_bytes().get(containers.len()) == Some(&b' '))
         }
-        Some(_) => prefix.len(),
+        Some(_) => width(prefix),
     }
 }
 
+/// How many columns `text` spans from a line's start, a tab reaching the next
+/// multiple of four.
+fn width(text: &str) -> usize {
+    text.chars().fold(0, |at, character| {
+        if character == '\t' {
+            (at / 4 + 1) * 4
+        } else {
+            at + 1
+        }
+    })
+}
+
 /// `text` with every line break made `\n` and, on each line after the first,
-/// up to `column` characters of container prefix -- `>`, spaces and tabs --
+/// up to `column` columns of container prefix -- `>`, spaces and tabs --
 /// removed, as markdown-it hands a paragraph's lines to its inline rules.
+///
+/// A tab is as wide as to the next multiple of four, and one that runs past
+/// `column` leaves the columns past it as spaces -- but for one right after a
+/// `>`, which is kept whole: markdown-it's blockquote rule starts the line at
+/// that tab, and only a prefix that goes on past it takes it in.
 fn unprefixed(text: &str, column: usize) -> String {
     let mut out = String::with_capacity(text.len());
     let mut characters = text.chars().peekable();
@@ -2164,13 +2217,24 @@ fn unprefixed(text: &str, column: usize) -> String {
             characters.next_if_eq(&'\n');
         }
         out.push('\n');
-        for _ in 0..column {
-            if characters
-                .next_if(|next| matches!(next, ' ' | '\t' | '>'))
-                .is_none()
-            {
-                break;
+        let mut at = 0;
+        let mut after_marker = false;
+        while at < column {
+            match characters.peek() {
+                Some('>' | ' ') => at += 1,
+                Some('\t') => {
+                    let next = (at / 4 + 1) * 4;
+                    if next > column {
+                        if after_marker {
+                            break;
+                        }
+                        out.extend(std::iter::repeat_n(' ', next - column));
+                    }
+                    at = next;
+                }
+                _ => break,
             }
+            after_marker = characters.next() == Some('>');
         }
     }
     out
@@ -2386,16 +2450,36 @@ where
     out
 }
 
-/// How far into the text at `span` the comment it opens with runs, when
+/// A text event of a run that [`undo_html`] rewrote, for [`Builder::row_text`]:
+/// the run's `text` and the rewritten `buffer`, the offset of the run in the
+/// source, and the event's `span` in the run.
+#[derive(Clone, Copy)]
+struct RowText<'a> {
+    text: &'a str,
+    buffer: &'a str,
+    run: usize,
+    span: &'a Range<usize>,
+}
+
+/// How far from the text at `span` the comment it opens with runs, when
 /// that comment's `<` was rewritten in `buffer` to make the line a table row
 /// ([`rows_after_tables`]): `text` holds the comment there, the cell's text,
 /// where upstream's inline rule finds it as anywhere else.
+///
+/// The comment ends in the cell, so no `|` but a `\|` is before its `-->`.
+/// The tokenizer reads a `\|` as a text event of its own, so the comment can
+/// run past the text at `span`.
 fn row_comment(text: &str, buffer: &str, span: &Range<usize>) -> Option<usize> {
-    let original = text.get(span.clone())?;
+    let original = text.get(span.start..)?;
     if !original.starts_with("<!--") || buffer.get(span.start..=span.start) == Some("<") {
         return None;
     }
-    original.find("-->").map(|close| close + 3)
+    let line = original.split(['\n', '\r']).next().unwrap_or_default();
+    let close = line.find("-->")?;
+    let bytes = line.as_bytes();
+    let cell_ends = (0..close)
+        .any(|at| bytes.get(at) == Some(&b'|') && (at == 0 || bytes.get(at - 1) != Some(&b'\\')));
+    (!cell_ends).then_some(close + 3)
 }
 
 /// What stays HTML when [`undo_html`] reads raw HTML as markdown.

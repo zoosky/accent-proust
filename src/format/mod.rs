@@ -61,6 +61,8 @@ const SPACE: &str = " ";
 const SEP: &str = ", ";
 /// A newline. Upstream's `NL`.
 const NL: &str = "\n";
+/// How the comment arm opens a comment.
+const COMMENT_OPEN: &str = "<!-- ";
 /// The default ordered-list marker. Upstream's `OL`.
 const OL: &str = ".";
 /// The default unordered-list marker. Upstream's `UL`.
@@ -344,6 +346,20 @@ impl Out {
         self.chunks.push(Chunk::Text(text.into()));
     }
 
+    /// Whether the last thing this stream yielded is a comment block, which
+    /// is one chunk of its own.
+    fn after_comment_block(&self) -> bool {
+        self.chunks
+            .iter()
+            .rev()
+            .find_map(|chunk| match chunk {
+                Chunk::Text(text) if text.trim().is_empty() && !text.contains(NL) => None,
+                Chunk::Text(text) => Some(text.starts_with(COMMENT_OPEN) && text.ends_with(NL)),
+                Chunk::Row(_) => Some(false),
+            })
+            .unwrap_or(false)
+    }
+
     /// Yield a table row.
     fn row(&mut self, cells: Vec<String>) {
         self.chunks.push(Chunk::Row(cells));
@@ -414,6 +430,9 @@ struct Ctx {
     parent_wraps: bool,
     /// Whether the parent is the `{% table %}` tag.
     parent_is_table_tag: bool,
+    /// Whether this is inside a cell of a pipe table, where a `|` in text, code
+    /// or a comment would end the cell and is written `\|`.
+    in_cell: bool,
 }
 
 impl Ctx {

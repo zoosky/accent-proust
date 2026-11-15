@@ -26,8 +26,8 @@
 //! - **`text` escapes differently depending on its parent** (`super::inline`).
 
 use super::{
-    CLOSE, Ctx, Formatter, MAX_FORMAT_DEPTH, MAX_HEADING_LEVEL, NL, OL, OPEN, OrderedListMode, Out,
-    SPACE, UL, WRAPPING_TYPES,
+    CLOSE, COMMENT_OPEN, Ctx, Formatter, MAX_FORMAT_DEPTH, MAX_HEADING_LEVEL, NL, OL, OPEN,
+    OrderedListMode, Out, SPACE, UL, WRAPPING_TYPES,
 };
 use crate::ast::{Node, NodeType, Value};
 use crate::render::js;
@@ -343,6 +343,12 @@ impl Formatter<'_> {
     /// rule, so upstream can produce the node it then misprints. See
     /// `DIVERGENCES.md` entry 16.
     ///
+    /// A comment block starts a line of its own, at the indent, after a blank
+    /// line as a paragraph does -- but right after another, where upstream's
+    /// own case has the two on consecutive lines. Upstream's starts wherever
+    /// the output is, so after a tag's opening it joins that line, and in a
+    /// list item it starts at the margin and leaves the item.
+    ///
     /// An inline comment's content is without its lines' container prefixes,
     /// as the parse reads it, so a line after the first is indented as a soft
     /// break indents the next. A comment block's keeps them; see
@@ -354,11 +360,20 @@ impl Formatter<'_> {
         };
         if node.inline {
             content = content.replace(NL, &format!("{NL}{}", indent(ctx)));
-        } else if let Some(mark) = self.comment_break {
+            if ctx.in_cell {
+                content = content.replace('|', "\\|");
+            }
+            out.text(format!("{COMMENT_OPEN}{content} -->"));
+            return;
+        }
+        if let Some(mark) = self.comment_break {
             content = content.replace(NL, mark.encode_utf8(&mut [0; 4]));
         }
-        let trailing = if node.inline { "" } else { NL };
-        out.text(format!("<!-- {content} -->{trailing}"));
+        if !out.after_comment_block() {
+            out.text(NL);
+        }
+        out.text(indent(ctx));
+        out.text(format!("{COMMENT_OPEN}{content} -->{NL}"));
     }
 
     /// Upstream's `list` arm.
@@ -429,6 +444,7 @@ fn child_ctx(node: &Node<'_>, ctx: Ctx) -> Ctx {
         parent_wraps: WRAPPING_TYPES.contains(&node.node_type),
         parent_is_table_tag: node.node_type == NodeType::Tag
             && node.tag.as_deref() == Some("table"),
+        in_cell: ctx.in_cell,
     }
 }
 

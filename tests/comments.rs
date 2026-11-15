@@ -375,6 +375,17 @@ fn an_inline_comment_is_without_its_lines_prefixes() {
         ("x <!-- a\n   b --> y\n", "a\n   b"),
         ("> <!-- a\n> b -->\n", "a\n> b"),
         ("- <!-- a\n  b -->\n", "a\n  b"),
+        // A tab is as wide as to the next multiple of four. Right after a
+        // `>` it is kept whole, unless the prefix goes on past it.
+        ("> a <!-- x\n>\ty --> z\n", "x\n\ty"),
+        ("- a <!-- x\n\ty --> z\n", "x\n  y"),
+        ("-\ta <!-- x\n\ty --> z\n", "x\ny"),
+        ("> - a <!-- x\n>\ty --> z\n", "x\ny"),
+        ("  > a <!-- x\n  >\ty --> z\n", "x\ny"),
+        ("10. a <!-- x\n\t y --> z\n", "x\n y"),
+        // In a cell, `\|` is the table's before it is the comment's.
+        ("| a |\n|---|\n| <!-- x \\| y --> |\n", "x | y"),
+        ("| a |\n|---|\n<!-- x \\| y --> z\n", "x | y"),
     ] {
         let document = parse_comments(source);
         let comment = document
@@ -404,6 +415,14 @@ fn a_comment_in_a_container_formats_as_written() {
         "- x <!-- a\n     b --> y\n",
         "> - x <!-- a\n>   b\n>   c --> y\n",
         "> x <!-- a\n> b --> y\n>\n> <!-- c\n> d -->\n",
+        "{% note %}\n<!-- a\nb -->\n{% /note %}\n",
+        "{% note %}\n<!-- a -->\n{% /note %}\n",
+        "1. a\n\n   <!-- x\n   y -->\n   z\n",
+        "> - a\n>\n>   <!-- x\n>   y -->\n",
+        "- x\n\n  <!-- a -->\n  <!-- b -->\n",
+        "- a\n  <!-- c -->\n",
+        "| a | b |\n|---|---|\n<!-- x \\| y --> z\n",
+        "| a | b |\n|---|---|\n| `c\\|d` | <!-- e \\| f --> |\n",
     ] {
         let document = parse_comments(source);
         let formatted = accent_proust::format::format(&document);

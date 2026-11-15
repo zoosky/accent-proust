@@ -25,10 +25,17 @@ use crate::ast::Node;
 impl Formatter<'_> {
     /// Upstream's `table` arm.
     pub(super) fn table(&mut self, node: &Node<'_>, ctx: Ctx, no: Ctx, out: &mut Out) {
-        let table = self.collect_children(node, no.increment(2));
         if ctx.parent_is_table_tag {
+            let table = self.collect_children(node, no.increment(2));
             advanced(&table, ctx.indent, out);
         } else {
+            // Upstream writes a cell's `|` as it is, so `x \| y` reprints as
+            // two cells. See `DIVERGENCES.md` entry 16.
+            let cells = Ctx {
+                in_cell: true,
+                ..no.increment(2)
+            };
+            let table = self.collect_children(node, cells);
             pipe(&table, ctx.indent, out);
         }
     }

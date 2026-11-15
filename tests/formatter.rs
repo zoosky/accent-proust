@@ -1383,3 +1383,53 @@ mod tables_in_items {
         }
     }
 }
+
+/// A `|` in a pipe table's cell is written `\|`, in text, code and a comment,
+/// so the reprint has the cells it came from. Upstream writes it as it is.
+mod pipes_in_cells {
+    use super::{NodeType, Value, check, parse, stable};
+
+    #[test]
+    fn a_pipe_in_a_cell_is_escaped() {
+        stable("| a      | b |\n| ------ | - |\n| x \\| y |   |\n");
+        stable("| a      |\n| ------ |\n| `c\\|d` |\n");
+        stable("| a               |\n| --------------- |\n| <!-- e \\| f --> |\n");
+        check(
+            "| a | b |\n|---|---|\n<!-- x \\| y --> z\n",
+            "| a                 | b |\n| ----------------- | - |\n| <!-- x \\| y --> z |   |\n",
+        );
+    }
+
+    #[test]
+    fn a_cell_reads_its_escaped_pipe_as_a_pipe() {
+        let document = parse("| a |\n|---|\n| `c\\|d` |\n");
+        let code = document
+            .walk()
+            .find(|node| node.node_type == NodeType::Code);
+        assert_eq!(
+            code.and_then(|node| node.get("content")),
+            Some(&Value::String("c|d".into()))
+        );
+    }
+
+    #[test]
+    fn a_pipe_outside_a_table_is_not_escaped() {
+        stable("x | y `c|d` <!-- e | f -->\n");
+        stable("{% table %}\n- a|b\n---\n- c\n{% /table %}\n");
+    }
+}
+
+/// A comment block starts a line of its own at the indent, after a blank line
+/// unless it follows another.
+mod comment_blocks {
+    use super::{check, stable};
+
+    #[test]
+    fn a_comment_block_starts_its_own_line() {
+        stable("{% note %}\n<!-- a -->\n{% /note %}\n");
+        stable("1. a\n\n   <!-- x\n   y -->\n\n   z\n");
+        stable("- x\n\n  <!-- a -->\n  <!-- b -->\n");
+        stable("<!-- a -->\n<!-- b -->\n");
+        check("a\n<!-- c -->\nb\n", "a\n\n<!-- c -->\n\nb\n");
+    }
+}

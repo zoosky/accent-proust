@@ -500,11 +500,11 @@ levels of *authored* nesting, because a paragraph of text is already four --
 document, paragraph, inline, text -- and a list adds two per level. A generated
 or hostile document prints truncated rather than taking the process down.
 
-## 16. Seven round-trip defects in upstream's formatter are fixed, not reproduced
+## 16. Nine round-trip defects in upstream's formatter are fixed, not reproduced
 
 **Upstream:** the formatter emits output that does not parse back to the tree it
-came from, in seven shapes. Each is reachable from an ordinary document, and
-all seven are silent -- the output looks plausible.
+came from, in nine shapes. Each is reachable from an ordinary document, and
+all nine are silent -- the output looks plausible.
 
 1. **An inline comment ends a line.** The `comment` arm appends a newline to
    every comment. Upstream's tokenizer has an inline comment rule, so a comment
@@ -542,13 +542,22 @@ all seven are silent -- the output looks plausible.
    every row at the margin, so `- x\n\n  | a |\n  |---|` reprints as a list
    followed by a table, and `- | a |\n  |---|` as an item holding the text
    `| a |` (#108).
+8. **A `|` in a cell ends it.** The cell arms write a cell's text, code and
+   comments as they are, and the table rule unescaped every `\|` before they
+   were read, so `| x \| y |` reprints as `| x | y |`, a row of two cells.
+9. **A comment block joins the line before it.** The `comment` arm starts
+   wherever the output is, so as a tag's first child it follows the opening
+   on its line -- `{% note %}<!-- a -->`, which reads back as text -- and in
+   a list item it starts at the margin and leaves the item.
 
 **Here:** an inline comment ends no line, the closing boundary carries the
 indent, a tag whose children come to nothing self-closes, a link is written
 as an autolink only when its `href` is a CommonMark absolute URI, and each
 later line of an image's alt carries the indent, and a comment's later lines
-are written as its content has them, with no prefix added, and a pipe
-table's rows carry the indent.
+are written as its content has them, with no prefix added, a pipe
+table's rows carry the indent, a cell's `|` is written `\|`, and a comment
+block starts a line of its own at the indent, after a blank line unless it
+follows another.
 
 **Why:** because the round trip is the specification, not a nice property. r111
 §9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
