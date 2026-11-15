@@ -173,8 +173,7 @@ pub fn parse_with<'s>(
     tokenizer: &dyn Tokenizer,
     options: &ParseOptions<'s>,
 ) -> Node<'s> {
-    let segmentation = segment::segment_with(source, options.allow_comments);
-    let mut document = document::Builder::new(source, options).run(&segmentation, tokenizer);
+    let mut document = build(source, tokenizer, options);
 
     // Upstream runs its transform list here, at the end of `parser()`, and the
     // list has exactly one member. Running it inside the parse rather than
@@ -187,4 +186,44 @@ pub fn parse_with<'s>(
     };
     transform::table::apply(&mut document, &conditional);
     document
+}
+
+/// How many times [`build`] segments a document before it puts no comment
+/// that spans lines on one.
+///
+/// A pass is needed only when the tokenizer read a comment put on one line as
+/// code; the next pass refuses it, and the one after that every comment inside
+/// it too. A document rarely needs a second pass, and a fourth needs a code
+/// block whose extent changes with the comments refused before it. The bound
+/// keeps a document built to need more linear.
+const COMMENT_PASSES: usize = 4;
+
+/// Segment and build the document, refusing every comment block the
+/// tokenizer does not read as one HTML block line ([`CommentLines`]).
+///
+/// [`CommentLines`]: segment::CommentLines
+fn build<'s>(source: &'s str, tokenizer: &dyn Tokenizer, options: &ParseOptions<'s>) -> Node<'s> {
+    let mut refused = Vec::new();
+    for pass in 0..COMMENT_PASSES {
+        let spanning = segment::CommentLines::Except {
+            refused: &refused,
+            inner: pass > 1,
+        };
+        let segmentation = segment::segment_with(source, options.allow_comments, &spanning);
+        let mut misplaced = Vec::new();
+        let document =
+            document::Builder::new(source, options).run(&segmentation, tokenizer, &mut misplaced);
+        if misplaced.is_empty() {
+            return document;
+        }
+        refused.extend(misplaced);
+        refused.sort_unstable();
+    }
+    // No comment is on one line, so none can be misplaced.
+    let segmentation = segment::segment_with(
+        source,
+        options.allow_comments,
+        &segment::CommentLines::Never,
+    );
+    document::Builder::new(source, options).run(&segmentation, tokenizer, &mut Vec::new())
 }

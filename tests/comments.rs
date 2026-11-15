@@ -125,6 +125,124 @@ document
     );
 }
 
+// ---- block comments in containers (#103) ----------------------------------
+
+/// Upstream's block comment rule takes everything up to the first `-->`,
+/// whatever container the `<!--` is in, and that container goes on after the
+/// line holding the `-->` -- however the lines between are indented or
+/// quoted. Upstream 0.5.12's trees, `allowComments`.
+#[test]
+fn a_block_comment_runs_past_the_end_of_its_container() {
+    for (source, expected) in [
+        // The container ends after the line holding the `-->`, and what follows it there is dropped.
+        (
+            "1. <!-- a\nb\n--> tail\nafter\n",
+            "document\n  list ordered=true marker=\".\"\n    item\n      comment content=\"a\\nb\"\n  paragraph\n    inline\n      text content=\"after\"\n",
+        ),
+        // The list goes on with the next item.
+        (
+            "- <!-- a\nb -->\n- second\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      comment content=\"a\\nb\"\n    item\n      inline\n        text content=\"second\"\n",
+        ),
+        // The quote goes on after it.
+        (
+            "> <!-- a\nb\n-->\n> c\n",
+            "document\n  blockquote\n    comment content=\"a\\nb\"\n    paragraph\n      inline\n        text content=\"c\"\n",
+        ),
+        // In a nested item.
+        (
+            "- x\n  - <!-- a\nb -->\n  - y\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      inline\n        text content=\"x\"\n      list ordered=false marker=\"-\"\n        item\n          comment content=\"a\\nb\"\n        item\n          inline\n            text content=\"y\"\n",
+        ),
+        // Across a blank line.
+        (
+            "- <!-- a\n\nb -->\n\npara\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      comment content=\"a\\n\\nb\"\n  paragraph\n    inline\n      text content=\"para\"\n",
+        ),
+        // In an item inside a quote.
+        (
+            "> - <!-- a\nb -->\n> c\n",
+            "document\n  blockquote\n    list ordered=false marker=\"-\"\n      item\n        comment content=\"a\\nb\"\n    paragraph\n      inline\n        text content=\"c\"\n",
+        ),
+        // The item goes on after it.
+        (
+            "- <!-- a\nb -->\n  c\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      comment content=\"a\\nb\"\n      inline\n        text content=\"c\"\n",
+        ),
+        // A tag after the `-->` is dropped with the rest of its line.
+        (
+            "- <!-- a\nb --> {% x %}\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      comment content=\"a\\nb\"\n",
+        ),
+        // In a nested quote.
+        (
+            "> > <!-- a\nb -->\n> c\n",
+            "document\n  blockquote\n    blockquote\n      comment content=\"a\\nb\"\n    paragraph\n      inline\n        text content=\"c\"\n",
+        ),
+        // One per item.
+        (
+            "- <!-- a\nb -->\n- <!-- c\nd -->\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      comment content=\"a\\nb\"\n    item\n      comment content=\"c\\nd\"\n",
+        ),
+        // A list marker inside it is comment text.
+        (
+            "* <!-- a\n  - b\n-->\n* c\n",
+            "document\n  list ordered=false marker=\"*\"\n    item\n      comment content=\"a\\n  - b\"\n    item\n      inline\n        text content=\"c\"\n",
+        ),
+        // Inside a block tag.
+        (
+            "{% if $x %}\n- <!-- a\nb -->\n{% /if %}\n",
+            "document\n  tag[if] primary=$x\n    list ordered=false marker=\"-\"\n      item\n        comment content=\"a\\nb\"\n",
+        ),
+    ] {
+        assert_eq!(outline(&parse_comments(source)), expected, "{source:?}");
+    }
+}
+
+/// A comment in a code block is code, line breaks and all, though the
+/// segmenter cannot see a fence that opens behind container markers. The
+/// fence's content is upstream's; upstream also reads tags in it, which this
+/// crate does not by default (`DIVERGENCES.md` entry 1).
+#[test]
+fn a_comment_in_a_fence_inside_a_container_is_code() {
+    for (source, expected) in [
+        (
+            "> ```\n> <!-- a\n> b -->\n> ```\n",
+            "document\n  blockquote\n    fence content=\"<!-- a\\nb -->\\n\"\n",
+        ),
+        (
+            "- ```\n  <!-- a\n  {% if $x %}\n  -->\n  ```\n",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      fence content=\"<!-- a\\n{% if $x %}\\n-->\\n\"\n",
+        ),
+        // The fence closes before the second `<!--`, which opens a comment.
+        (
+            "> ```\n> <!-- a\n> ```\n> <!-- b\n{% if $x %}\n> -->\n",
+            "document\n  blockquote\n    fence content=\"<!-- a\\n\"\n    comment content=\"b\\n{% if $x %}\\n>\"\n",
+        ),
+    ] {
+        assert_eq!(outline(&parse_comments(source)), expected, "{source:?}");
+    }
+}
+
+/// Many `<!--` before one `-->`, each in code, are refused in a bounded number
+/// of passes, and each looks for its `-->` without searching the source again.
+#[test]
+fn many_comments_in_code_stay_linear() {
+    let started = std::time::Instant::now();
+    for source in [
+        format!("{}-->\n", "    <!-- a\n".repeat(20_000)),
+        format!("> ```\n{}> -->\n", "> <!-- a\n".repeat(20_000)),
+        "> ```\n> <!-- a\n> ```\n".repeat(5_000) + "-->\n",
+    ] {
+        let _ = parse_comments(&source);
+    }
+    assert!(
+        started.elapsed().as_secs() < 10,
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
 // ---- block HTML with the option off ----------------------------------------
 //
 // markdown-it with `html: false` has no HTML block rule, so the lines of what

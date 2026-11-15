@@ -6,6 +6,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A comment block runs past the end of its container** (#103), with comments
+  on, as upstream: `1. <!-- a` and a `-->` on a later, unindented line are one
+  comment in the item, as are a quote's comment with a lazy line and an item's
+  comment out of its indent. The container goes on after the line holding the
+  `-->`. A tag inside the comment is comment text. A comment in a code block
+  is still code, and one under four columns of indentation is code as before
+  (`DIVERGENCES.md` entry 11).
+
 ## [0.13.0] - 2026-11-14
 
 ### Added

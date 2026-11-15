@@ -729,6 +729,20 @@ fn a_tag_inside_a_comment_block_is_comment_text() {
             "<!-- a\n\n{% foo %}\nb\n{% /foo %}\n-->\nafter",
             "document\n  comment content=\"a\\n\\n{% foo %}\\nb\\n{% /foo %}\"\n  paragraph\n    inline\n      text content=\"after\"\n",
         ),
+        // A comment runs past the end of the container it opens in, which
+        // goes on after the line holding the `-->` (#103).
+        (
+            "1. <!-- a\n{% if $x %}\nb\n{% /if %}\n-->",
+            "document\n  list ordered=true marker=\".\"\n    item\n      comment content=\"a\\n{% if $x %}\\nb\\n{% /if %}\"\n",
+        ),
+        (
+            "- a\n\n  <!-- b\n{% if $x %}\nc\n{% /if %}\n-->",
+            "document\n  list ordered=false marker=\"-\"\n    item\n      paragraph\n        inline\n          text content=\"a\"\n      comment content=\"b\\n{% if $x %}\\nc\\n{% /if %}\"\n",
+        ),
+        (
+            "> <!-- a\n{% if $x %}\n> b -->",
+            "document\n  blockquote\n    comment content=\"a\\n{% if $x %}\\n> b\"\n",
+        ),
     ] {
         let document = parse_with(source, &PulldownTokenizer::new(), &options);
         assert_eq!(outline(&document), expected, "{source:?}");
@@ -740,16 +754,14 @@ fn a_tag_inside_a_comment_block_is_comment_text() {
         "{}",
         outline(&document)
     );
-    // Where the tokenizer's HTML block would end before the `-->` -- a list
-    // item's lines out of its indent, a lazy blockquote line, indented code,
-    // a table's next row -- the lines are not passed over, so a tag in them
-    // is still a tag and never left as raw text.
+    // Where the tokenizer reads code -- four columns of indentation or a tab,
+    // which upstream's disabled `code` rule never does (`DIVERGENCES.md`
+    // entry 11) -- or a table's next row, as upstream does, the comment is
+    // refused and its lines are scanned, so a tag in them is still a tag and
+    // never left as raw text.
     for source in [
-        "1. <!-- a\n{% if $x %}\nb\n{% /if %}\n-->",
-        "- a\n\n  <!-- b\n{% if $x %}\nc\n{% /if %}\n-->",
         "    <!-- a\n{% if $x %}\nb\n{% /if %}\n-->",
         "\t<!-- a\n{% if $x %}\nb\n{% /if %}\n-->",
-        "> <!-- a\n{% if $x %}\n> b -->",
         "| a | b |\n|---|---|\n<!-- a\n{% if $x %}\nb\n{% /if %}\n-->",
     ] {
         let document = parse_with(source, &PulldownTokenizer::new(), &options);

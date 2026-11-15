@@ -28,6 +28,10 @@
 //!    and its interior overwritten with filler in a *copy* of the source that
 //!    is what the tokenizer actually reads.
 //!
+//! With comments on, a comment block is passed over as a fence is, and one
+//! that spans lines is put on a single line for the tokenizer; see
+//! [`CommentLines`].
+//!
 //! # Why masking, rather than splitting text runs afterwards
 //!
 //! A tag's internals are not Markdown, and they routinely contain characters
@@ -114,12 +118,44 @@ pub(crate) struct Segmentation {
     /// [nested](TagSpan::nested) ones. Block tags at the margin are not here;
     /// they are in [`Segmentation::blocks`].
     pub tags: Vec<TagSpan>,
+    /// Every comment block that spans lines and was put on one, from its
+    /// `<!--` to just past its `-->`, in source order.
+    pub comments: Vec<Range<usize>>,
+}
+
+/// Which comment blocks that span lines are put on one line for the
+/// tokenizer.
+///
+/// Upstream's block comment rule takes everything from a `<!--` that opens a
+/// block to the first `-->` after it, in whatever container the `<!--` is
+/// in, and that container goes on after the line holding the `-->` --
+/// however the lines in between are indented or quoted (#103). The
+/// tokenizer's HTML block ends with its container instead. With every line
+/// break between the `<!--` and the `-->` overwritten with a space, the
+/// comment is one line, so the tokenizer places it in the container its
+/// first line is in, and reads on from the line after it, as upstream does.
+/// The lines are passed over, so a tag inside the comment is comment text.
+///
+/// The segmenter cannot tell when that one line is not an HTML block -- a
+/// comment in a fence behind container markers, or under four columns of
+/// indentation (`DIVERGENCES.md` entry 11) -- since that means running
+/// CommonMark's container phase. The parser asks the tokenizer instead, and
+/// segments again with every comment it placed elsewhere refused: a refused
+/// `<!--` opens nothing, and its lines are scanned as any others.
+pub(crate) enum CommentLines<'r> {
+    /// Each is put on one line, but those that open at `refused`, sorted --
+    /// and with `inner`, every `<!--` that a refused one would have taken in
+    /// too. They are refused along with it from the parser's second retry,
+    /// so that a code block full of `<!--` is not refused one at a time.
+    Except { refused: &'r [usize], inner: bool },
+    /// None is: a comment block that spans lines opens nothing.
+    Never,
 }
 
 /// Scan a document.
 #[cfg(test)]
 pub(crate) fn segment(source: &str) -> Segmentation {
-    segment_with(source, false)
+    segment_with(source, false, &CommentLines::Never)
 }
 
 /// Scan a document, with comments as nodes when `comments` is set.
@@ -128,7 +164,12 @@ pub(crate) fn segment(source: &str) -> Segmentation {
 /// rule takes it before any tag is read, so a tag inside it is comment text,
 /// on a line of its own too (#100). It starts at a line opening with `<!--`
 /// that some `-->` follows, and ends with the line that holds the first one.
-pub(crate) fn segment_with(source: &str, comments: bool) -> Segmentation {
+/// `spanning` says which of those that span lines are put on one.
+pub(crate) fn segment_with(
+    source: &str,
+    comments: bool,
+    spanning: &CommentLines<'_>,
+) -> Segmentation {
     let lines = line_ranges(source);
     let mut state = Scan {
         source,
@@ -139,6 +180,10 @@ pub(crate) fn segment_with(source: &str, comments: bool) -> Segmentation {
         fence: None,
         comments,
         comment_end: None,
+        spanning,
+        comment_blocks: Vec::new(),
+        refused_until: 0,
+        close: None,
     };
 
     let mut index = 0;
@@ -154,6 +199,7 @@ pub(crate) fn segment_with(source: &str, comments: bool) -> Segmentation {
         masked: String::from_utf8(state.masked).unwrap_or_else(|_| source.to_string()),
         blocks: state.blocks,
         tags: state.tags,
+        comments: state.comment_blocks,
     }
 }
 
@@ -174,6 +220,16 @@ struct Scan<'s> {
     comments: bool,
     /// Where the comment block being passed over ends: just past its `-->`.
     comment_end: Option<usize>,
+    /// Which comment blocks that span lines are put on one.
+    spanning: &'s CommentLines<'s>,
+    /// The comment blocks put on one line so far.
+    comment_blocks: Vec<Range<usize>>,
+    /// Where the last refused comment block ends: no `<!--` before it opens
+    /// one.
+    refused_until: usize,
+    /// The first `-->` at or after some offset no later than the `<!--` being
+    /// looked at, the last time one was looked for.
+    close: Option<usize>,
 }
 
 impl Scan<'_> {
@@ -208,15 +264,28 @@ impl Scan<'_> {
                 .is_some_and(|previous| previous.contains('|'))
         {
             let opener = line.start + offset;
-            match self.source.get(opener..).and_then(|rest| rest.find("-->")) {
-                Some(close) if self.keeps_shape(lines, index, opener + close) => {
-                    let end = opener + close + 3;
-                    if line.end < end {
-                        self.comment_end = Some(end);
+            match self.close_after(opener) {
+                Some(close) => {
+                    let end = close + 3;
+                    if line.end >= end {
+                        return index + 1;
                     }
-                    return index + 1;
+                    // Refusing is never unsafe: the lines are scanned for tags.
+                    let refused = match self.spanning {
+                        CommentLines::Except { refused, inner } => {
+                            refused.binary_search(&opener).is_ok()
+                                || (*inner && opener < self.refused_until)
+                        }
+                        CommentLines::Never => true,
+                    };
+                    if refused {
+                        self.refused_until = self.refused_until.max(end);
+                    } else {
+                        self.one_line(opener..end);
+                        self.comment_end = Some(end);
+                        return index + 1;
+                    }
                 }
-                Some(_) => {}
                 // No `-->` follows this `<!--`, so none follows a later one
                 // either: stop looking, which keeps many unclosed openers
                 // linear.
@@ -245,27 +314,32 @@ impl Scan<'_> {
         self.mask_inline_tags(lines, index)
     }
 
-    /// Whether every line after `index` up to the one holding `close` keeps
-    /// the shape of line `index`: as many `>` markers, and at least as much
-    /// indentation after them.
+    /// Where the first `-->` at or after `opener` starts.
     ///
-    /// The tokenizer's HTML block runs on only so far: a lazy line ends a
-    /// blockquote's, and a line indented less than an item's content ends the
-    /// item's. A line that keeps the shape keeps the block, whether the
-    /// indentation is an item's or the comment's own.
-    fn keeps_shape(&self, lines: &[Range<usize>], index: usize, close: usize) -> bool {
-        let shape = |line: &Range<usize>| line_shape(self.source.get(line.clone()).unwrap_or(""));
-        let Some(first) = lines.get(index).map(shape) else {
-            return false;
-        };
-        lines
-            .iter()
-            .skip(index + 1)
-            .take_while(|line| line.start <= close)
-            .all(|line| {
-                let (depth, indent) = shape(line);
-                depth == first.0 && indent >= first.1
-            })
+    /// `<!--` lines come in source order, so the last answer holds until the
+    /// scan passes it, and no stretch of the source is searched twice: many
+    /// `<!--` before one `-->` -- refused, in code -- stay linear.
+    fn close_after(&mut self, opener: usize) -> Option<usize> {
+        if let Some(close) = self.close.filter(|&close| close >= opener) {
+            return Some(close);
+        }
+        self.close = self
+            .source
+            .get(opener..)
+            .and_then(|rest| rest.find("-->"))
+            .map(|close| opener + close);
+        self.close
+    }
+
+    /// Put the comment block at `span` on one line, for [`CommentLines`]:
+    /// every line break in it becomes a space, in the masked copy only.
+    fn one_line(&mut self, span: Range<usize>) {
+        for slot in self.masked.get_mut(span.clone()).into_iter().flatten() {
+            if matches!(*slot, b'\n' | b'\r') {
+                *slot = b' ';
+            }
+        }
+        self.comment_blocks.push(span);
     }
 
     /// Whether the tag at `content_start` is a block-level tag, and its span.
@@ -490,60 +564,16 @@ fn container_prefix(line: &str) -> usize {
     }
 }
 
-/// Where a comment block opens on `line`, when it opens one the tokenizer
-/// also reads as an HTML block that runs to its `-->`: at the margin or
-/// inside blockquotes only, with no more indentation than a block may have.
+/// Where a comment block may open on `line`: at its first content past any
+/// container markers and indentation.
 ///
-/// Upstream's comment rule opens one in more places -- in a list item, under
-/// four spaces of indentation, where the `code` rule it disables would read
-/// code -- but there the tokenizer's HTML block ends before the `-->`, and
-/// passing over the lines would leave their tags as neither tags nor comment.
-/// The line after a table is not one either: upstream reads it as a row.
+/// Upstream's comment rule opens one at a block's first line wherever that
+/// is. Whether this line is one, and in which container, only the tokenizer
+/// knows; [`CommentLines`] has the parser ask it. The line after a table is
+/// not one either way: upstream reads it as a row.
 fn comment_opener(line: &str) -> Option<usize> {
-    let bytes = line.as_bytes();
-    let spaces = |from: usize| {
-        bytes
-            .iter()
-            .skip(from)
-            .take_while(|&&byte| byte == b' ')
-            .count()
-    };
-    let mut pos = spaces(0);
-    if pos > 3 {
-        return None;
-    }
-    while bytes.get(pos) == Some(&b'>') {
-        pos += 1;
-        let after = spaces(pos);
-        if after > 4 {
-            return None;
-        }
-        pos += after;
-    }
+    let pos = container_prefix(line);
     line.get(pos..)?.starts_with("<!--").then_some(pos)
-}
-
-/// A line's blockquote depth, and its indentation after the last `>` and the
-/// one space that belongs to it.
-fn line_shape(line: &str) -> (usize, usize) {
-    let bytes = line.as_bytes();
-    let spaces = |from: usize| {
-        bytes
-            .iter()
-            .skip(from)
-            .take_while(|&&byte| byte == b' ')
-            .count()
-    };
-    let mut pos = spaces(0);
-    let (mut depth, mut indent) = (0, pos);
-    while bytes.get(pos) == Some(&b'>') {
-        depth += 1;
-        pos += 1;
-        let after = spaces(pos);
-        indent = after.saturating_sub(1);
-        pos += after;
-    }
-    (depth, indent)
 }
 
 /// How many blockquotes a container prefix opens.

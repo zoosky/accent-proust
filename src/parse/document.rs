@@ -199,10 +199,20 @@ impl<'s, 'o> Builder<'s, 'o> {
     }
 
     /// Walk the segmentation and produce the document node.
+    ///
+    /// When a comment block the segmenter put on one line is not one HTML
+    /// block line to the tokenizer, where its `<!--` is goes in `misplaced`,
+    /// for the segmenter to refuse ([`CommentLines`]); the tokenizer has put
+    /// the line in a code block, where its line breaks are content. The
+    /// document is then incomplete, and the caller segments again. Every run
+    /// is still tokenized, so that one pass finds every such comment.
+    ///
+    /// [`CommentLines`]: crate::parse::segment::CommentLines
     pub(crate) fn run(
         mut self,
         segmentation: &Segmentation,
         tokenizer: &dyn Tokenizer,
+        misplaced: &mut Vec<usize>,
     ) -> Node<'s> {
         for block in &segmentation.blocks {
             match block {
@@ -252,6 +262,10 @@ impl<'s, 'o> Builder<'s, 'o> {
                             _ => break events,
                         }
                     };
+                    misplaced.extend(misplaced_comments(&segmentation.comments, range, &events));
+                    if !misplaced.is_empty() {
+                        continue;
+                    }
                     self.comments = if self.options.allow_comments {
                         let buffer = rewritten.as_deref().unwrap_or(text);
                         comment_blocks(buffer, &events)
@@ -277,6 +291,7 @@ impl<'s, 'o> Builder<'s, 'o> {
                         self.event(&event, span, segmentation);
                     }
                 }
+                Block::Tag(_) if !misplaced.is_empty() => {}
                 Block::Tag(span) => {
                     // A raw-HTML block that ends right before a tag belongs
                     // where it was written. Flushed only at the next markdown
@@ -2098,6 +2113,42 @@ fn comment_body(text: &str) -> Option<&str> {
     }
     let close = text.find("-->")?;
     Some(text.get(4..close).unwrap_or_default())
+}
+
+/// Where each comment block in `comments` that lies in the run at `run`
+/// opens, when `events`, the run's tokens, do not hold it in one HTML block
+/// line.
+///
+/// The segmenter put each on one line (`CommentLines`), and the tokenizer
+/// reads that line as an HTML block wherever a block may start -- and as
+/// code in a fenced or indented code block, which the segmenter cannot see
+/// from inside a container.
+fn misplaced_comments(
+    comments: &[Range<usize>],
+    run: &Range<usize>,
+    events: &[Spanned<'_>],
+) -> Vec<usize> {
+    let first = comments.partition_point(|comment| comment.start < run.start);
+    let mut html = events
+        .iter()
+        .filter(|(event, _)| matches!(event, Event::Html(_)))
+        .map(|(_, span)| run.start + span.start..run.start + span.end)
+        .peekable();
+    let mut out = Vec::new();
+    for comment in comments
+        .iter()
+        .skip(first)
+        .take_while(|comment| comment.end <= run.end)
+    {
+        while html.next_if(|span| span.end < comment.end).is_some() {}
+        if !html
+            .peek()
+            .is_some_and(|span| span.start <= comment.start && comment.end <= span.end)
+        {
+            out.push(comment.start);
+        }
+    }
+    out
 }
 
 /// The comment blocks among the HTML block lines of `events`, as upstream's

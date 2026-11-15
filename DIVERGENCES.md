@@ -315,7 +315,9 @@ the cases that indent content inside a tag are already annotated against
 entry 8, which subsumes them, and "Disabled setext heading" is reachable
 because the `lheading` half *is* reproduced. A document that relies on four-space
 indentation to write a paragraph -- rather than to nest one inside a tag --
-renders as code here and as prose upstream.
+renders as code here and as prose upstream. So does a comment block that opens
+under four columns of indentation or a tab, with comments on: upstream's comment
+rule takes it, and here it is code, and a tag on its later lines is a tag.
 
 ---
 
