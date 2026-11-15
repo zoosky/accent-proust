@@ -341,12 +341,15 @@ impl Formatter<'_> {
     /// on a line of its own and wrong for one inside a sentence, where it
     /// splits the paragraph -- upstream's own tokenizer has an inline comment
     /// rule, so upstream can produce the node it then misprints. See
-    /// `DIVERGENCES.md` entry 17.
+    /// `DIVERGENCES.md` entry 16.
     fn comment(&mut self, node: &Node<'_>, out: &mut Out) {
-        let content = match node.get("content") {
+        let mut content = match node.get("content") {
             Some(value) => self.text_of(value),
             None => String::new(),
         };
+        if let Some(mark) = self.comment_break {
+            content = content.replace(NL, mark.encode_utf8(&mut [0; 4]));
+        }
         let trailing = if node.inline { "" } else { NL };
         out.text(format!("<!-- {content} -->{trailing}"));
     }

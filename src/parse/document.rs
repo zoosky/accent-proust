@@ -276,6 +276,15 @@ impl<'s, 'o> Builder<'s, 'o> {
                         Vec::new()
                     };
                     for (event, span) in events {
+                        if let Some(buffer) = &rewritten
+                            && self.options.allow_comments
+                            && matches!(event, Event::Text(_))
+                            && let Some(close) = row_comment(text, buffer, &span)
+                        {
+                            let at = range.start + span.start;
+                            self.row_comment(at..at + close, at + close..range.start + span.end);
+                            continue;
+                        }
                         let event = match (&rewritten, sentinels) {
                             (Some(buffer), Some(sentinels)) => {
                                 let written = Rewrite {
@@ -1184,10 +1193,25 @@ impl<'s, 'o> Builder<'s, 'o> {
     /// markup is one comment.
     fn comment_node(&mut self, span: &Range<usize>) -> Option<Node<'s>> {
         let inner = self.comment_body(span)?;
-        let content = inner.trim().to_string();
+        // Upstream reads the source with every line break made `\n`.
+        let content = inner.trim().replace("\r\n", "\n").replace('\r', "\n");
         let mut node = self.node(NodeType::Comment, span.clone());
         node.set("content", Value::String(content));
         Some(node)
+    }
+
+    /// A comment that opens a table row, at `comment`, and the text after it
+    /// in the cell, at `rest` ([`row_comment`]).
+    fn row_comment(&mut self, comment: Range<usize>, rest: Range<usize>) {
+        self.open_inline(&comment);
+        if let Some(node) = self.comment_node(&comment) {
+            self.attach(node);
+        }
+        if !rest.is_empty() {
+            let text = self.slice(&rest).to_string();
+            let node = self.text_node(text, rest);
+            self.attach(node);
+        }
     }
 
     /// Inline HTML that is still HTML: a comment, or the literal text of
@@ -2248,6 +2272,47 @@ where
     (kept, undone)
 }
 
+/// Where an HTML block opens on the line right after a table: its first `<`,
+/// which [`undo_html`] rewrites whatever the block is.
+///
+/// markdown-it with `html: false` has no HTML block to end a table with, and
+/// its comment rule does not end one either, so the line is a row -- comment
+/// or not, it is the cell's text. CommonMark lets an HTML block interrupt the
+/// table. A block tag masked as one stays.
+fn rows_after_tables<M>(buffer: &str, events: &[Spanned<'_>], mask: &M) -> Vec<usize>
+where
+    M: Fn(usize) -> bool,
+{
+    events
+        .windows(2)
+        .filter_map(|pair| match pair {
+            [
+                (Event::End(ContainerKind::Table), table),
+                (Event::Html(_), html),
+            ] if !buffer
+                .get(table.end..html.start)
+                .is_some_and(|gap| gap.contains(LINE_BREAK)) =>
+            {
+                let at = html.start + buffer.get(html.clone())?.find('<')?;
+                (!mask(at)).then_some(at)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// How far into the text at `span` the comment it opens with runs, when
+/// that comment's `<` was rewritten in `buffer` to make the line a table row
+/// ([`rows_after_tables`]): `text` holds the comment there, the cell's text,
+/// where upstream's inline rule finds it as anywhere else.
+fn row_comment(text: &str, buffer: &str, span: &Range<usize>) -> Option<usize> {
+    let original = text.get(span.clone())?;
+    if !original.starts_with("<!--") || buffer.get(span.start..=span.start) == Some("<") {
+        return None;
+    }
+    original.find("-->").map(|close| close + 3)
+}
+
 /// What stays HTML when [`undo_html`] reads raw HTML as markdown.
 struct Keeps<S, M> {
     /// Whether raw HTML at a span stays HTML: an inline span, or one line of
@@ -2292,7 +2357,8 @@ where
         return setext;
     };
     let (kept, undone) = html_spans(buffer, events, keeps);
-    if undone.is_empty() {
+    let rows = rows_after_tables(buffer, events, &keeps.mask);
+    if undone.is_empty() && rows.is_empty() {
         return setext;
     }
     let in_kept = |at: usize| {
@@ -2328,6 +2394,9 @@ where
     for span in &undone {
         angles(span, &mut at);
     }
+    at.extend(rows);
+    at.sort_unstable();
+    at.dedup();
     if at.is_empty() {
         return setext;
     }

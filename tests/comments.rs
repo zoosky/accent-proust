@@ -259,6 +259,109 @@ fn a_comment_after_a_pipe_opens_unless_a_table_is_there() {
     assert!(table.contains("tag[if] primary=$x"), "{table}");
 }
 
+/// The line after a table is a row, whatever it holds: upstream has no HTML
+/// block to end the table with, and its comment rule ends none either. A
+/// comment there is the cell's, as inline. Upstream 0.5.12's trees.
+#[test]
+fn the_line_after_a_table_is_a_row() {
+    let row = |cells: &[&str]| {
+        cells.iter().fold(String::new(), |out, cell| {
+            out + "      tr\n        td\n          inline\n" + cell
+        })
+    };
+    let table = |rows: String| {
+        format!(
+            "document\n  table\n    thead\n      tr\n        th\n          inline\n            text content=\"a\"\n    tbody\n{rows}"
+        )
+    };
+    for (source, expected) in [
+        (
+            "| a |\n|---|\n<!-- c\nd -->\n",
+            table(row(&[
+                "            text content=\"<!-- c\"\n",
+                "            text content=\"d -->\"\n",
+            ])),
+        ),
+        (
+            "| a |\n|---|\n<!-- c --> *x* y\n",
+            table(row(&[
+                "            comment content=\"c\"\n            text content=\" \"\n            em marker=\"*\"\n              text content=\"x\"\n            text content=\" y\"\n",
+            ])),
+        ),
+        (
+            "| a |\n|---|\n<div>x</div>\n",
+            table(row(&["            text content=\"<div>x</div>\"\n"])),
+        ),
+    ] {
+        assert_eq!(outline(&parse_comments(source)), expected, "{source:?}");
+    }
+    // In a quote too, and only right after the table.
+    assert_eq!(
+        outline(&parse_comments("> | a |\n> |---|\n> <!-- c\n> d -->\n")),
+        "document\n  blockquote\n    table\n      thead\n        tr\n          th\n            inline\n              text content=\"a\"\n      tbody\n        tr\n          td\n            inline\n              text content=\"<!-- c\"\n        tr\n          td\n            inline\n              text content=\"d -->\"\n"
+    );
+    assert!(
+        outline(&parse_comments("> | a |\n> |---|\n>\n> <!-- c\n> d -->\n"))
+            .ends_with("    comment content=\"c\\n> d\"\n")
+    );
+}
+
+/// A comment's content has every line break as `\n`, as upstream reads the
+/// source.
+#[test]
+fn a_comment_has_its_line_breaks_as_newlines() {
+    for (source, content) in [
+        ("<!-- a\r\nb -->\r\n", "a\nb"),
+        ("<!-- a\rb -->\r", "a\nb"),
+        ("> <!-- a\r\n> b -->\r\n", "a\n> b"),
+        ("x <!-- a\r\nb --> y\r\n", "a\nb"),
+    ] {
+        let document = parse_comments(source);
+        let comment = document
+            .walk()
+            .find(|node| node.node_type == accent_proust::ast::NodeType::Comment)
+            .and_then(|node| node.get("content"));
+        assert_eq!(
+            comment,
+            Some(&accent_proust::ast::Value::String(content.into())),
+            "{source:?}"
+        );
+    }
+}
+
+/// A comment in a container formats as its content has it: a quote adds no
+/// `>` to its later lines, which already hold theirs, so the reprint parses
+/// back to the same tree and formats to the same bytes.
+#[test]
+fn a_comment_in_a_container_formats_as_written() {
+    for source in [
+        "> <!-- a\n> b -->\n",
+        "> - <!-- a\n>   b\n>   -->\n",
+        "> > <!-- a\n> > b\nc -->\n> > d\n",
+        "> <!-- a\nb -->\n> c\n",
+        "- > <!-- a\n  > b -->\n",
+        "> x <!-- a\n> b --> y\n",
+    ] {
+        let document = parse_comments(source);
+        let formatted = accent_proust::format::format(&document);
+        let again = parse_comments(&formatted);
+        assert_eq!(
+            outline(&again),
+            outline(&document),
+            "{source:?} -> {formatted:?}"
+        );
+        assert_eq!(
+            accent_proust::format::format(&again),
+            formatted,
+            "{source:?}"
+        );
+    }
+    assert_eq!(
+        accent_proust::format::format(&parse_comments("> <!-- a\n> b -->\n")),
+        "> <!-- a\n> b -->\n"
+    );
+}
+
 /// Many `<!--` before one `-->`, each in code, are refused in a bounded number
 /// of passes, and each looks for its `-->` without searching the source again:
 /// four times the lines take about four times as long, not sixteen.

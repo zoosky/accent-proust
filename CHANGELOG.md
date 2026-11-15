@@ -18,6 +18,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A comment block opens on the line after a `|`** that is not in a table,
   with comments on, as upstream: after `a | b` in a paragraph the comment
   interrupts it. Only after a table's delimiter row is the line a row.
+- **The line after a table is a row**, with comments on, as upstream: a
+  `<!--` there no longer ends the table, in a container too. A comment that
+  closes on that line is an inline comment in the cell.
+- **A comment's content has `\n` for every line break**, as upstream: a
+  `\r\n` or a bare `\r` in it was kept.
+- **`format` writes a comment in a blockquote as its content has it.** Its
+  later lines already hold the `>` they were written with, and the quote
+  added another, so `> <!-- a\n> b -->` reprinted as `> <!-- a\n> > b -->`
+  and gained a `>` on every pass. Upstream's formatter still does
+  (`DIVERGENCES.md` entry 16).
 
 ## [0.13.0] - 2026-11-14
 

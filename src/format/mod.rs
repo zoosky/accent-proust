@@ -52,7 +52,7 @@ mod value;
 #[cfg(test)]
 mod tests;
 
-use crate::ast::{Node, Value};
+use crate::ast::{Node, NodeType, Value};
 use crate::parse::{CLOSE, OPEN};
 
 /// A single space. Upstream's `SPACE`.
@@ -218,10 +218,36 @@ pub fn format(node: &Node<'_>) -> String {
 /// ```
 #[must_use]
 pub fn format_with(node: &Node<'_>, options: &FormatOptions) -> String {
+    let plain = format_tree(node, options, None);
+    // A comment's line breaks are its content's, which keeps every marker the
+    // source had on those lines, so a quote must not prefix them again. They
+    // are printed as a character the output holds nowhere else, and become
+    // line breaks once the quotes have prefixed every other line.
+    let tree = || std::iter::once(node).chain(node.walk());
+    let quoted = tree().any(|node| node.node_type == NodeType::Blockquote) && tree().any(|node| {
+        node.node_type == NodeType::Comment
+            && matches!(node.get("content"), Some(Value::String(content)) if content.contains(NL))
+    });
+    if !quoted {
+        return plain;
+    }
+    let Some(mark) = ('\u{1}'..='\u{8}')
+        .chain('\u{e}'..='\u{1f}')
+        .find(|mark| !plain.contains(*mark))
+    else {
+        return plain;
+    };
+    format_tree(node, options, Some(mark)).replace(mark, NL)
+}
+
+/// The walk behind [`format_with`], with a comment's line breaks printed as
+/// `comment_break` when it is set.
+fn format_tree(node: &Node<'_>, options: &FormatOptions, comment_break: Option<char>) -> String {
     let mut formatter = Formatter {
         options,
         depth: 0,
         stack: 0,
+        comment_break,
     };
     let mut out = Out::default();
     formatter.node(node, Ctx::default(), &mut out);
@@ -261,6 +287,7 @@ pub fn format_value_with(value: &Value, options: &FormatOptions) -> String {
         options,
         depth: 0,
         stack: 0,
+        comment_break: None,
     };
     let mut out = Out::default();
     formatter.value(value, Ctx::default(), &mut out);
@@ -406,4 +433,7 @@ struct Formatter<'o> {
     options: &'o FormatOptions,
     depth: usize,
     stack: usize,
+    /// What a comment's line breaks are printed as, when not `\n`
+    /// ([`format_with`]).
+    comment_break: Option<char>,
 }

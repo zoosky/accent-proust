@@ -500,11 +500,11 @@ levels of *authored* nesting, because a paragraph of text is already four --
 document, paragraph, inline, text -- and a list adds two per level. A generated
 or hostile document prints truncated rather than taking the process down.
 
-## 16. Five round-trip defects in upstream's formatter are fixed, not reproduced
+## 16. Six round-trip defects in upstream's formatter are fixed, not reproduced
 
 **Upstream:** the formatter emits output that does not parse back to the tree it
-came from, in five shapes. Each is reachable from an ordinary document, and all
-five are silent -- the output looks plausible.
+came from, in six shapes. Each is reachable from an ordinary document, and all
+six are silent -- the output looks plausible.
 
 1. **An inline comment ends a line.** The `comment` arm appends a newline to
    every comment. Upstream's tokenizer has an inline comment rule, so a comment
@@ -532,11 +532,17 @@ five are silent -- the output looks plausible.
    item's indent, which the parser reads as the label's own and drops:
    `- ![a\n     b](/i.png)` reprints with an alt of `a\n b`, not `a\n   b`
    (found in review of #96).
+6. **A comment in a quote is quoted twice.** A comment's content is the
+   source between `<!--` and `-->`, so its later lines keep the `>` they were
+   written with, and the `blockquote` arm prefixes them again:
+   `> <!-- a\n> b -->` reprints as `> <!-- a\n> > b -->`, whose content has
+   gained a `>` (#103).
 
 **Here:** an inline comment ends no line, the closing boundary carries the
 indent, a tag whose children come to nothing self-closes, a link is written
 as an autolink only when its `href` is a CommonMark absolute URI, and each
-later line of an image's alt carries the indent.
+later line of an image's alt carries the indent, and a comment's later lines
+are written as its content has them, with no prefix added.
 
 **Why:** because the round trip is the specification, not a nice property. r111
 §9.5 states `parse(format(ast))` as one of the two gates on this stage, and the
