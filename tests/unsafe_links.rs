@@ -81,6 +81,15 @@ fn nothing_a_browser_ignores_can_hide_the_scheme() {
     }
 }
 
+/// Why the check above cannot run on the encoded destination, as upstream's
+/// does (#93): the syntax tree keeps a tab in a destination as written, so
+/// `java\tscript:` would reach the tree's `href` intact.
+#[test]
+fn the_syntax_tree_keeps_a_destination_unencoded() {
+    let document = parse("[a](<java\tx:y>) [b](<\u{1}x>)\n");
+    assert_eq!(destinations(&document), ["java\tx:y", "\u{1}x"]);
+}
+
 #[test]
 fn a_refused_autolink_is_read_again_as_text() {
     // `\` is not an escape inside an autolink, but it is in text.
