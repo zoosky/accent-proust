@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-15
+
 ### Fixed
 
 - **A comment block runs past the end of its container** (#103), with comments
@@ -460,7 +462,8 @@ crate builds on pulldown-cmark.
 - **MSRV 1.96** for the library, normalised across the Accent crates, on Rust
   edition 2024.
 
-[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/zoosky/accent-proust/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/zoosky/accent-proust/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/zoosky/accent-proust/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/zoosky/accent-proust/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/zoosky/accent-proust/compare/v0.12.2...v0.12.3
